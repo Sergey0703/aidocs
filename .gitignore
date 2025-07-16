@@ -29,3 +29,7 @@ Thumbs.db
 google/
 *.deb
 chrome*
+gitkey
+gitkey.pub
+*.pem
+*.key
