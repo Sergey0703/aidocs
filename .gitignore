@@ -26,3 +26,6 @@ indexing_errors.log
 # OS files
 .DS_Store
 Thumbs.db
+google/
+*.deb
+chrome*
