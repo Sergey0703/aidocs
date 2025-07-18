@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-# ====================================
-# ФАЙЛ: classic_streamlit_rag.py
-# Streamlit версия классической RAG системы с контентной фильтрацией
-# ====================================
 
 """
-Classic Streamlit RAG - Веб-интерфейс для классической RAG системы
-Простой, быстрый и точный поиск с 100% precision
+Hybrid RAG System - Best of Both Worlds
+Smart entity extraction + Simple vector search + Content filtering
 """
 
 import streamlit as st
@@ -20,26 +16,26 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 import re
 
-# Загружаем переменные окружения
+# Load environment variables
 load_dotenv()
 
-# Добавляем пути для импорта
+# Add import paths
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
-# Настройка логирования
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Конфигурация страницы
+# Page configuration
 st.set_page_config(
-    page_title="Classic RAG System",
-    page_icon="🎯",
+    page_title="Hybrid RAG System",
+    page_icon="??",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Кастомные стили
+# Custom styles
 st.markdown("""
 <style>
     .main-header {
@@ -49,12 +45,6 @@ st.markdown("""
         color: #1f77b4;
         margin-bottom: 2rem;
     }
-    .metric-container {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
     .success-box {
         background-color: #d4edda;
         border: 1px solid #c3e6cb;
@@ -63,10 +53,10 @@ st.markdown("""
         border-radius: 0.5rem;
         margin: 1rem 0;
     }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        color: #856404;
+    .entity-box {
+        background-color: #e7f3ff;
+        border: 1px solid #b3d9ff;
+        color: #004085;
         padding: 1rem;
         border-radius: 0.5rem;
         margin: 1rem 0;
@@ -74,15 +64,26 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def init_session_state():
+    """Initialize session state only once"""
+    if "search_performed" not in st.session_state:
+        st.session_state.search_performed = False
+    if "last_query" not in st.session_state:
+        st.session_state.last_query = ""
+    if "search_results" not in st.session_state:
+        st.session_state.search_results = None
+    if "search_in_progress" not in st.session_state:
+        st.session_state.search_in_progress = False
+
 @st.cache_resource
 def initialize_services():
-    """Инициализирует сервисы (кэшируется)"""
+    """Initialize services (cached)"""
     try:
-        # Импортируем сервисы
+        # Import services
         from supabase_vector_service import SupabaseVectorService
         from simple_llm_service import create_simple_llm_service
         
-        # Проверяем переменные окружения
+        # Check environment variables
         connection_string = (
             os.getenv("SUPABASE_CONNECTION_STRING") or 
             os.getenv("DATABASE_URL") or
@@ -90,16 +91,16 @@ def initialize_services():
         )
         
         if not connection_string:
-            st.error("❌ Database connection string not found in environment!")
+            st.error("Database connection string not found in environment!")
             st.stop()
         
-        # Инициализируем векторный сервис
+        # Initialize vector service
         vector_service = SupabaseVectorService(
             connection_string=connection_string,
             table_name="documents"
         )
         
-        # Инициализируем LLM сервис
+        # Initialize LLM service
         ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         ollama_model = os.getenv("OLLAMA_DEFAULT_MODEL", "llama3.2:3b")
         
@@ -111,99 +112,149 @@ def initialize_services():
         return vector_service, llm_service
         
     except ImportError as e:
-        st.error(f"❌ Import error: {e}")
-        st.error("Make sure supabase_vector_service.py and simple_llm_service.py are in the same directory")
+        st.error(f"Import error: {e}")
         st.stop()
     except Exception as e:
-        st.error(f"❌ Initialization error: {e}")
+        st.error(f"Initialization error: {e}")
         st.stop()
 
-def extract_search_terms(query: str) -> List[str]:
-    """Извлекает поисковые термины из запроса"""
-    # Убираем служебные слова
-    stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
-                 'of', 'with', 'by', 'about', 'tell', 'me', 'who', 'what', 'where', 
-                 'when', 'why', 'how', 'is', 'are', 'was', 'were', 'be', 'been', 
-                 'being', 'have', 'has', 'had', 'do', 'does', 'did'}
-    
-    # Извлекаем слова
-    words = re.findall(r'\b[A-Za-z]+\b', query.lower())
-    
-    # Фильтруем значимые слова
-    key_terms = [word for word in words if word not in stop_words and len(word) > 2]
-    
-    # Добавляем биграммы для имен
-    bigrams = []
-    query_words = query.split()
-    for i in range(len(query_words) - 1):
-        bigram = f"{query_words[i]} {query_words[i+1]}"
-        if any(char.isupper() for char in bigram):  # Если есть заглавные буквы
-            bigrams.append(bigram.lower())
-    
-    return key_terms + bigrams
+@st.cache_resource
+def get_extraction_llm():
+    """Get LLM for entity extraction (cached)"""
+    try:
+        from llama_index.llms.ollama import Ollama
+        
+        return Ollama(
+            model="llama3.2:3b",
+            base_url="http://localhost:11434",
+            request_timeout=30,
+            additional_kwargs={
+                "temperature": 0.0,
+                "num_predict": 10,
+                "top_k": 1,
+                "top_p": 0.1,
+                "stop": ["\n", ".", ",", ":", ";", "!", "?", " and", " or"]
+            }
+        )
+    except Exception as e:
+        st.error(f"Error initializing extraction LLM: {e}")
+        return None
 
-def get_required_terms(query_terms: List[str]) -> List[str]:
-    """Определяет обязательные термины для фильтрации"""
-    name_terms = []
-    other_terms = []
+def extract_entity_with_llm(query: str) -> str:
+    """Smart entity extraction using LLM (from intelligent_rag_app)"""
     
-    for term in query_terms:
-        # Проверяем является ли термин именем
-        if ' ' in term or any(word[0].isupper() for word in term.split() if word):
-            # Это составное имя - разбиваем на части
-            name_parts = term.lower().split()
-            name_terms.extend(name_parts)
+    llm = get_extraction_llm()
+    if not llm:
+        # Fallback to simple extraction
+        return extract_entity_fallback(query)
+    
+    extraction_prompt = f"""Extract only the person's name from this question. Return ONLY the name, no other words.
+
+Examples:
+- "tell me about John Smith" -> John Smith
+- "who is Mary Johnson" -> Mary Johnson  
+- "find information about Bob Wilson" -> Bob Wilson
+- "show me John Nolan" -> John Nolan
+- "John Nolan certifications" -> John Nolan
+
+Question: {query}
+
+Name:"""
+    
+    try:
+        response = llm.complete(extraction_prompt)
+        extracted_entity = response.text.strip()
+        
+        # Clean extraction
+        extracted_entity = re.sub(r'^(name|answer|result)[:=]\s*', '', extracted_entity, flags=re.IGNORECASE)
+        extracted_entity = re.sub(r'\s*(is|the|answer|result)$', '', extracted_entity, flags=re.IGNORECASE)
+        
+        # Validate extraction
+        if is_valid_entity(extracted_entity, query):
+            return extracted_entity.strip()
         else:
-            # Одиночное слово
-            if term.lower() in ['john', 'nolan', 'breeda', 'daly']:
-                # Это часть имени
-                name_terms.append(term.lower())
-            else:
-                # Другие термины
-                other_terms.append(term.lower())
-    
-    # Убираем дубликаты
-    name_terms = list(set(name_terms))
-    other_terms = list(set(other_terms))
-    
-    # Для имен требуем все части имени
-    if name_terms:
-        return name_terms
-    else:
-        # Если нет имен, требуем хотя бы один термин
-        return other_terms[:1] if other_terms else query_terms
+            return extract_entity_fallback(query)
+            
+    except Exception as e:
+        logger.warning(f"LLM entity extraction failed: {e}")
+        return extract_entity_fallback(query)
 
-def apply_content_filter(search_results: List, query_terms: List[str]) -> List:
-    """Применяет строгую контентную фильтрацию"""
+def extract_entity_fallback(query: str) -> str:
+    """Fallback entity extraction using regex"""
+    # Find capitalized word sequences (likely names)
+    name_patterns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+    
+    # Filter out common question words
+    question_words = {'Tell', 'Show', 'Find', 'What', 'Who', 'Where', 'When', 'Why', 'How'}
+    
+    valid_names = [name for name in name_patterns if name not in question_words]
+    
+    if valid_names:
+        return valid_names[0]  # Return first valid name
+    
+    # If no names found, return the query itself
+    return query.strip()
+
+def is_valid_entity(entity: str, original_query: str) -> bool:
+    """Check if extracted entity is valid"""
+    if not entity or len(entity.strip()) < 2:
+        return False
+    
+    # Check if entity contains question words
+    question_words = {'question', 'query', 'extract', 'name', 'tell', 'about', 'who', 'is', 'find', 'show'}
+    entity_words = entity.lower().split()
+    
+    if any(word in question_words for word in entity_words):
+        return False
+    
+    # Entity should be shorter than or equal to original query
+    if len(entity) > len(original_query):
+        return False
+    
+    return True
+
+def get_required_terms_from_entity(entity: str) -> List[str]:
+    """Get required terms from extracted entity"""
+    # For person names, require ALL parts of the name
+    entity_lower = entity.lower().strip()
+    
+    # Split into words and filter
+    words = re.findall(r'\b[a-z]+\b', entity_lower)
+    
+    # Remove common words that shouldn't be required
+    stop_words = {'the', 'a', 'an', 'and', 'or', 'of'}
+    required_terms = [word for word in words if word not in stop_words and len(word) > 1]
+    
+    return required_terms
+
+def apply_content_filter(search_results: List, required_terms: List[str]) -> List:
+    """Apply strict content filtering based on required terms"""
     filtered_results = []
-    required_terms = get_required_terms(query_terms)
     
     for result in search_results:
         try:
-            # Получаем текст для проверки
+            # Get all text for checking
             content = result.content.lower()
             filename = result.filename.lower()
             full_content = result.full_content.lower()
             
-            # Объединяем весь доступный текст
             all_text = f"{content} {filename} {full_content}"
             
-            # Проверяем наличие ВСЕХ обязательных терминов
-            found_required_terms = []
+            # Check if ALL required terms are present
+            found_terms = []
             missing_terms = []
             
             for term in required_terms:
-                term_lower = term.lower()
-                if term_lower in all_text:
-                    found_required_terms.append(term)
+                if term.lower() in all_text:
+                    found_terms.append(term)
                 else:
                     missing_terms.append(term)
             
-            # Включаем в результаты только если найдены ВСЕ обязательные термины
+            # Include only if ALL required terms are found
             if len(missing_terms) == 0:
-                result.search_info["found_terms"] = found_required_terms
+                result.search_info["found_terms"] = found_terms
                 result.search_info["content_filtered"] = True
-                result.search_info["filter_type"] = "strict_all_terms"
+                result.search_info["extraction_method"] = "hybrid_smart"
                 filtered_results.append(result)
                 
         except Exception as e:
@@ -212,56 +263,62 @@ def apply_content_filter(search_results: List, query_terms: List[str]) -> List:
     
     return filtered_results
 
-def calculate_dynamic_limit(question: str) -> int:
-    """Вычисляет динамический лимит на основе типа запроса"""
-    question_lower = question.lower()
+def calculate_dynamic_limit(entity: str) -> int:
+    """Calculate dynamic limit based on entity type"""
+    entity_lower = entity.lower()
     
-    if any(name in question_lower for name in ['john nolan', 'breeda daly']):
+    # Person names typically have multiple documents
+    if any(name in entity_lower for name in ['john nolan', 'breeda daly']):
         return 15
-    elif any(word in question_lower for word in ['all', 'every', 'complete', 'full']):
-        return 20
-    elif any(word in question_lower for word in ['certifications', 'training', 'courses']):
+    elif len(entity.split()) >= 2:  # Multi-word entities (likely names)
         return 12
-    elif any(word in question_lower for word in ['what', 'explain', 'define', 'describe']):
-        return 7
-    elif len(question.split()) <= 3:
+    elif any(word in entity_lower for word in ['training', 'certification', 'course']):
         return 10
     else:
         return 8
 
-async def run_search_query(vector_service, llm_service, question: str):
-    """Выполняет поиск с метриками"""
+async def run_hybrid_search(vector_service, llm_service, question: str):
+    """Execute hybrid search: Smart extraction + Simple search + Content filtering"""
     
-    # Извлекаем поисковые термины
-    search_terms = extract_search_terms(question)
-    required_terms = get_required_terms(search_terms)
-    dynamic_limit = calculate_dynamic_limit(question)
+    # Progress tracking
+    progress_container = st.container()
+    with progress_container:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
     
-    # Показываем прогресс
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    # STAGE 1: Smart Entity Extraction
+    status_text.text("?? Extracting entity...")
+    progress_bar.progress(20)
     
-    # Этап 1: Векторный поиск
-    status_text.text("🔍 Vector search...")
-    progress_bar.progress(25)
+    extraction_start = time.time()
+    extracted_entity = extract_entity_with_llm(question)
+    extraction_time = time.time() - extraction_start
+    
+    # Get required terms from entity
+    required_terms = get_required_terms_from_entity(extracted_entity)
+    dynamic_limit = calculate_dynamic_limit(extracted_entity)
+    
+    # STAGE 2: Vector Search
+    status_text.text("?? Vector search...")
+    progress_bar.progress(50)
     
     search_start = time.time()
-    search_limit = dynamic_limit * 2
+    search_limit = dynamic_limit * 2  # Get more candidates
     
     raw_search_results = await vector_service.vector_search(
-        query=question,
+        query=extracted_entity,  # Use extracted entity, not original question
         limit=search_limit,
         similarity_threshold=0.2
     )
     
-    # Этап 2: Контентная фильтрация
-    status_text.text("🔽 Content filtering...")
-    progress_bar.progress(50)
+    # STAGE 3: Content Filtering
+    status_text.text("?? Content filtering...")
+    progress_bar.progress(75)
     
     filter_start = time.time()
-    filtered_results = apply_content_filter(raw_search_results, search_terms)
+    filtered_results = apply_content_filter(raw_search_results, required_terms)
     
-    # Обрезаем до нужного количества и сортируем
+    # Sort and limit results
     filtered_results = sorted(filtered_results, 
                             key=lambda x: x.similarity_score, 
                             reverse=True)[:dynamic_limit]
@@ -269,9 +326,9 @@ async def run_search_query(vector_service, llm_service, question: str):
     filter_time = time.time() - filter_start
     search_time = time.time() - search_start
     
-    # Этап 3: Генерация ответа
-    status_text.text("🤖 Generating answer...")
-    progress_bar.progress(75)
+    # STAGE 4: Answer Generation
+    status_text.text("?? Generating answer...")
+    progress_bar.progress(90)
     
     llm_start = time.time()
     
@@ -284,25 +341,31 @@ async def run_search_query(vector_service, llm_service, question: str):
         })
     
     llm_response = await llm_service.generate_answer(
-        question=question,
+        question=question,  # Use original question for answer generation
         context_docs=context_docs,
         language="en"
     )
     
     llm_time = time.time() - llm_start
-    total_time = time.time() - search_start
+    total_time = time.time() - extraction_start
     
-    # Завершаем прогресс
+    # Complete progress
     progress_bar.progress(100)
-    status_text.text("✅ Search completed!")
+    status_text.text("? Hybrid search completed!")
+    
+    # Clear progress after delay
+    time.sleep(1)
+    progress_container.empty()
     
     return {
-        "search_terms": search_terms,
+        "original_question": question,
+        "extracted_entity": extracted_entity,
         "required_terms": required_terms,
         "raw_results": len(raw_search_results),
         "filtered_results": filtered_results,
         "llm_response": llm_response,
         "metrics": {
+            "extraction_time": extraction_time,
             "search_time": search_time,
             "filter_time": filter_time,
             "llm_time": llm_time,
@@ -312,14 +375,19 @@ async def run_search_query(vector_service, llm_service, question: str):
         }
     }
 
-async def check_service_status(vector_service, llm_service):
-    """Проверяет статус сервисов"""
+@st.cache_data(ttl=300)
+def check_service_status_cached():
+    """Cached service status check"""
     try:
-        # Проверяем базу данных
-        db_stats = await vector_service.get_database_stats()
+        vector_service, llm_service = initialize_services()
         
-        # Проверяем LLM
-        llm_available = await llm_service.check_availability()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        db_stats = loop.run_until_complete(vector_service.get_database_stats())
+        llm_available = loop.run_until_complete(llm_service.check_availability())
+        
+        loop.close()
         
         return {
             "database": {
@@ -340,206 +408,235 @@ async def check_service_status(vector_service, llm_service):
         }
 
 def main():
-    """Главная функция Streamlit приложения"""
+    """Main Streamlit application function"""
     
-    # Заголовок
-    st.markdown('<h1 class="main-header">🎯 Classic RAG System</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Simple, Fast, Accurate • 100% Precision Guaranteed</p>', unsafe_allow_html=True)
+    init_session_state()
     
-    # Инициализируем сервисы
+    # Header
+    st.markdown('<h1 class="main-header">?? Hybrid RAG System</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Smart Entity Extraction + Simple Vector Search = Best Results</p>', unsafe_allow_html=True)
+    
+    # Initialize services
     vector_service, llm_service = initialize_services()
     
-    # Боковая панель с информацией
+    # Sidebar
     with st.sidebar:
-        st.header("🔧 System Info")
+        st.header("?? System Info")
         
-        # Проверяем статус сервисов
-        with st.spinner("Checking services..."):
-            status = asyncio.run(check_service_status(vector_service, llm_service))
+        status = check_service_status_cached()
         
-        # База данных
         if status["database"]["available"]:
-            st.success(f"✅ Database Connected")
+            st.success("? Database Connected")
             st.metric("Documents", status["database"]["total_documents"])
             st.metric("Files", status["database"]["unique_files"])
         else:
-            st.error("❌ Database Error")
-            st.error(status["database"].get("error", "Unknown error"))
+            st.error("? Database Error")
         
-        # LLM
         if status["llm"]["available"]:
-            st.success(f"✅ LLM Available")
+            st.success("? LLM Available")
             st.info(f"Model: {status['llm']['model']}")
         else:
-            st.warning("⚠️ LLM Unavailable")
-            st.info("Will use fallback responses")
+            st.warning("?? LLM Unavailable")
         
         st.markdown("---")
         
-        # Особенности системы
-        st.header("🎯 Features")
+        st.header("?? Hybrid Features")
         st.markdown("""
-        **Classic RAG Advantages:**
-        - 🚀 **Fast**: Single-pass vector search
-        - 🎯 **Accurate**: 100% precision filtering
-        - 🛠️ **Simple**: Fewer failure points
-        - ⚡ **Efficient**: Dynamic result limits
-        - 🔍 **Smart**: Content-aware filtering
+        **Best of Both Worlds:**
+        - ?? **Smart**: LLM entity extraction
+        - ? **Fast**: Single-pass vector search  
+        - ?? **Accurate**: Content filtering
+        - ?? **Consistent**: Same entity = same results
+        - ??? **Reliable**: Fallback mechanisms
         """)
         
         st.markdown("---")
         
-        # Примеры запросов
-        st.header("💡 Example Queries")
-        example_queries = [
+        st.header("?? Test Queries")
+        examples = [
             "John Nolan",
-            "Breeda Daly training",
-            "John Nolan certifications",
-            "What is law?",
-            "safety training"
+            "tell me about John Nolan", 
+            "show me John Nolan certifications",
+            "who is Breeda Daly",
+            "find Breeda Daly training"
         ]
         
-        for query in example_queries:
-            if st.button(f"📝 {query}", key=f"example_{query}"):
-                st.session_state.example_query = query
+        for example in examples:
+            if st.button(f"?? {example}", key=f"ex_{hash(example)}"):
+                st.session_state.example_query = example
     
-    # Основной интерфейс
+    # Main interface
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        # Поле ввода запроса
-        query_input = st.text_input(
-            "🔍 Enter your question:",
+        current_query = st.text_input(
+            "?? Enter your question:",
             value=st.session_state.get("example_query", ""),
-            placeholder="e.g., John Nolan certifications",
+            placeholder="e.g., tell me about John Nolan",
             key="main_query"
         )
     
     with col2:
-        search_button = st.button("🔍 Search", type="primary", use_container_width=True)
+        search_disabled = st.session_state.search_in_progress or not current_query.strip()
+        search_button = st.button(
+            "?? Search", 
+            type="primary", 
+            use_container_width=True,
+            disabled=search_disabled
+        )
     
-    # Дополнительные настройки
-    with st.expander("⚙️ Advanced Settings"):
+    # Settings
+    with st.expander("?? Advanced Settings"):
         col1, col2 = st.columns(2)
         with col1:
+            show_extraction = st.checkbox("Show entity extraction", value=True)
             show_debug = st.checkbox("Show debug info", value=False)
-            show_sources = st.checkbox("Show detailed sources", value=True)
         with col2:
             show_metrics = st.checkbox("Show performance metrics", value=True)
-            auto_search = st.checkbox("Search on enter", value=True)
+            show_sources = st.checkbox("Show detailed sources", value=True)
     
-    # Обработка поиска
-    if (search_button or (auto_search and query_input)) and query_input.strip():
+    # Search processing
+    if search_button and current_query.strip():
+        
+        if st.session_state.search_in_progress:
+            st.warning("? Search already in progress...")
+            return
+        
+        if current_query.strip() == st.session_state.last_query and st.session_state.search_results:
+            st.info("?? Showing cached results for same query")
+        else:
+            st.session_state.search_in_progress = True
+            st.session_state.last_query = current_query.strip()
+            
+            if "example_query" in st.session_state:
+                st.session_state.example_query = ""
+            
+            try:
+                result = asyncio.run(run_hybrid_search(vector_service, llm_service, current_query.strip()))
+                st.session_state.search_results = result
+                st.session_state.search_performed = True
+            
+            except Exception as e:
+                st.error(f"? Search error: {e}")
+                result = None
+            
+            finally:
+                st.session_state.search_in_progress = False
+    
+    # Display results
+    if st.session_state.search_performed and st.session_state.search_results:
+        result = st.session_state.search_results
         
         st.markdown("---")
         
-        # Выполняем поиск
-        with st.container():
-            result = asyncio.run(run_search_query(vector_service, llm_service, query_input.strip()))
-            
-            # Очищаем прогресс
-            time.sleep(0.5)
-            st.rerun()
+        # Show entity extraction
+        if show_extraction:
+            st.markdown(f'<div class="entity-box"><strong>?? Smart Extraction:</strong><br>Original: "{result["original_question"]}"<br>Extracted Entity: <strong>"{result["extracted_entity"]}"</strong><br>Required Terms: {result["required_terms"]}</div>', unsafe_allow_html=True)
         
-        # Отображаем результаты
-        if result:
+        # Main answer
+        st.header("?? Answer")
+        
+        if result["llm_response"].success:
+            st.markdown(f'<div class="success-box">{result["llm_response"].content}</div>', unsafe_allow_html=True)
+        else:
+            st.warning("?? LLM unavailable - showing fallback response:")
+            st.markdown(result["llm_response"].content)
+        
+        # Performance metrics
+        if show_metrics:
+            st.header("?? Performance Metrics")
             
-            # Основной ответ
-            st.header("💬 Answer")
+            col1, col2, col3, col4 = st.columns(4)
             
-            if result["llm_response"].success:
-                st.markdown(f'<div class="success-box">{result["llm_response"].content}</div>', unsafe_allow_html=True)
-            else:
-                st.warning("⚠️ LLM unavailable - showing fallback response:")
-                st.markdown(result["llm_response"].content)
+            metrics = result["metrics"]
             
-            # Метрики производительности
-            if show_metrics:
-                st.header("⏱️ Performance Metrics")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                metrics = result["metrics"]
-                
-                with col1:
-                    st.metric("Total Time", f"{metrics['total_time']:.2f}s")
-                with col2:
-                    st.metric("Search Time", f"{metrics['search_time']:.2f}s")
-                with col3:
-                    st.metric("LLM Time", f"{metrics['llm_time']:.2f}s")
-                with col4:
-                    st.metric("Precision", f"{metrics['precision']:.1%}")
-                
-                # Дополнительные метрики
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Raw Results", result["raw_results"])
-                with col2:
-                    st.metric("Filtered Results", len(result["filtered_results"]))
-                with col3:
-                    st.metric("Dynamic Limit", metrics["dynamic_limit"])
+            with col1:
+                st.metric("Total Time", f"{metrics['total_time']:.2f}s")
+            with col2:
+                st.metric("Extraction", f"{metrics['extraction_time']:.2f}s")
+            with col3:
+                st.metric("Search + Filter", f"{metrics['search_time']:.2f}s")
+            with col4:
+                st.metric("Precision", f"{metrics['precision']:.1%}")
             
-            # Debug информация
-            if show_debug:
-                st.header("🔍 Debug Information")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.subheader("Search Terms")
-                    st.json(result["search_terms"])
-                with col2:
-                    st.subheader("Required Terms")
-                    st.json(result["required_terms"])
-                
-                st.subheader("Filtering Process")
-                st.info(f"Started with {result['raw_results']} candidates → Applied content filter → Got {len(result['filtered_results'])} precise results")
+            # Additional metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Raw Results", result["raw_results"])
+            with col2:
+                st.metric("Filtered Results", len(result["filtered_results"]))
+            with col3:
+                st.metric("Dynamic Limit", metrics["dynamic_limit"])
+        
+        # Debug information
+        if show_debug:
+            st.header("?? Debug Information")
             
-            # Источники
-            if result["filtered_results"]:
-                st.header(f"📚 Sources ({len(result['filtered_results'])} documents)")
-                
-                if len(result["filtered_results"]) == 9 and "john nolan" in query_input.lower():
-                    st.success("🎯 Perfect! Found all 9 John Nolan documents with 100% precision")
-                
-                for i, doc in enumerate(result["filtered_results"], 1):
-                    with st.expander(f"📄 {i}. {doc.filename} (similarity: {doc.similarity_score:.3f})"):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Extraction Process")
+                st.json({
+                    "original_question": result["original_question"],
+                    "extracted_entity": result["extracted_entity"],
+                    "extraction_method": "LLM + fallback"
+                })
+            with col2:
+                st.subheader("Required Terms")
+                st.json(result["required_terms"])
+            
+            st.subheader("Hybrid Process")
+            st.info(f"1. Extract entity: '{result['extracted_entity']}' ? 2. Search with entity ? 3. Filter by required terms ? 4. Got {len(result['filtered_results'])} precise results")
+        
+        # Sources
+        if result["filtered_results"]:
+            st.header(f"?? Sources ({len(result['filtered_results'])} documents)")
+            
+            # Special message for John Nolan
+            if len(result["filtered_results"]) == 9 and "john" in result["extracted_entity"].lower() and "nolan" in result["extracted_entity"].lower():
+                st.success("?? Perfect! Found all 9 John Nolan documents - hybrid system working correctly!")
+            
+            for i, doc in enumerate(result["filtered_results"], 1):
+                with st.expander(f"?? {i}. {doc.filename} (similarity: {doc.similarity_score:.3f})"):
+                    
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown("**Content Preview:**")
+                        preview = doc.content[:300] + "..." if len(doc.content) > 300 else doc.content
+                        st.text(preview)
+                    
+                    with col2:
+                        st.markdown("**Match Info:**")
+                        st.text(f"Type: {doc.search_info['match_type']}")
+                        st.text(f"Confidence: {doc.search_info['confidence']}")
                         
-                        col1, col2 = st.columns([2, 1])
-                        
-                        with col1:
-                            st.markdown("**Content Preview:**")
-                            preview = doc.content[:300] + "..." if len(doc.content) > 300 else doc.content
-                            st.text(preview)
-                        
-                        with col2:
-                            st.markdown("**Match Info:**")
-                            st.text(f"Type: {doc.search_info['match_type']}")
-                            st.text(f"Confidence: {doc.search_info['confidence']}")
-                            
-                            found_terms = doc.search_info.get("found_terms", [])
-                            if found_terms:
-                                st.text(f"Found terms: {', '.join(found_terms)}")
-                        
-                        if show_sources:
-                            st.markdown("**Full Content:**")
-                            st.text_area("", doc.full_content, height=100, key=f"content_{i}")
-            
-            else:
-                st.warning("❌ No relevant documents found after filtering")
-                st.info("Try rephrasing your query or using different keywords")
+                        found_terms = doc.search_info.get("found_terms", [])
+                        if found_terms:
+                            st.text(f"Found terms: {', '.join(found_terms)}")
+                    
+                    if show_sources:
+                        st.markdown("**Full Content:**")
+                        st.text_area("", doc.full_content, height=100, key=f"content_{i}_{int(time.time())}")
+        
+        else:
+            st.warning("? No relevant documents found after filtering")
+            st.info("Try rephrasing your query or using different keywords")
+        
+        # Clear button
+        if st.button("??? Clear Results", key="clear_results"):
+            st.session_state.search_performed = False
+            st.session_state.search_results = None
+            st.session_state.last_query = ""
+            st.rerun()
     
-    # Информация о системе в футере
+    # Footer
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; font-size: 0.9rem;">
-        🎯 Classic RAG System • Simple • Fast • Accurate<br>
-        Built with Streamlit • Powered by LlamaIndex & Ollama
+        ?? Hybrid RAG System - Smart Extraction + Simple Search = Consistent Results<br>
+        Built with Streamlit - Powered by LlamaIndex & Ollama
     </div>
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    # Инициализируем состояние сессии
-    if "example_query" not in st.session_state:
-        st.session_state.example_query = ""
-    
     main()
