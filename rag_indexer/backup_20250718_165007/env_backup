@@ -1,0 +1,27 @@
+# Оптимизированные настройки для мощной системы (42GB RAM, 2 Xeon)
+SUPABASE_CONNECTION_STRING="postgresql://postgres:postgres@localhost:54322/postgres"
+OLLAMA_BASE_URL=http://localhost:11434
+DOCUMENTS_DIR=./data/634/2025
+TABLE_NAME=documents
+EMBED_MODEL=mxbai-embed-large
+EMBED_DIM=1024
+
+# Оптимизированные настройки чанков
+CHUNK_SIZE=1024
+CHUNK_OVERLAP=256
+MIN_CHUNK_LENGTH=100
+
+# Производительность для мощной системы
+BATCH_SIZE=20
+NUM_WORKERS=8
+ENABLE_OCR=true
+
+# OCR оптимизации
+OCR_BATCH_SIZE=10
+OCR_WORKERS=4
+OCR_QUALITY_THRESHOLD=0.3
+
+# Дополнительные оптимизации
+OLLAMA_TIMEOUT=300
+DB_BATCH_SIZE=150
+SKIP_VALIDATION=false

@@ -24,7 +24,7 @@ class SimpleLLMService:
     
     def __init__(self, 
                  ollama_url: str = "http://localhost:11434",
-                 model: str = "llama3.2:3b",
+                 model: str = "llama3:8b-instruct-q4_K_M",
                  timeout: int = 60):
         """Initialize simple LLM service"""
         self.ollama_url = ollama_url.rstrip('/')

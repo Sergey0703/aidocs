@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 """
-Hybrid RAG System - Best of Both Worlds
+Hybrid RAG System - BUTTON FIXED VERSION
 Smart entity extraction + Simple vector search + Content filtering
+BUTTON COMPLETELY HIDDEN DURING SEARCH
 """
 
 import streamlit as st
@@ -74,6 +75,13 @@ def init_session_state():
         st.session_state.search_results = None
     if "search_in_progress" not in st.session_state:
         st.session_state.search_in_progress = False
+    if "auto_search_triggered" not in st.session_state:
+        st.session_state.auto_search_triggered = False
+
+def on_query_change():
+    """Callback when query text changes (Enter pressed)"""
+    if st.session_state.main_query and st.session_state.main_query.strip():
+        st.session_state.auto_search_triggered = True
 
 @st.cache_resource
 def initialize_services():
@@ -125,7 +133,7 @@ def get_extraction_llm():
         from llama_index.llms.ollama import Ollama
         
         return Ollama(
-            model="llama3.2:3b",
+            model="llama3:8b-instruct-q4_K_M",  #"llama3.2:3b",
             base_url="http://localhost:11434",
             request_timeout=30,
             additional_kwargs={
@@ -413,7 +421,7 @@ def main():
     init_session_state()
     
     # Header
-    st.markdown('<h1 class="main-header">?? Hybrid RAG System</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">Hybrid RAG System</h1>', unsafe_allow_html=True)
     st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Smart Entity Extraction + Simple Vector Search = Best Results</p>', unsafe_allow_html=True)
     
     # Initialize services
@@ -421,7 +429,7 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.header("?? System Info")
+        st.header("System Info")
         
         status = check_service_status_cached()
         
@@ -440,19 +448,19 @@ def main():
         
         st.markdown("---")
         
-        st.header("?? Hybrid Features")
+        st.header("Hybrid Features")
         st.markdown("""
         **Best of Both Worlds:**
-        - ?? **Smart**: LLM entity extraction
-        - ? **Fast**: Single-pass vector search  
-        - ?? **Accurate**: Content filtering
-        - ?? **Consistent**: Same entity = same results
-        - ??? **Reliable**: Fallback mechanisms
+        - Smart: LLM entity extraction
+        - Fast: Single-pass vector search  
+        - Accurate: Content filtering
+        - Consistent: Same entity = same results
+        - Reliable: Fallback mechanisms
         """)
         
         st.markdown("---")
         
-        st.header("?? Test Queries")
+        st.header("Test Queries")
         examples = [
             "John Nolan",
             "tell me about John Nolan", 
@@ -470,23 +478,39 @@ def main():
     
     with col1:
         current_query = st.text_input(
-            "?? Enter your question:",
+            "Enter your question:",
             value=st.session_state.get("example_query", ""),
-            placeholder="e.g., tell me about John Nolan",
-            key="main_query"
+            placeholder="e.g., tell me about John Nolan (press Enter to search)",
+            key="main_query",
+            on_change=on_query_change
         )
     
     with col2:
-        search_disabled = st.session_state.search_in_progress or not current_query.strip()
-        search_button = st.button(
-            "?? Search", 
-            type="primary", 
-            use_container_width=True,
-            disabled=search_disabled
-        )
+        # FIXED: Button alignment and complete hiding during search
+        st.markdown("") # Empty line
+        st.markdown("") # Empty line  
+        
+        # Create empty container for button
+        button_container = st.empty()
+        
+        # Show button or hide it completely
+        if st.session_state.search_in_progress:
+            # COMPLETELY HIDE BUTTON during search - show nothing
+            button_container.empty()
+            search_button = False
+        else:
+            # Show button when not searching
+            with button_container.container():
+                search_disabled = not current_query.strip()
+                search_button = st.button(
+                    "Search", 
+                    type="primary", 
+                    use_container_width=True,
+                    disabled=search_disabled
+                )
     
     # Settings
-    with st.expander("?? Advanced Settings"):
+    with st.expander("Advanced Settings"):
         col1, col2 = st.columns(2)
         with col1:
             show_extraction = st.checkbox("Show entity extraction", value=True)
@@ -495,22 +519,26 @@ def main():
             show_metrics = st.checkbox("Show performance metrics", value=True)
             show_sources = st.checkbox("Show detailed sources", value=True)
     
-    # Search processing
+    # Check for auto-search trigger (Enter key pressed)
+    auto_search = st.session_state.get("auto_search_triggered", False)
+    if auto_search:
+        st.session_state.auto_search_triggered = False  # Reset flag
+        search_button = True  # Trigger search automatically
+    
+    # FIXED: Search processing - button completely hidden during search
     if search_button and current_query.strip():
-        
-        if st.session_state.search_in_progress:
-            st.warning("? Search already in progress...")
-            return
         
         if current_query.strip() == st.session_state.last_query and st.session_state.search_results:
             st.info("?? Showing cached results for same query")
         else:
+            # Set search in progress - this will HIDE the button completely
             st.session_state.search_in_progress = True
             st.session_state.last_query = current_query.strip()
             
             if "example_query" in st.session_state:
                 st.session_state.example_query = ""
             
+            # Start search (button is now completely hidden)
             try:
                 result = asyncio.run(run_hybrid_search(vector_service, llm_service, current_query.strip()))
                 st.session_state.search_results = result
@@ -521,7 +549,9 @@ def main():
                 result = None
             
             finally:
+                # Show button again after search completes
                 st.session_state.search_in_progress = False
+                st.rerun()  # Force rerun to show button again
     
     # Display results
     if st.session_state.search_performed and st.session_state.search_results:
@@ -531,10 +561,10 @@ def main():
         
         # Show entity extraction
         if show_extraction:
-            st.markdown(f'<div class="entity-box"><strong>?? Smart Extraction:</strong><br>Original: "{result["original_question"]}"<br>Extracted Entity: <strong>"{result["extracted_entity"]}"</strong><br>Required Terms: {result["required_terms"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="entity-box"><strong>Smart Extraction:</strong><br>Original: "{result["original_question"]}"<br>Extracted Entity: <strong>"{result["extracted_entity"]}"</strong><br>Required Terms: {result["required_terms"]}</div>', unsafe_allow_html=True)
         
         # Main answer
-        st.header("?? Answer")
+        st.header("Answer")
         
         if result["llm_response"].success:
             st.markdown(f'<div class="success-box">{result["llm_response"].content}</div>', unsafe_allow_html=True)
@@ -544,7 +574,7 @@ def main():
         
         # Performance metrics
         if show_metrics:
-            st.header("?? Performance Metrics")
+            st.header("Performance Metrics")
             
             col1, col2, col3, col4 = st.columns(4)
             
@@ -570,7 +600,7 @@ def main():
         
         # Debug information
         if show_debug:
-            st.header("?? Debug Information")
+            st.header("Debug Information")
             
             col1, col2 = st.columns(2)
             with col1:
@@ -589,7 +619,7 @@ def main():
         
         # Sources
         if result["filtered_results"]:
-            st.header(f"?? Sources ({len(result['filtered_results'])} documents)")
+            st.header(f"Sources ({len(result['filtered_results'])} documents)")
             
             # Special message for John Nolan
             if len(result["filtered_results"]) == 9 and "john" in result["extracted_entity"].lower() and "nolan" in result["extracted_entity"].lower():
@@ -616,14 +646,20 @@ def main():
                     
                     if show_sources:
                         st.markdown("**Full Content:**")
-                        st.text_area("", doc.full_content, height=100, key=f"content_{i}_{int(time.time())}")
+                        st.text_area(
+                            "Full document content", 
+                            doc.full_content, 
+                            height=100, 
+                            key=f"content_{i}_{int(time.time())}",
+                            label_visibility="collapsed"
+                        )
         
         else:
             st.warning("? No relevant documents found after filtering")
             st.info("Try rephrasing your query or using different keywords")
         
         # Clear button
-        if st.button("??? Clear Results", key="clear_results"):
+        if st.button("Clear Results", key="clear_results"):
             st.session_state.search_performed = False
             st.session_state.search_results = None
             st.session_state.last_query = ""
@@ -633,7 +669,7 @@ def main():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; font-size: 0.9rem;">
-        ?? Hybrid RAG System - Smart Extraction + Simple Search = Consistent Results<br>
+        Hybrid RAG System - Smart Extraction + Simple Search = Consistent Results<br>
         Built with Streamlit - Powered by LlamaIndex & Ollama
     </div>
     """, unsafe_allow_html=True)
