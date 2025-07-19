@@ -9,6 +9,20 @@ import time
 from datetime import datetime, timedelta
 
 
+def clean_json_recursive(obj):
+    """Recursively clean null bytes from all strings in JSON-like structure"""
+    if isinstance(obj, dict):
+        return {k: clean_json_recursive(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_json_recursive(v) for v in obj]
+    elif isinstance(obj, str):
+        # Remove null bytes and limit string length
+        cleaned = obj.replace('\u0000', '').replace('\x00', '')
+        return cleaned[:1000]  # Limit metadata string length
+    else:
+        return obj
+
+
 def clean_problematic_node(node):
     """
     Clean problematic metadata and content from a node
@@ -30,8 +44,8 @@ def clean_problematic_node(node):
         # Clean problematic characters from content
         content = cleaned_node.get_content()
         
-        # Remove null bytes and other problematic characters
-        content = content.replace('\x00', '').replace('\x01', '').replace('\x02', '')
+        # Remove null bytes (\u0000) and other problematic characters - ??????? ???????????!
+        content = content.replace('\u0000', '').replace('\x00', '').replace('\x01', '').replace('\x02', '')
         
         # Remove control characters (except newlines and tabs)
         cleaned_content = ''.join(char for char in content 
@@ -45,13 +59,8 @@ def clean_problematic_node(node):
         cleaned_node.text = cleaned_content
         cleaned_node.metadata['text'] = cleaned_content
         
-        # Clean metadata values
-        for key, value in cleaned_node.metadata.items():
-            if isinstance(value, str):
-                # Remove problematic characters from metadata strings
-                cleaned_value = ''.join(char for char in value 
-                                      if ord(char) >= 32 or char in '\n\t\r')
-                cleaned_node.metadata[key] = cleaned_value[:1000]  # Limit metadata length
+        # Clean metadata values recursively (??? ??????!)
+        cleaned_node.metadata = clean_json_recursive(cleaned_node.metadata)
         
         # Add warning flag
         cleaned_node.metadata['cleaned'] = True
