@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 File utilities module for RAG Document Indexer
-Handles safe file reading with encoding detection, error handling, and failed files tracking
+Handles safe file reading with encoding detection, error handling, and basic file scanning
 """
 
 import os
@@ -23,7 +23,7 @@ def clean_content_from_null_bytes(content):
     if not isinstance(content, str):
         return content
     
-    # Remove null bytes (\u0000) and other problematic characters - ?????????? ?????!
+    # Remove null bytes (\u0000) and other problematic characters - ??????? ???????????!
     content = content.replace('\u0000', '').replace('\x00', '').replace('\x01', '').replace('\x02', '')
     
     # Remove control characters (except newlines and tabs)
@@ -48,34 +48,30 @@ def safe_read_file(file_path, max_size=50*1024*1024):
         # Check file size first
         file_size = os.path.getsize(file_path)
         if file_size > max_size:
-            print(f"   WARNING: Skipping large file {file_path} ({file_size/1024/1024:.1f}MB)")
             return None, "FILE_TOO_LARGE"
         
         if file_size == 0:
-            print(f"   WARNING: Skipping empty file {file_path}")
             return None, "EMPTY_FILE"
         
         # Try UTF-8 first (standard for English)
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                # ?????: ??????? ?? null bytes!
+                # ????: ??????? ?? null bytes!
                 content = clean_content_from_null_bytes(content)
                 if content.strip():
-                    print(f"   SUCCESS: Read {file_path} with UTF-8")
                     return content, None
         except UnicodeDecodeError:
             # Fallback to Latin-1 for older English files
             try:
                 with open(file_path, 'r', encoding='latin-1') as f:
                     content = f.read()
-                    # ?????: ??????? ?? null bytes!
+                    # ????: ??????? ?? null bytes!
                     content = clean_content_from_null_bytes(content)
                     if content.strip():
-                        print(f"   SUCCESS: Read {file_path} with Latin-1")
                         return content, "LATIN1_FALLBACK"
-            except Exception as e:
-                print(f"   WARNING: Error reading {file_path} with Latin-1: {e}")
+            except Exception:
+                pass
         
         # Last resort: binary mode with forced conversion
         try:
@@ -85,22 +81,62 @@ def safe_read_file(file_path, max_size=50*1024*1024):
                 content = content.replace('\ufffd', ' ')  # Remove replacement chars
                 content = ''.join(c for c in content if c.isprintable() or c.isspace())
                 
-                # ?????: ??????? ?? null bytes!
+                # ????: ??????? ?? null bytes!
                 content = clean_content_from_null_bytes(content)
                 
                 if content.strip():
-                    print(f"   WARNING: Forcefully read {file_path} with character replacement")
                     return content, "FORCED_DECODE"
                 
-        except Exception as e:
-            print(f"   ERROR: Complete failure reading {file_path}: {e}")
-            return None, f"READ_ERROR_{type(e).__name__}"
+        except Exception:
+            pass
         
         return None, "NO_READABLE_CONTENT"
         
     except Exception as e:
-        print(f"   ERROR: Fatal error accessing {file_path}: {e}")
         return None, f"FATAL_ERROR_{type(e).__name__}"
+
+
+def scan_files_in_directory(directory, recursive=True):
+    """
+    Simple scan of directory to get all files
+    
+    Args:
+        directory: Directory to scan
+        recursive: Whether to scan recursively
+    
+    Returns:
+        list: List of all file paths in directory
+    """
+    all_files = []
+    
+    try:
+        if recursive:
+            for root, dirs, filenames in os.walk(directory):
+                for filename in filenames:
+                    file_path = os.path.join(root, filename)
+                    all_files.append(file_path)
+        else:
+            for item in os.listdir(directory):
+                item_path = os.path.join(directory, item)
+                if os.path.isfile(item_path):
+                    all_files.append(item_path)
+    except Exception as e:
+        print(f"ERROR: Could not scan directory {directory}: {e}")
+    
+    return all_files
+
+
+def normalize_file_path(file_path):
+    """
+    Normalize file path for comparison
+    
+    Args:
+        file_path: File path to normalize
+    
+    Returns:
+        str: Normalized file path
+    """
+    return os.path.normpath(os.path.abspath(file_path))
 
 
 def validate_file_path(file_path):
@@ -221,205 +257,103 @@ def scan_directory_files(directory, recursive=True):
         return {'error': str(e)}
 
 
-class SafeDirectoryReader(SimpleDirectoryReader):
+class SimpleDirectoryLoader:
     """
-    Enhanced SimpleDirectoryReader with safe file reading and failed files tracking
-    Handles encoding issues gracefully and tracks all failed files with detailed reasons
+    Simple directory loader that uses standard SimpleDirectoryReader
+    No complex tracking - just basic loading with standard statistics
     """
     
-    def __init__(self, *args, **kwargs):
-        """Initialize with enhanced error tracking"""
-        super().__init__(*args, **kwargs)
-        self.failed_files = []
-        self.failed_files_detailed = []  # NEW: Detailed failed files list
-        self.encoding_issues = []
-        self.successful_files = []
+    def __init__(self, input_dir, recursive=True):
+        """Initialize with directory path"""
+        self.input_dir = input_dir
+        self.recursive = recursive
+        self.documents_loaded = 0
+        self.loading_time = 0
     
-    def load_file(self, input_file, metadata=None, extra_info=None):
+    def load_data(self):
         """
-        Override load_file to handle encoding issues safely and track failed files
-        
-        Args:
-            input_file: Path to file to load
-            metadata: Optional metadata dict
-            extra_info: Optional extra info dict
+        Load data using standard SimpleDirectoryReader
         
         Returns:
-            list: List of Document objects (empty if failed)
+            tuple: (documents, loading_stats, empty_failed_list)
         """
-        file_path_str = str(input_file)
-        file_name = os.path.basename(file_path_str)
+        print("?? Loading documents with SimpleDirectoryReader...")
+        
+        # Use standard SimpleDirectoryReader
+        reader = SimpleDirectoryReader(
+            input_dir=self.input_dir,
+            recursive=self.recursive
+        )
+        
+        import time
+        start_time = time.time()
         
         try:
-            # Validate file first
-            is_valid, error_msg = validate_file_path(input_file)
-            if not is_valid:
-                failed_detail = f"{file_name} - VALIDATION_ERROR: {error_msg}"
-                self.failed_files.append((input_file, error_msg))
-                self.failed_files_detailed.append(failed_detail)
-                return []
-            
-            # Use our safe file reading function
-            content, error = safe_read_file(input_file)
-            
-            if content is None:
-                # Determine detailed error reason
-                if error == "FILE_TOO_LARGE":
-                    failed_detail = f"{file_name} - FILE_TOO_LARGE (>50MB)"
-                elif error == "EMPTY_FILE":
-                    failed_detail = f"{file_name} - EMPTY_FILE (0 bytes)"
-                elif error == "NO_READABLE_CONTENT":
-                    failed_detail = f"{file_name} - NO_READABLE_CONTENT"
-                elif error.startswith("READ_ERROR"):
-                    failed_detail = f"{file_name} - {error}"
-                elif error.startswith("FATAL_ERROR"):
-                    failed_detail = f"{file_name} - {error}"
-                else:
-                    failed_detail = f"{file_name} - UNKNOWN_ERROR: {error}"
-                
-                self.failed_files.append((input_file, error))
-                self.failed_files_detailed.append(failed_detail)
-                return []
-            
-            # Check if content is meaningful
-            content_length = len(content.strip())
-            if content_length == 0:
-                failed_detail = f"{file_name} - EMPTY_CONTENT (no text after cleanup)"
-                self.failed_files.append((input_file, "EMPTY_CONTENT"))
-                self.failed_files_detailed.append(failed_detail)
-                return []
-            elif content_length < 10:
-                failed_detail = f"{file_name} - TOO_SHORT ({content_length} chars)"
-                self.failed_files.append((input_file, "TOO_SHORT"))
-                self.failed_files_detailed.append(failed_detail)
-                return []
-            
-            # Create metadata
-            if metadata is None:
-                metadata = {}
-            
-            # Add encoding info if file had issues
-            if error in ["LATIN1_FALLBACK", "FORCED_DECODE"]:
-                metadata['encoding_warning'] = True
-                metadata['encoding_method'] = error.lower()
-                encoding_detail = f"{file_name} - ENCODING_ISSUE: {error}"
-                self.encoding_issues.append((input_file, error))
-            
-            # Clean file paths from null bytes
-            clean_file_path = clean_content_from_null_bytes(str(input_file))
-            clean_file_name = clean_content_from_null_bytes(os.path.basename(str(input_file)))
-            
-            # Add file information
-            file_info = get_file_info(input_file)
-            metadata.update({
-                'file_path': clean_file_path,
-                'file_name': clean_file_name,
-                'file_size': file_info.get('size', 0),
-                'file_type': 'text',
-                'content_length': content_length
-            })
-            
-            # Clean metadata recursively
-            cleaned_metadata = self._clean_metadata_recursive(metadata)
-            
-            # Create document with cleaned content and metadata
-            doc = Document(text=content, metadata=cleaned_metadata)
-            self.successful_files.append(str(input_file))
-            return [doc]
-            
+            documents = reader.load_data()
+            self.documents_loaded = len(documents)
+            print(f"? Successfully loaded {self.documents_loaded} documents")
         except Exception as e:
-            error_detail = f"{file_name} - LOAD_EXCEPTION: {type(e).__name__}: {str(e)}"
-            print(f"   ERROR: Failed to load {input_file}: {e}")
-            self.failed_files.append((input_file, f"LOAD_ERROR_{type(e).__name__}"))
-            self.failed_files_detailed.append(error_detail)
-            return []
-    
-    def _clean_metadata_recursive(self, obj):
-        """
-        Recursively clean metadata from null bytes
+            print(f"? Error during document loading: {e}")
+            documents = []
+            self.documents_loaded = 0
         
-        Args:
-            obj: Object to clean (dict, list, str, etc.)
+        self.loading_time = time.time() - start_time
         
-        Returns:
-            Cleaned object
-        """
-        if isinstance(obj, dict):
-            return {k: self._clean_metadata_recursive(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._clean_metadata_recursive(v) for v in obj]
-        elif isinstance(obj, str):
-            # Remove null bytes and limit string length
-            cleaned = obj.replace('\u0000', '').replace('\x00', '')
-            return cleaned[:1000]  # Limit metadata string length
-        else:
-            return obj
+        # Basic statistics (no failed files tracking at this stage)
+        loading_stats = {
+            'successful_files': self.documents_loaded,  # Approximate
+            'failed_files': 0,  # Will be determined later from database
+            'encoding_issues': 0,  # Will be determined later
+            'total_attempted': 0,  # Will be determined later from directory scan
+            'failed_files_detailed': []  # Will be filled later
+        }
+        
+        return documents, loading_stats, []  # Empty failed files list for now
     
     def get_loading_stats(self):
         """
-        Get statistics about the loading process
+        Get basic loading statistics
         
         Returns:
-            dict: Loading statistics with detailed failed files
+            dict: Basic loading statistics
         """
         return {
-            'successful_files': len(self.successful_files),
-            'failed_files': len(self.failed_files),
-            'encoding_issues': len(self.encoding_issues),
-            'total_attempted': len(self.successful_files) + len(self.failed_files),
-            'failed_files_detailed': self.failed_files_detailed.copy()  # NEW: Detailed list
+            'successful_files': self.documents_loaded,
+            'failed_files': 0,  # To be determined later
+            'encoding_issues': 0,  # To be determined later
+            'total_attempted': 0,  # To be determined later
+            'failed_files_detailed': []
         }
     
     def get_failed_files_list(self):
         """
-        Get detailed list of failed files for logging
+        Get failed files list (empty for now)
         
         Returns:
-            list: List of failed files with detailed reasons
+            list: Empty list (failed files will be determined later)
         """
-        return self.failed_files_detailed.copy()
+        return []
     
     def print_loading_summary(self):
-        """Print a summary of the loading process"""
-        stats = self.get_loading_stats()
-        
-        print(f"\nFile Loading Summary:")
-        print(f"  Successful: {stats['successful_files']}")
-        print(f"  Failed: {stats['failed_files']}")
-        print(f"  Encoding issues: {stats['encoding_issues']}")
-        print(f"  Total attempted: {stats['total_attempted']}")
-        
-        if self.failed_files:
-            print(f"\nFirst 5 failed files:")
-            for i, (file_path, error) in enumerate(self.failed_files[:5]):
-                print(f"  - {os.path.basename(file_path)}: {error}")
-            if len(self.failed_files) > 5:
-                print(f"  ... and {len(self.failed_files) - 5} more")
-        
-        if self.encoding_issues:
-            print(f"\nFiles with encoding issues:")
-            for file_path, error in self.encoding_issues[:3]:
-                print(f"  - {os.path.basename(file_path)}: {error}")
-            if len(self.encoding_issues) > 3:
-                print(f"  ... and {len(self.encoding_issues) - 3} more")
-        
-        # Save failed files to log if any
-        if self.failed_files_detailed:
-            print(f"\n?? Detailed failed files list will be saved to logs")
+        """Print a basic loading summary"""
+        print(f"\n?? Document Loading Summary:")
+        print(f"  ?? Documents loaded: {self.documents_loaded}")
+        print(f"  ?? Loading time: {self.loading_time:.2f} seconds")
+        print(f"  ?? File-level analysis will be performed after database operations")
 
 
 def create_safe_reader(documents_dir, recursive=True):
     """
-    Create a SafeDirectoryReader instance with common settings
+    Create a SimpleDirectoryLoader instance
     
     Args:
         documents_dir: Directory to read from
         recursive: Whether to read recursively
     
     Returns:
-        SafeDirectoryReader: Configured reader instance
+        SimpleDirectoryLoader: Simple loader instance
     """
-    return SafeDirectoryReader(
+    return SimpleDirectoryLoader(
         input_dir=documents_dir,
         recursive=recursive
     )

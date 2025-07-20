@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Main RAG Document Indexer
-Modular version with clean architecture, robust error handling, and failed files logging
+Modular version with clean architecture, robust error handling, and end-to-end file analysis
 """
 
 import logging
@@ -76,31 +76,34 @@ def initialize_components(config):
 
 def load_and_process_documents(config, progress_tracker):
     """
-    Load and process all documents with failed files tracking
+    Load and process all documents using simple approach
     
     Args:
         config: Configuration object
         progress_tracker: Progress tracker instance
     
     Returns:
-        tuple: (text_documents, image_documents, reader_stats, failed_files_list)
+        tuple: (text_documents, image_documents, basic_stats)
     """
     print(f"Loading documents from folder: {config.DOCUMENTS_DIR}")
     progress_tracker.add_checkpoint("Document loading started")
     
-    # Load text documents with enhanced tracking
+    # Load text documents with simple approach
+    print("\n?? Loading text documents...")
     reader = create_safe_reader(
         config.DOCUMENTS_DIR, 
         recursive=True
     )
-    text_documents = reader.load_data()
+    
+    # Simple loading - no complex tracking yet
+    text_documents, basic_stats, _ = reader.load_data()
     
     progress_tracker.add_checkpoint("Text documents loaded", len(text_documents))
     
     # Load images with OCR
     image_documents = []
     if config.ENABLE_OCR:
-        print("\nProcessing images with OCR...")
+        print("\n??? Processing images with OCR...")
         try:
             # Check OCR availability
             ocr_available, missing_libs = check_ocr_availability()
@@ -118,12 +121,10 @@ def load_and_process_documents(config, progress_tracker):
             print(f"WARNING: OCR processing failed: {e}")
             print("Continuing without OCR...")
     
-    # Get reader statistics and failed files list
-    reader_stats = reader.get_loading_stats()
-    failed_files_list = reader.get_failed_files_list()
+    # Print basic loading summary
     reader.print_loading_summary()
     
-    return text_documents, image_documents, reader_stats, failed_files_list
+    return text_documents, image_documents, basic_stats
 
 
 def create_and_filter_chunks(documents, config, node_parser, progress_tracker):
@@ -168,8 +169,64 @@ def create_and_filter_chunks(documents, config, node_parser, progress_tracker):
     return valid_nodes, invalid_nodes, node_stats
 
 
+def analyze_final_results(config, db_manager, log_dir):
+    """
+    Perform end-to-end analysis: compare directory with database to find missing files
+    
+    Args:
+        config: Configuration object
+        db_manager: Database manager instance
+        log_dir: Directory for log files
+    
+    Returns:
+        dict: Comprehensive analysis results
+    """
+    print(f"\n{'='*60}")
+    print("END-TO-END FILE ANALYSIS")
+    print(f"{'='*60}")
+    
+    # Perform comprehensive directory vs database comparison
+    analysis_results = db_manager.analyze_directory_vs_database(
+        config.DOCUMENTS_DIR, 
+        recursive=True
+    )
+    
+    # Extract results
+    total_files = analysis_results['total_files_in_directory']
+    files_in_db = analysis_results['files_successfully_in_db']
+    missing_files = analysis_results['files_missing_from_db']
+    missing_files_detailed = analysis_results['missing_files_detailed']
+    success_rate = analysis_results['success_rate']
+    
+    print(f"\n?? Final Analysis Results:")
+    print(f"  ?? Total files in directory: {total_files}")
+    print(f"  ? Files successfully in database: {files_in_db}")
+    print(f"  ? Files missing from database: {missing_files}")
+    print(f"  ?? Success rate: {success_rate:.1f}%")
+    
+    # Save failed files details to log if any missing
+    if missing_files_detailed:
+        print(f"\n?? Saving {len(missing_files_detailed)} missing files details to log...")
+        log_file_path = save_failed_files_details(missing_files_detailed, log_dir)
+        if log_file_path:
+            print(f"   ? Missing files details saved to: {log_file_path}")
+        else:
+            print(f"   ?? WARNING: Could not save missing files details")
+        
+        # Show first few missing files
+        print(f"\n? First 5 missing files:")
+        for i, missing_detail in enumerate(missing_files_detailed[:5]):
+            print(f"  {i+1}. {missing_detail}")
+        if len(missing_files_detailed) > 5:
+            print(f"  ... and {len(missing_files_detailed) - 5} more (see detailed log)")
+    else:
+        print(f"\n? All files successfully processed - no missing files!")
+    
+    return analysis_results
+
+
 def main():
-    """Main function orchestrating the entire indexing process with failed files logging"""
+    """Main function orchestrating the entire indexing process with end-to-end analysis"""
     
     # Setup
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -198,12 +255,11 @@ def main():
         'chunks_created': 0,
         'embeddings_generated': 0,
         'records_saved': 0,
-        'encoding_issues': 0,
-        'failed_files': 0
+        'encoding_issues': 0
     }
     
-    # Failed files tracking
-    failed_files_list = []
+    # Analysis results (will be filled at the end)
+    final_analysis = None
     
     try:
         with InterruptHandler() as interrupt_handler:
@@ -261,11 +317,11 @@ def main():
                 return
             
             # ===============================================================
-            # 3. LOAD DOCUMENTS WITH FAILED FILES TRACKING
+            # 3. LOAD DOCUMENTS (SIMPLE APPROACH)
             # ===============================================================
             
             try:
-                text_documents, image_documents, reader_stats, failed_files_list = load_and_process_documents(
+                text_documents, image_documents, basic_stats = load_and_process_documents(
                     config, progress_tracker
                 )
             except Exception as e:
@@ -276,26 +332,13 @@ def main():
             documents = text_documents + image_documents
             stats['documents_loaded'] = len(text_documents)
             stats['images_processed'] = len(image_documents)
-            stats['encoding_issues'] = reader_stats['encoding_issues']
-            stats['failed_files'] = reader_stats['failed_files']
             
             load_time = time.time() - start_time
-            print(f"\nSuccessfully loaded {len(documents)} document objects in {load_time:.2f} seconds.")
-            print(f"  Text documents: {len(text_documents)}")
-            print(f"  Image documents: {len(image_documents)}")
-            print(f"  Encoding issues: {stats['encoding_issues']}")
-            print(f"  Failed files: {stats['failed_files']}")
-            
-            # SAVE FAILED FILES DETAILS TO LOG
-            if failed_files_list:
-                print(f"\n?? Saving {len(failed_files_list)} failed files details to log...")
-                log_file_path = save_failed_files_details(failed_files_list, log_dir)
-                if log_file_path:
-                    print(f"   Detailed failed files saved to: {log_file_path}")
-                else:
-                    print(f"   WARNING: Could not save failed files details")
-            else:
-                print(f"\n? No failed files to log")
+            print(f"\n?? Document Loading Results:")
+            print(f"  ?? Time elapsed: {load_time:.2f} seconds")
+            print(f"  ?? Text documents: {len(text_documents)}")
+            print(f"  ??? Image documents: {len(image_documents)}")
+            print(f"  ?? Total documents: {len(documents)}")
             
             if not documents:
                 print("ERROR: No documents found in the specified directory.")
@@ -340,7 +383,7 @@ def main():
             
             # Filter documents with content
             documents_with_content = []
-            failed_documents = []
+            documents_without_content = []
             
             for doc in documents:
                 file_name = doc.metadata.get('file_name', 'Unknown File')
@@ -348,21 +391,21 @@ def main():
                 text_content = doc.text.strip()
                 
                 if not text_content:
-                    failed_documents.append(f"{file_path} - EMPTY (no text extracted)")
+                    documents_without_content.append(f"{file_path} - EMPTY (no text extracted)")
                 elif len(text_content) < config.MIN_CHUNK_LENGTH:
-                    failed_documents.append(f"{file_path} - TOO SHORT ({len(text_content)} chars)")
+                    documents_without_content.append(f"{file_path} - TOO SHORT ({len(text_content)} chars)")
                 else:
                     documents_with_content.append(doc)
             
-            if failed_documents:
-                print(f"Found {len(failed_documents)} problematic documents.")
-                stats['failed_files'] += len(failed_documents)
+            if documents_without_content:
+                print(f"?? Found {len(documents_without_content)} documents without sufficient content.")
+                print("   These documents loaded but contain inadequate text for processing.")
             
             if not documents_with_content:
                 print("ERROR: No documents with sufficient text content found. Exiting.")
                 return
             
-            print(f"Processing {len(documents_with_content)} documents with valid content.")
+            print(f"?? Processing {len(documents_with_content)} documents with valid content.")
             
             # Create chunks
             valid_nodes, invalid_nodes, node_stats = create_and_filter_chunks(
@@ -386,7 +429,7 @@ def main():
             # 6. BATCH PROCESSING
             # ===============================================================
             
-            print(f"\nStarting batch processing...")
+            print(f"\n?? Starting batch processing...")
             batch_settings = config.get_batch_settings()
             
             # Process all batches
@@ -404,7 +447,14 @@ def main():
             progress_tracker.add_checkpoint("Processing completed", batch_results['total_saved'])
             
             # ===============================================================
-            # 7. FINAL RESULTS AND CLEANUP
+            # 7. END-TO-END ANALYSIS (NEW!)
+            # ===============================================================
+            
+            # Perform comprehensive analysis AFTER everything is done
+            final_analysis = analyze_final_results(config, db_manager, log_dir)
+            
+            # ===============================================================
+            # 8. FINAL RESULTS AND CLEANUP
             # ===============================================================
             
             # Print final results
@@ -418,23 +468,23 @@ def main():
                 f"{log_dir}/indexing_errors.log"
             )
             
-            # Create and save run summary WITH FAILED FILES
+            # Create and save run summary WITH END-TO-END ANALYSIS
             end_time = time.time()
             summary = create_run_summary(start_time, end_time, {
                 **stats,
                 **batch_results,
                 'success': success
-            }, failed_files_list)  # ???????? FAILED FILES LIST!
+            }, final_analysis['missing_files_detailed'] if final_analysis else [])
             
             summary_file = f"{log_dir}/run_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             if safe_file_write(summary_file, summary):
-                print(f"Run summary saved to: {summary_file}")
+                print(f"?? Run summary saved to: {summary_file}")
             
             # Print performance summary
             performance_monitor.print_performance_summary()
             progress_tracker.print_progress_summary()
             
-            # Final status report WITH FAILED FILES
+            # Final status report WITH END-TO-END ANALYSIS
             status_reporter.add_section("Final Statistics", {
                 "Total processing time": f"{end_time - start_time:.2f}s",
                 "Documents loaded": stats['documents_loaded'],
@@ -445,12 +495,15 @@ def main():
                 "Processing speed": f"{batch_results['avg_speed']:.2f} chunks/sec"
             })
             
-            status_reporter.add_section("Failed Files Analysis", {
-                "Total failed files": len(failed_files_list),
-                "Failed files details": f"Saved to {log_dir}/failed_files_details.log" if failed_files_list else "No failed files",
-                "Encoding issues": stats['encoding_issues'],
-                "Processing failures": batch_results['total_failed_chunks']
-            })
+            # END-TO-END ANALYSIS SECTION
+            if final_analysis:
+                status_reporter.add_section("End-to-End File Analysis", {
+                    "Total files in directory": final_analysis['total_files_in_directory'],
+                    "Files successfully in database": final_analysis['files_successfully_in_db'],
+                    "Files missing from database": final_analysis['files_missing_from_db'],
+                    "End-to-end success rate": f"{final_analysis['success_rate']:.1f}%",
+                    "Missing files details": f"Saved to {log_dir}/failed_files_details.log" if final_analysis['missing_files_detailed'] else "No missing files"
+                })
             
             status_reporter.add_section("Data Loss Analysis", {
                 "Total chunks attempted": stats['chunks_created'],
@@ -460,17 +513,9 @@ def main():
                 "Invalid chunks (filtered)": f"See invalid_chunks_report.log"
             })
             
-            status_reporter.add_section("File Processing Summary", {
-                "Total files attempted": reader_stats['total_attempted'],
-                "Files successfully loaded": reader_stats['successful_files'],
-                "Files with encoding issues": reader_stats['encoding_issues'],
-                "Completely failed files": reader_stats['failed_files'],
-                "Files partially processed": "See logs for details"
-            })
-            
             status_reporter.add_section("Quality Metrics", {
+                "Processing pipeline errors": final_analysis['files_missing_from_db'] if final_analysis else 0,
                 "Encoding issues": stats['encoding_issues'],
-                "Failed files": stats['failed_files'],
                 "Failed chunks": batch_results['total_failed_chunks'],
                 "Failed batches": batch_results['failed_batches'],
                 "Embedding errors": batch_results['total_embedding_errors']
@@ -481,15 +526,15 @@ def main():
             return success
     
     except KeyboardInterrupt:
-        print("\n\nWARNING: Indexing interrupted by user.")
+        print("\n\n?? WARNING: Indexing interrupted by user.")
         if 'stats' in locals():
-            print(f"INFO: Partial results: {stats.get('records_saved', 0)} chunks saved")
-        print("INFO: No data was corrupted - safe to restart.")
+            print(f"?? INFO: Partial results: {stats.get('records_saved', 0)} chunks saved")
+        print("?? INFO: No data was corrupted - safe to restart.")
         sys.exit(1)
     
     except Exception as e:
-        print(f"\n\nERROR: FATAL ERROR: {e}")
-        print("INFO: Check your configuration and try again.")
+        print(f"\n\n? ERROR: FATAL ERROR: {e}")
+        print("?? INFO: Check your configuration and try again.")
         
         # Try to save error information
         if 'log_dir' in locals():
@@ -503,9 +548,9 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\nWARNING: Indexing interrupted by user.")
-        print("INFO: Safe to restart.")
+        print("\n\n?? WARNING: Indexing interrupted by user.")
+        print("?? INFO: Safe to restart.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n\nERROR: FATAL ERROR: {e}")
+        print(f"\n\n? ERROR: FATAL ERROR: {e}")
         sys.exit(1)

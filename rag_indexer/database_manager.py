@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 Database management module for RAG Document Indexer
-Handles PostgreSQL operations, record checking, and safe deletion
+Handles PostgreSQL operations, record checking, safe deletion, and end-to-end file analysis
 """
 
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
@@ -33,6 +34,185 @@ def get_user_confirmation(prompt, default_no=True):
             return False
         else:
             print("Please enter 'y' for yes or 'n' for no (or press Enter for default)")
+
+
+def get_files_in_database(connection_string, table_name="documents"):
+    """
+    Get list of files that are actually stored in the database
+    
+    Args:
+        connection_string: PostgreSQL connection string
+        table_name: Name of the documents table
+    
+    Returns:
+        set: Set of file paths that exist in database
+    """
+    files_in_db = set()
+    
+    try:
+        with psycopg2.connect(connection_string) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Get all unique file paths from database
+                cur.execute(f"""
+                    SELECT DISTINCT metadata->>'file_path' as file_path,
+                                   metadata->>'file_name' as file_name
+                    FROM vecs.{table_name}
+                    WHERE metadata->>'file_path' IS NOT NULL
+                       OR metadata->>'file_name' IS NOT NULL
+                """)
+                
+                results = cur.fetchall()
+                
+                for row in results:
+                    file_path = row['file_path']
+                    file_name = row['file_name']
+                    
+                    # Add both file_path and file_name for comparison
+                    if file_path:
+                        # Normalize path for comparison
+                        normalized_path = os.path.normpath(os.path.abspath(file_path))
+                        files_in_db.add(normalized_path)
+                    
+                    if file_name:
+                        files_in_db.add(file_name)
+                
+                print(f"?? Found {len(files_in_db)} unique files in database")
+                
+    except Exception as e:
+        print(f"ERROR: Could not query database for files: {e}")
+    
+    return files_in_db
+
+
+def analyze_missing_file(file_path):
+    """
+    Analyze why a specific file is missing from database
+    
+    Args:
+        file_path: Path to the missing file
+    
+    Returns:
+        str: Detailed error description for why file didn't make it to database
+    """
+    file_name = os.path.basename(file_path)
+    
+    # Check basic file validity
+    if not os.path.exists(file_path):
+        return f"{file_name} - FILE_DELETED_AFTER_PROCESSING"
+    
+    if not os.path.isfile(file_path):
+        return f"{file_name} - NOT_A_FILE"
+    
+    if not os.access(file_path, os.R_OK):
+        return f"{file_name} - ACCESS_DENIED"
+    
+    # Check file size and basic properties
+    try:
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            return f"{file_name} - EMPTY_FILE (likely filtered out during processing)"
+        elif file_size > 50 * 1024 * 1024:  # 50MB
+            return f"{file_name} - FILE_TOO_LARGE ({file_size/1024/1024:.1f}MB, may have been skipped)"
+    except Exception as e:
+        return f"{file_name} - SIZE_CHECK_ERROR: {e}"
+    
+    # Check file extension
+    file_ext = os.path.splitext(file_path)[1].lower()
+    supported_extensions = {
+        '.txt', '.pdf', '.docx', '.doc', '.pptx', '.ppt',
+        '.xlsx', '.xls', '.csv', '.md', '.rtf', '.html', '.htm'
+    }
+    
+    if file_ext not in supported_extensions:
+        return f"{file_name} - UNSUPPORTED_EXTENSION: {file_ext}"
+    
+    # If we get here, the file looks processable but didn't make it to DB
+    # This could be due to:
+    # - Document loading failed
+    # - Chunk creation failed  
+    # - Embedding generation failed
+    # - Database insertion failed
+    # - Content too short/invalid after processing
+    
+    return f"{file_name} - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)"
+
+
+def compare_directory_with_database(directory_path, connection_string, table_name="documents", recursive=True):
+    """
+    Compare files in directory with files actually stored in database
+    
+    Args:
+        directory_path: Path to directory containing files
+        connection_string: PostgreSQL connection string
+        table_name: Name of the documents table
+        recursive: Whether to scan directory recursively
+    
+    Returns:
+        dict: Comprehensive comparison results
+    """
+    print(f"\n?? Performing end-to-end analysis: Directory vs Database")
+    
+    # Import here to avoid circular imports
+    from file_utils import scan_files_in_directory
+    
+    # Step 1: Get all files in directory
+    all_files_in_dir = scan_files_in_directory(directory_path, recursive)
+    
+    # Normalize all directory file paths
+    normalized_dir_files = set()
+    dir_file_mapping = {}  # normalized_path -> original_path
+    
+    for file_path in all_files_in_dir:
+        normalized_path = os.path.normpath(os.path.abspath(file_path))
+        normalized_dir_files.add(normalized_path)
+        dir_file_mapping[normalized_path] = file_path
+    
+    print(f"?? Total files in directory: {len(normalized_dir_files)}")
+    
+    # Step 2: Get all files in database
+    files_in_db = get_files_in_database(connection_string, table_name)
+    
+    # Step 3: Find files that are missing from database
+    missing_files = []
+    
+    for normalized_path in normalized_dir_files:
+        original_path = dir_file_mapping[normalized_path]
+        file_name = os.path.basename(original_path)
+        
+        # Check if this file exists in database (by normalized path or filename)
+        found_in_db = False
+        
+        if normalized_path in files_in_db:
+            found_in_db = True
+        elif file_name in files_in_db:
+            found_in_db = True
+        
+        if not found_in_db:
+            missing_files.append(original_path)
+    
+    print(f"? Files successfully in database: {len(normalized_dir_files) - len(missing_files)}")
+    print(f"? Files missing from database: {len(missing_files)}")
+    
+    # Step 4: Analyze why each missing file didn't make it to database
+    missing_files_detailed = []
+    
+    if missing_files:
+        print(f"?? Analyzing {len(missing_files)} missing files...")
+        
+        for file_path in missing_files:
+            error_detail = analyze_missing_file(file_path)
+            missing_files_detailed.append(error_detail)
+    
+    # Prepare comprehensive results
+    results = {
+        'total_files_in_directory': len(normalized_dir_files),
+        'files_successfully_in_db': len(normalized_dir_files) - len(missing_files),
+        'files_missing_from_db': len(missing_files),
+        'missing_files_detailed': missing_files_detailed,
+        'success_rate': ((len(normalized_dir_files) - len(missing_files)) / len(normalized_dir_files) * 100) if len(normalized_dir_files) > 0 else 0
+    }
+    
+    return results
 
 
 class DatabaseManager:
@@ -451,6 +631,24 @@ class DatabaseManager:
                 print(f"  NULL embeddings: {validation['null_embeddings']} records")
         
         print("="*50)
+    
+    def analyze_directory_vs_database(self, directory_path, recursive=True):
+        """
+        Perform end-to-end analysis comparing directory with database
+        
+        Args:
+            directory_path: Path to directory to analyze
+            recursive: Whether to scan recursively
+        
+        Returns:
+            dict: Analysis results
+        """
+        return compare_directory_with_database(
+            directory_path, 
+            self.connection_string, 
+            self.table_name, 
+            recursive
+        )
 
 
 def create_database_manager(connection_string, table_name="documents"):
