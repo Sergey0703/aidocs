@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Utility functions module for RAG Document Indexer
-Contains helper functions, formatters, and common utilities
+Contains helper functions, formatters, and common utilities with enhanced failed files logging
 """
 
 import os
@@ -11,6 +11,96 @@ import time
 import signal
 from datetime import datetime, timedelta
 from pathlib import Path
+
+
+def save_failed_files_details(failed_files_list, log_dir="./logs"):
+    """
+    Save complete list of failed files to dedicated log
+    
+    Args:
+        failed_files_list: List of failed files with details
+        log_dir: Directory for log files
+    
+    Returns:
+        str: Path to log file if successful, None otherwise
+    """
+    if not failed_files_list:
+        return None
+    
+    # Ensure log directory exists
+    if not ensure_directory_exists(log_dir):
+        print(f"WARNING: Could not create log directory {log_dir}")
+        return None
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_file = os.path.join(log_dir, "failed_files_details.log")
+    
+    try:
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n{'='*60}\n")
+            f.write(f"FAILED FILES REPORT - {timestamp}\n")
+            f.write(f"{'='*60}\n")
+            f.write(f"Total failed files: {len(failed_files_list)}\n")
+            f.write(f"{'*'*60}\n\n")
+            
+            for i, failed_file in enumerate(failed_files_list, 1):
+                f.write(f"{i:3d}. {failed_file}\n")
+            
+            f.write(f"\n{'*'*60}\n")
+            f.write(f"End of report - {len(failed_files_list)} files listed\n")
+            f.write(f"{'='*60}\n\n")
+        
+        print(f"? Failed files details saved to: {log_file}")
+        return log_file
+        
+    except Exception as e:
+        print(f"WARNING: Could not save failed files details: {e}")
+        return None
+
+
+def save_failed_files_details(failed_files_list, log_dir="./logs"):
+    """
+    Save complete list of failed files to dedicated log
+    
+    Args:
+        failed_files_list: List of failed files with details
+        log_dir: Directory for log files
+    
+    Returns:
+        str: Path to log file if successful, None otherwise
+    """
+    if not failed_files_list:
+        return None
+    
+    # Ensure log directory exists
+    if not ensure_directory_exists(log_dir):
+        print(f"WARNING: Could not create log directory {log_dir}")
+        return None
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_file = os.path.join(log_dir, "failed_files_details.log")
+    
+    try:
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n{'='*60}\n")
+            f.write(f"FAILED FILES REPORT - {timestamp}\n")
+            f.write(f"{'='*60}\n")
+            f.write(f"Total failed files: {len(failed_files_list)}\n")
+            f.write(f"{'*'*60}\n\n")
+            
+            for i, failed_file in enumerate(failed_files_list, 1):
+                f.write(f"{i:3d}. {failed_file}\n")
+            
+            f.write(f"\n{'*'*60}\n")
+            f.write(f"End of report - {len(failed_files_list)} files listed\n")
+            f.write(f"{'='*60}\n\n")
+        
+        print(f"? Failed files details saved to: {log_file}")
+        return log_file
+        
+    except Exception as e:
+        print(f"WARNING: Could not save failed files details: {e}")
+        return None
 
 
 def format_time(seconds):
@@ -433,7 +523,7 @@ def print_system_info():
         print("  WARNING: Low disk space!")
 
 
-def create_run_summary(start_time, end_time, stats):
+def create_run_summary(start_time, end_time, stats, failed_files_list=None):
     """
     Create a summary of the processing run
     
@@ -441,6 +531,7 @@ def create_run_summary(start_time, end_time, stats):
         start_time: Start timestamp
         end_time: End timestamp
         stats: Processing statistics dict
+        failed_files_list: List of failed files (optional)
     
     Returns:
         str: Formatted summary
@@ -455,6 +546,7 @@ def create_run_summary(start_time, end_time, stats):
     summary.append(f"Duration: {format_time(duration)}")
     summary.append("")
     
+    # Main statistics
     for key, value in stats.items():
         if isinstance(value, float):
             summary.append(f"{key}: {value:.2f}")
@@ -462,6 +554,29 @@ def create_run_summary(start_time, end_time, stats):
             summary.append(f"{key}: {format_number(value)}")
         else:
             summary.append(f"{key}: {value}")
+    
+    # Failed files summary
+    if failed_files_list is not None:
+        summary.append("")
+        summary.append("FAILED FILES SUMMARY:")
+        summary.append("-" * 30)
+        
+        if len(failed_files_list) == 0:
+            summary.append("? No failed files")
+        else:
+            summary.append(f"? Total failed files: {len(failed_files_list)}")
+            summary.append(f"?? Details saved to: /logs/failed_files_details.log")
+            
+            # Show first 5 for quick reference
+            if len(failed_files_list) <= 5:
+                summary.append("\nAll failed files:")
+                for i, failed_file in enumerate(failed_files_list, 1):
+                    summary.append(f"  {i}. {failed_file}")
+            else:
+                summary.append("\nFirst 5 failed files:")
+                for i, failed_file in enumerate(failed_files_list[:5], 1):
+                    summary.append(f"  {i}. {failed_file}")
+                summary.append(f"  ... and {len(failed_files_list) - 5} more (see detailed log)")
     
     summary.append("=" * 50)
     

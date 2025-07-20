@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Main RAG Document Indexer
-Modular version with clean architecture and robust error handling
+Modular version with clean architecture, robust error handling, and failed files logging
 """
 
 import logging
@@ -26,7 +26,7 @@ from batch_processor import create_batch_processor, create_progress_tracker
 from utils import (
     InterruptHandler, PerformanceMonitor, StatusReporter,
     validate_python_version, print_system_info, create_run_summary,
-    setup_logging_directory, safe_file_write
+    setup_logging_directory, safe_file_write, save_failed_files_details
 )
 
 
@@ -76,19 +76,19 @@ def initialize_components(config):
 
 def load_and_process_documents(config, progress_tracker):
     """
-    Load and process all documents
+    Load and process all documents with failed files tracking
     
     Args:
         config: Configuration object
         progress_tracker: Progress tracker instance
     
     Returns:
-        tuple: (text_documents, image_documents, reader_stats)
+        tuple: (text_documents, image_documents, reader_stats, failed_files_list)
     """
     print(f"Loading documents from folder: {config.DOCUMENTS_DIR}")
     progress_tracker.add_checkpoint("Document loading started")
     
-    # Load text documents
+    # Load text documents with enhanced tracking
     reader = create_safe_reader(
         config.DOCUMENTS_DIR, 
         recursive=True
@@ -101,18 +101,29 @@ def load_and_process_documents(config, progress_tracker):
     image_documents = []
     if config.ENABLE_OCR:
         print("\nProcessing images with OCR...")
-        ocr_processor = create_ocr_processor(
-            quality_threshold=config.OCR_QUALITY_THRESHOLD,
-            batch_size=config.OCR_BATCH_SIZE
-        )
-        image_documents, ocr_stats = ocr_processor.process_images_in_directory(config.DOCUMENTS_DIR)
-        progress_tracker.add_checkpoint("Image documents processed", len(image_documents))
+        try:
+            # Check OCR availability
+            ocr_available, missing_libs = check_ocr_availability()
+            if not ocr_available:
+                print(f"WARNING: OCR libraries missing: {', '.join(missing_libs)}")
+                print("Install with: pip install pytesseract pillow opencv-python")
+            else:
+                ocr_processor = create_ocr_processor(
+                    quality_threshold=config.OCR_QUALITY_THRESHOLD,
+                    batch_size=config.OCR_BATCH_SIZE
+                )
+                image_documents, ocr_stats = ocr_processor.process_images_in_directory(config.DOCUMENTS_DIR)
+                progress_tracker.add_checkpoint("Image documents processed", len(image_documents))
+        except Exception as e:
+            print(f"WARNING: OCR processing failed: {e}")
+            print("Continuing without OCR...")
     
-    # Get reader statistics
+    # Get reader statistics and failed files list
     reader_stats = reader.get_loading_stats()
+    failed_files_list = reader.get_failed_files_list()
     reader.print_loading_summary()
     
-    return text_documents, image_documents, reader_stats
+    return text_documents, image_documents, reader_stats, failed_files_list
 
 
 def create_and_filter_chunks(documents, config, node_parser, progress_tracker):
@@ -158,7 +169,7 @@ def create_and_filter_chunks(documents, config, node_parser, progress_tracker):
 
 
 def main():
-    """Main function orchestrating the entire indexing process"""
+    """Main function orchestrating the entire indexing process with failed files logging"""
     
     # Setup
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -191,6 +202,9 @@ def main():
         'failed_files': 0
     }
     
+    # Failed files tracking
+    failed_files_list = []
+    
     try:
         with InterruptHandler() as interrupt_handler:
             
@@ -209,7 +223,6 @@ def main():
             
             # Check OCR availability
             try:
-                from ocr_processor import check_ocr_availability
                 result = check_ocr_availability()
                 if result and len(result) == 2:
                     ocr_available, missing_libs = result
@@ -248,11 +261,11 @@ def main():
                 return
             
             # ===============================================================
-            # 3. LOAD DOCUMENTS
+            # 3. LOAD DOCUMENTS WITH FAILED FILES TRACKING
             # ===============================================================
             
             try:
-                text_documents, image_documents, reader_stats = load_and_process_documents(
+                text_documents, image_documents, reader_stats, failed_files_list = load_and_process_documents(
                     config, progress_tracker
                 )
             except Exception as e:
@@ -272,6 +285,17 @@ def main():
             print(f"  Image documents: {len(image_documents)}")
             print(f"  Encoding issues: {stats['encoding_issues']}")
             print(f"  Failed files: {stats['failed_files']}")
+            
+            # SAVE FAILED FILES DETAILS TO LOG
+            if failed_files_list:
+                print(f"\n?? Saving {len(failed_files_list)} failed files details to log...")
+                log_file_path = save_failed_files_details(failed_files_list, log_dir)
+                if log_file_path:
+                    print(f"   Detailed failed files saved to: {log_file_path}")
+                else:
+                    print(f"   WARNING: Could not save failed files details")
+            else:
+                print(f"\n? No failed files to log")
             
             if not documents:
                 print("ERROR: No documents found in the specified directory.")
@@ -394,13 +418,13 @@ def main():
                 f"{log_dir}/indexing_errors.log"
             )
             
-            # Create and save run summary
+            # Create and save run summary WITH FAILED FILES
             end_time = time.time()
             summary = create_run_summary(start_time, end_time, {
                 **stats,
                 **batch_results,
                 'success': success
-            })
+            }, failed_files_list)  # ???????? FAILED FILES LIST!
             
             summary_file = f"{log_dir}/run_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             if safe_file_write(summary_file, summary):
@@ -410,7 +434,7 @@ def main():
             performance_monitor.print_performance_summary()
             progress_tracker.print_progress_summary()
             
-            # Final status report
+            # Final status report WITH FAILED FILES
             status_reporter.add_section("Final Statistics", {
                 "Total processing time": f"{end_time - start_time:.2f}s",
                 "Documents loaded": stats['documents_loaded'],
@@ -421,20 +445,27 @@ def main():
                 "Processing speed": f"{batch_results['avg_speed']:.2f} chunks/sec"
             })
             
+            status_reporter.add_section("Failed Files Analysis", {
+                "Total failed files": len(failed_files_list),
+                "Failed files details": f"Saved to {log_dir}/failed_files_details.log" if failed_files_list else "No failed files",
+                "Encoding issues": stats['encoding_issues'],
+                "Processing failures": batch_results['total_failed_chunks']
+            })
+            
             status_reporter.add_section("Data Loss Analysis", {
                 "Total chunks attempted": stats['chunks_created'],
                 "Chunks successfully saved": stats['records_saved'],
                 "Chunks lost": stats['chunks_created'] - stats['records_saved'],
                 "Loss rate": f"{((stats['chunks_created'] - stats['records_saved']) / stats['chunks_created'] * 100):.2f}%" if stats['chunks_created'] > 0 else "0%",
-                "Invalid chunks (filtered)": f"350 (from {reader_stats['failed_files']} problematic files)"
+                "Invalid chunks (filtered)": f"See invalid_chunks_report.log"
             })
             
             status_reporter.add_section("File Processing Summary", {
-                "Total files attempted": reader_stats['total_attempted'] if 'total_attempted' in reader_stats else "Unknown",
+                "Total files attempted": reader_stats['total_attempted'],
                 "Files successfully loaded": reader_stats['successful_files'],
                 "Files with encoding issues": reader_stats['encoding_issues'],
                 "Completely failed files": reader_stats['failed_files'],
-                "Files partially processed": "See invalid_chunks_report.log"
+                "Files partially processed": "See logs for details"
             })
             
             status_reporter.add_section("Quality Metrics", {

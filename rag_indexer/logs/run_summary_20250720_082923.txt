@@ -1,0 +1,26 @@
+Processing Run Summary
+==================================================
+Start time: 2025-07-20 08:00:10
+End time: 2025-07-20 08:29:23
+Duration: 29.2m
+
+start_time: 1752994810.81
+documents_loaded: 251
+images_processed: 21
+chunks_created: 324
+embeddings_generated: 284
+records_saved: 284
+encoding_issues: 0
+failed_files: 33
+total_time: 1495.71
+total_nodes: 324
+total_batches: 13
+batches_processed: 13
+failed_batches: 0
+total_saved: 284
+total_failed_chunks: 0
+total_embedding_errors: 0
+success_rate: 87.65
+avg_speed: 0.19
+success: 1
+==================================================

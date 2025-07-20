@@ -6,7 +6,26 @@ Handles embedding generation, node cleaning, and database saving
 """
 
 import time
+import os
 from datetime import datetime, timedelta
+
+
+def restart_ollama_if_needed(chunk_index, restart_interval=1000):
+    """
+    Restart Ollama every N chunks to prevent memory leaks
+    
+    Args:
+        chunk_index: Current chunk number
+        restart_interval: Restart every N chunks
+    """
+    if chunk_index > 0 and chunk_index % restart_interval == 0:
+        print(f"\n   INFO: Restarting Ollama after {chunk_index} chunks to prevent memory leaks...")
+        try:
+            os.system("sudo systemctl restart ollama")
+            time.sleep(5)  # Wait for restart
+            print(f"   SUCCESS: Ollama restarted")
+        except Exception as e:
+            print(f"   WARNING: Could not restart Ollama: {e}")
 
 
 def clean_json_recursive(obj):
@@ -25,7 +44,7 @@ def clean_json_recursive(obj):
 
 def clean_problematic_node(node):
     """
-    Clean problematic metadata and content from a node
+    Clean problematic metadata and content from a node - ??????????? ???????!
     
     Args:
         node: Node object to clean
@@ -44,7 +63,7 @@ def clean_problematic_node(node):
         # Clean problematic characters from content
         content = cleaned_node.get_content()
         
-        # Remove null bytes (\u0000) and other problematic characters - ??????? ???????????!
+        # Remove null bytes (\u0000) and other problematic characters - ?????????? ?????!
         content = content.replace('\u0000', '').replace('\x00', '').replace('\x01', '').replace('\x02', '')
         
         # Remove control characters (except newlines and tabs)
@@ -59,8 +78,24 @@ def clean_problematic_node(node):
         cleaned_node.text = cleaned_content
         cleaned_node.metadata['text'] = cleaned_content
         
-        # Clean metadata values recursively (??? ??????!)
+        # Clean metadata values recursively (??? ????????!)
         cleaned_node.metadata = clean_json_recursive(cleaned_node.metadata)
+        
+        # ?????: ???????? ??????? ???? LlamaIndex ?? null bytes
+        if hasattr(cleaned_node, 'id_') and cleaned_node.id_:
+            cleaned_node.id_ = str(cleaned_node.id_).replace('\u0000', '').replace('\x00', '')
+        
+        if hasattr(cleaned_node, 'doc_id') and cleaned_node.doc_id:
+            cleaned_node.doc_id = str(cleaned_node.doc_id).replace('\u0000', '').replace('\x00', '')
+        
+        # ???????? ref_doc_id ???? ????
+        if hasattr(cleaned_node, 'ref_doc_id') and cleaned_node.ref_doc_id:
+            cleaned_node.ref_doc_id = str(cleaned_node.ref_doc_id).replace('\u0000', '').replace('\x00', '')
+        
+        # ???????? source_node ???? ????
+        if hasattr(cleaned_node, 'source_node') and cleaned_node.source_node:
+            if hasattr(cleaned_node.source_node, 'node_id'):
+                cleaned_node.source_node.node_id = str(cleaned_node.source_node.node_id).replace('\u0000', '').replace('\x00', '')
         
         # Add warning flag
         cleaned_node.metadata['cleaned'] = True
@@ -72,6 +107,49 @@ def clean_problematic_node(node):
         print(f"   WARNING: Error cleaning node: {e}")
         # Return original node if cleaning fails
         return node
+
+
+def aggressive_clean_all_nodes(nodes):
+    """
+    ?????????? ???????? ??? nodes ?? null bytes ????? ??????????? ? ??
+    
+    Args:
+        nodes: List of nodes to clean
+    
+    Returns:
+        List of cleaned nodes
+    """
+    cleaned_nodes = []
+    
+    for node in nodes:
+        try:
+            # ????????? ????????? ???????
+            cleaned_node = clean_problematic_node(node)
+            
+            # ?????????????? ???????? - ???????? ??? ????????? ????????
+            for attr_name in dir(cleaned_node):
+                if not attr_name.startswith('_'):  # Skip private attributes
+                    try:
+                        attr_value = getattr(cleaned_node, attr_name)
+                        if isinstance(attr_value, str):
+                            cleaned_value = attr_value.replace('\u0000', '').replace('\x00', '')
+                            setattr(cleaned_node, attr_name, cleaned_value)
+                    except:
+                        pass  # Skip if can't access or modify
+            
+            cleaned_nodes.append(cleaned_node)
+            
+        except Exception as e:
+            print(f"   WARNING: Failed to clean node completely: {e}")
+            # Fallback - try basic cleaning
+            try:
+                basic_cleaned = clean_problematic_node(node)
+                cleaned_nodes.append(basic_cleaned)
+            except:
+                print(f"   ERROR: Node completely corrupted, skipping...")
+                continue
+    
+    return cleaned_nodes
 
 
 class EmbeddingProcessor:
@@ -97,7 +175,7 @@ class EmbeddingProcessor:
     
     def validate_content_for_embedding(self, content):
         """
-        Validate content before embedding generation
+        Validate content before embedding generation - ??????????? ?????????
         
         Args:
             content: Text content to validate
@@ -109,19 +187,43 @@ class EmbeddingProcessor:
         if len(content.strip()) < 10:
             return False, f"too_short ({len(content)} chars)"
         
-        # Check for binary data patterns
-        binary_chars = sum(1 for c in content[:500] if ord(c) < 32 and c not in '\n\t\r')
-        binary_ratio = binary_chars / min(len(content), 500)
+        # ????? ????????: ????? ?????? ??? PDF/OCR ????????
+        # ??????? ????????????? ?????????? ??????? (????????? ??????? ???????????)
+        sample = content[:1000]  # ????????? ?????? 1000 ????????
         
-        if binary_ratio > 0.3:  # More than 30% binary characters
+        # ??????????? "??????????????" ??????? ? ??????????
+        allowed_special = set('\n\t\r\f\v\x0b\x0c')
+        
+        # ??????? ?????? ??????? ?????????? ???????
+        truly_binary = 0
+        for c in sample:
+            if ord(c) < 32:  # ??????????? ???????
+                if c not in '\n\t\r':  # ????????? ???????????
+                    truly_binary += 1
+            elif ord(c) > 127:  # ?????? ???????
+                if c not in allowed_special:  # ????????? ??????? ???????????
+                    # ?????????, ??? ???????? ?????? ??? ?????
+                    if not (c.isprintable() or c.isspace() or c.isalnum()):
+                        truly_binary += 1
+        
+        binary_ratio = truly_binary / len(sample) if sample else 0
+        
+        # ??????????? ????????: 90% ?????? 30%!
+        if binary_ratio > 0.9:  # ?????? ???? ??????? 90% ??????
             return False, f"binary_data_detected ({binary_ratio:.1%})"
         
-        # Check for valid text ratio
-        printable_chars = sum(1 for c in content[:1000] if c.isprintable() or c.isspace())
-        text_ratio = printable_chars / min(len(content), 1000)
+        # ???????? ?? ???????? ????? - ???? ???????????
+        letters_digits = sum(1 for c in sample if c.isalnum())
+        text_ratio = letters_digits / len(sample) if sample else 0
         
-        if text_ratio < 0.7:  # Less than 70% printable characters
+        # ??????????? ????????: 10% ?????? 70%!
+        if text_ratio < 0.1:  # ?????? ???? ?????? 10% ????/????
             return False, f"low_text_quality ({text_ratio:.1%})"
+        
+        # ?????????????? ????????: ???? ?? ???? ?? ??????? ????
+        words = content.split()
+        if len(words) < 3:
+            return False, f"too_few_words ({len(words)} words)"
         
         return True, "valid"
     
@@ -143,6 +245,9 @@ class EmbeddingProcessor:
             is_valid, reason = self.validate_content_for_embedding(content)
             if not is_valid:
                 return False, f"validation_failed: {reason}"
+            
+            # Restart Ollama periodically to prevent memory leaks
+            restart_ollama_if_needed(chunk_index + 1, restart_interval=1000)
             
             # Generate embedding
             embedding = self.embed_model.get_text_embedding(content)
@@ -185,9 +290,10 @@ class EmbeddingProcessor:
             
             for i, node in enumerate(sub_batch):
                 chunk_index = j + i
+                absolute_chunk_index = self.stats['total_processed']  # Absolute count for restart
                 self.stats['total_processed'] += 1
                 
-                success, error_info = self.generate_embedding_for_node(node, chunk_index)
+                success, error_info = self.generate_embedding_for_node(node, absolute_chunk_index)
                 
                 if success:
                     nodes_with_embeddings.append(node)
@@ -283,10 +389,15 @@ class EmbeddingProcessor:
         total_saved = 0
         failed_chunks = []
         
+        # ?????????? ?????: ??????????? ??????? ???? nodes ????? ???????????!
+        print(f"   INFO: Cleaning all nodes from null bytes before database save...")
+        cleaned_nodes = aggressive_clean_all_nodes(nodes_with_embeddings)
+        print(f"   INFO: Cleaned {len(cleaned_nodes)} nodes (original: {len(nodes_with_embeddings)})")
+        
         try:
-            # Try to save all chunks at once first
-            self.vector_store.add(nodes_with_embeddings, batch_size=db_batch_size)
-            total_saved = len(nodes_with_embeddings)
+            # Try to save all cleaned chunks at once first
+            self.vector_store.add(cleaned_nodes, batch_size=db_batch_size)
+            total_saved = len(cleaned_nodes)
             self.stats['successful_saves'] += total_saved
             
             db_time = time.time() - db_start_time
@@ -298,11 +409,11 @@ class EmbeddingProcessor:
             print(f"   INFO: Trying individual chunk processing...")
             
             # If batch save fails, try saving chunks individually
-            for i, node in enumerate(nodes_with_embeddings):
+            for i, node in enumerate(cleaned_nodes):
                 try:
-                    # Clean metadata for problematic chunks
-                    cleaned_node = clean_problematic_node(node)
-                    self.vector_store.add([cleaned_node], batch_size=1)
+                    # Double-clean problematic chunks
+                    ultra_cleaned_node = clean_problematic_node(node)
+                    self.vector_store.add([ultra_cleaned_node], batch_size=1)
                     total_saved += 1
                     self.stats['successful_saves'] += 1
                     

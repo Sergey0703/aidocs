@@ -22,6 +22,51 @@ except ImportError:
     print("WARNING: OCR libraries not installed. Run: pip install pytesseract pillow opencv-python")
 
 
+def clean_text_from_null_bytes(text):
+    """
+    Clean text from null bytes and other problematic characters
+    
+    Args:
+        text: Text to clean
+    
+    Returns:
+        str: Cleaned text
+    """
+    if not isinstance(text, str):
+        return text
+    
+    # Remove null bytes (\u0000) and other problematic characters
+    text = text.replace('\u0000', '').replace('\x00', '')
+    
+    # Remove other control characters except newlines and tabs
+    cleaned_text = ''.join(char for char in text 
+                          if ord(char) >= 32 or char in '\n\t\r')
+    
+    return cleaned_text
+
+
+def clean_metadata_recursive(obj):
+    """
+    Recursively clean metadata from null bytes
+    
+    Args:
+        obj: Object to clean (dict, list, str, etc.)
+    
+    Returns:
+        Cleaned object
+    """
+    if isinstance(obj, dict):
+        return {k: clean_metadata_recursive(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_metadata_recursive(v) for v in obj]
+    elif isinstance(obj, str):
+        # Remove null bytes and limit string length
+        cleaned = obj.replace('\u0000', '').replace('\x00', '')
+        return cleaned[:1000]  # Limit metadata string length
+    else:
+        return obj
+
+
 class OCRProcessor:
     """OCR processor class for extracting text from images"""
     
@@ -116,7 +161,8 @@ class OCRProcessor:
                 config=safe_config
             )
             
-            # Clean up text
+            # Clean up text - ?????: ??????? null bytes!
+            text = clean_text_from_null_bytes(text)
             text = text.strip()
             lines = [line.strip() for line in text.split('\n') if line.strip()]
             text = '\n'.join(lines)
@@ -195,19 +241,29 @@ class OCRProcessor:
             is_valid, quality_score, metrics = self.validate_extracted_text(text)
             
             if is_valid:
-                # Create document with metadata
+                # Clean file path from null bytes
+                clean_image_path = clean_text_from_null_bytes(str(image_path))
+                clean_file_name = clean_text_from_null_bytes(file_name)
+                
+                # Create metadata and clean it
+                raw_metadata = {
+                    'file_path': clean_image_path,
+                    'file_name': clean_file_name,
+                    'file_type': 'image',
+                    'file_size': file_size,
+                    'ocr_extracted': True,
+                    'text_length': len(text),
+                    'quality_score': quality_score,
+                    'ocr_metrics': metrics
+                }
+                
+                # Clean metadata recursively
+                cleaned_metadata = clean_metadata_recursive(raw_metadata)
+                
+                # Create document with cleaned data
                 doc = Document(
-                    text=text,
-                    metadata={
-                        'file_path': image_path,
-                        'file_name': file_name,
-                        'file_type': 'image',
-                        'file_size': file_size,
-                        'ocr_extracted': True,
-                        'text_length': len(text),
-                        'quality_score': quality_score,
-                        'ocr_metrics': metrics
-                    }
+                    text=text,  # Already cleaned in extract_text_from_image
+                    metadata=cleaned_metadata
                 )
                 
                 print(f"  SUCCESS: Extracted {len(text)} characters (quality: {quality_score:.2f})")
@@ -226,9 +282,13 @@ class OCRProcessor:
     def _log_ocr_error(self, image_path, error_message):
         """Log OCR errors to file for debugging"""
         try:
+            # Clean error message and path from null bytes
+            clean_path = clean_text_from_null_bytes(str(image_path))
+            clean_error = clean_text_from_null_bytes(str(error_message))
+            
             with open('./ocr_errors.log', 'a', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"{timestamp} - OCR Error: {os.path.basename(image_path)} - {error_message}\n")
+                f.write(f"{timestamp} - OCR Error: {os.path.basename(clean_path)} - {clean_error}\n")
         except:
             pass  # Silently fail if can't write log
     
@@ -360,3 +420,10 @@ def check_ocr_availability():
         from PIL import Image
     except ImportError:
         missing.append('pillow')
+    
+    try:
+        import cv2
+    except ImportError:
+        missing.append('opencv-python')
+    
+    return len(missing) == 0, missing
