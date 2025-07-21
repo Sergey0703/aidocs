@@ -11,7 +11,7 @@ async def debug_search():
     
     # Поиск с большим limit и низким threshold
     results = await service.vector_search(
-        query="John Nolan", 
+        query="Breeda Daly", 
         limit=20,  # Больше результатов
         similarity_threshold=0.1  # Ниже порог
     )

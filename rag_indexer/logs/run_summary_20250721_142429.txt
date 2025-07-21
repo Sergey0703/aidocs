@@ -1,0 +1,39 @@
+Processing Run Summary
+==================================================
+Start time: 2025-07-21 12:09:37
+End time: 2025-07-21 14:24:29
+Duration: 2h 14m
+
+start_time: 1753096177.03
+documents_loaded: 656
+images_processed: 37
+chunks_created: 3,997
+embeddings_generated: 3,592
+records_saved: 3,592
+encoding_issues: 0
+total_time: 7840.50
+total_nodes: 3,997
+total_batches: 80
+batches_processed: 80
+failed_batches: 0
+total_saved: 3,592
+total_failed_chunks: 0
+total_embedding_errors: 0
+success_rate: 89.87
+avg_speed: 0.46
+success: 1
+
+FAILED FILES SUMMARY:
+------------------------------
+? Total failed files: 32
+?? Details saved to: /logs/failed_files_details.log
+
+First 5 failed files:
+  1. 882-LL Toward Excellence in Person-Centred Planning HSELD 24.01.25.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  2. 792-AM Safety Rep SR 15.10.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  3. 97-MG Communicating Effectively through Open Disclosure HSELD 08.11.23.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  4. 398-MR Safety Rep SR 15.10.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  5. 882-LL Safeguarding Adults at Risk of Abuse HSELD 20.05.23.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  ... and 27 more (see detailed log)
+
+==================================================

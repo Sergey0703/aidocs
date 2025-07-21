@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 # Configuration
 CONFIG = {
     "connection_string": os.getenv("SUPABASE_CONNECTION_STRING"),
-    "embed_model": "mxbai-embed-large",
-    "embed_dim": 1024,
+    "embed_model": "nomic-embed-text",  # ???????? ? mxbai-embed-large
+    "embed_dim": 768,                   # ???????? ? 1024 ?? 768 ??? nomic-embed-text
     "ollama_url": "http://localhost:11434",
     "threshold": 0.35,     # Slightly higher threshold
     "max_top_k": 1000      # Safety limit for top_k
@@ -80,7 +80,7 @@ def get_vector_components():
             embed_model=embed_model
         )
         
-        logger.info("? Vector components initialized successfully")
+        logger.info(f"? Vector components initialized successfully (model: {CONFIG['embed_model']})")
         return index, embed_model
         
     except Exception as e:
@@ -191,7 +191,7 @@ def test_different_thresholds():
         print("? SUPABASE_CONNECTION_STRING not found!")
         return
     
-    print("? Environment OK")
+    print(f"? Environment OK (using {CONFIG['embed_model']})")
     
     test_entities = ["John Nolan", "Breeda Daly"]
     thresholds = [0.3, 0.35, 0.4, 0.45, 0.5]
@@ -307,6 +307,7 @@ def main():
     """Main function"""
     
     print("?? Intelligent RAG Test - Dynamic Top-K and Content Filter")
+    print(f"?? Using embedding model: {CONFIG['embed_model']} (dimension: {CONFIG['embed_dim']})")
     print("=" * 70)
     print("1. Test different thresholds")
     print("2. Compare old vs new approach")

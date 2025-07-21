@@ -1,0 +1,39 @@
+Processing Run Summary
+==================================================
+Start time: 2025-07-20 15:54:05
+End time: 2025-07-20 16:26:51
+Duration: 32.8m
+
+start_time: 1753023245.78
+documents_loaded: 251
+images_processed: 21
+chunks_created: 324
+embeddings_generated: 284
+records_saved: 284
+encoding_issues: 0
+total_time: 1492.10
+total_nodes: 324
+total_batches: 13
+batches_processed: 13
+failed_batches: 0
+total_saved: 284
+total_failed_chunks: 0
+total_embedding_errors: 0
+success_rate: 87.65
+avg_speed: 0.19
+success: 1
+
+FAILED FILES SUMMARY:
+------------------------------
+? Total failed files: 12
+?? Details saved to: /logs/failed_files_details.log
+
+First 5 failed files:
+  1. 2559802-CB.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  2. 1043399-doc20250220135408.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  3. 781-DC Hand Hygiene HSELD 31.12.2024.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  4. 377-EC First Aid Response PHECC ST 28.11.25.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  5. 827-JB First Aid Response PHECC ST 28.11.25.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  ... and 7 more (see detailed log)
+
+==================================================

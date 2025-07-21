@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
 """
-Hybrid RAG System - BUTTON FIXED VERSION
-Smart entity extraction + Simple vector search + Content filtering
-BUTTON COMPLETELY HIDDEN DURING SEARCH
+Simple RAG System - Using Working Console Script Logic in Streamlit
+Direct port from intelligent_rag_test.py that we know works
 """
 
 import streamlit as st
@@ -30,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
-    page_title="Hybrid RAG System",
+    page_title="Simple RAG System",
     page_icon="??",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -84,209 +83,174 @@ def on_query_change():
         st.session_state.auto_search_triggered = True
 
 @st.cache_resource
-def initialize_services():
-    """Initialize services (cached)"""
+def get_vector_components():
+    """Initialize vector components using the EXACT same code as console script"""
+    logger.info("?? Initializing vector components...")
+    
     try:
-        # Import services
-        from supabase_vector_service import SupabaseVectorService
-        from simple_llm_service import create_simple_llm_service
+        from llama_index.core import VectorStoreIndex, StorageContext
+        from llama_index.vector_stores.supabase import SupabaseVectorStore
+        from llama_index.embeddings.ollama import OllamaEmbedding
         
-        # Check environment variables
-        connection_string = (
-            os.getenv("SUPABASE_CONNECTION_STRING") or 
-            os.getenv("DATABASE_URL") or
-            os.getenv("POSTGRES_URL")
-        )
-        
+        connection_string = os.getenv("SUPABASE_CONNECTION_STRING")
         if not connection_string:
-            st.error("Database connection string not found in environment!")
-            st.stop()
+            raise ValueError("SUPABASE_CONNECTION_STRING not found!")
         
-        # Initialize vector service
-        vector_service = SupabaseVectorService(
-            connection_string=connection_string,
-            table_name="documents"
+        vector_store = SupabaseVectorStore(
+            postgres_connection_string=connection_string,
+            collection_name="documents",
+            dimension=768,  # nomic-embed-text dimension
         )
         
-        # Initialize LLM service
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        ollama_model = os.getenv("OLLAMA_DEFAULT_MODEL", "llama3.2:3b")
+        storage_context = StorageContext.from_defaults(vector_store=vector_store)
         
-        llm_service = create_simple_llm_service(
-            ollama_url=ollama_url,
-            model=ollama_model
+        embed_model = OllamaEmbedding(
+            model_name="nomic-embed-text", 
+            base_url="http://localhost:11434"
         )
         
-        return vector_service, llm_service
+        index = VectorStoreIndex.from_vector_store(
+            vector_store=vector_store,
+            storage_context=storage_context,
+            embed_model=embed_model
+        )
         
-    except ImportError as e:
-        st.error(f"Import error: {e}")
-        st.stop()
+        logger.info("? Vector components initialized successfully (model: nomic-embed-text)")
+        return index, embed_model
+        
     except Exception as e:
-        st.error(f"Initialization error: {e}")
-        st.stop()
+        logger.error(f"? Error initializing vector components: {e}")
+        st.error(f"Vector initialization error: {e}")
+        return None, None
 
-@st.cache_resource
-def get_extraction_llm():
-    """Get LLM for entity extraction (cached)"""
+async def vector_search_console_logic(query, threshold=0.35):
+    """Use the EXACT same logic as the working console script"""
+    
+    logger.info(f"?? Vector search for: '{query}' (threshold: {threshold})")
+    start_time = time.time()
+    
     try:
-        from llama_index.llms.ollama import Ollama
+        # Initialize components (same as console script)
+        index, embed_model = get_vector_components()
+        if not index or not embed_model:
+            return None
         
-        return Ollama(
-            model="llama3:8b-instruct-q4_K_M",  #"llama3.2:3b",
-            base_url="http://localhost:11434",
-            request_timeout=30,
-            additional_kwargs={
-                "temperature": 0.0,
-                "num_predict": 10,
-                "top_k": 1,
-                "top_p": 0.1,
-                "stop": ["\n", ".", ",", ":", ";", "!", "?", " and", " or"]
-            }
+        # Import retriever components (same as console script)
+        from llama_index.core.retrievers import VectorIndexRetriever
+        from llama_index.core.postprocessor import SimilarityPostprocessor
+        
+        # Get optimal top_k (same logic as console script)
+        import psycopg2
+        connection_string = os.getenv("SUPABASE_CONNECTION_STRING")
+        conn = psycopg2.connect(connection_string)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM vecs.documents")
+        total_docs = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        
+        optimal_top_k = min(total_docs + 50, 1000)  # Same logic as console script
+        logger.info(f"?? Database has {total_docs} documents, using top_k={optimal_top_k}")
+        
+        # Create retriever (same parameters as console script)
+        retriever = VectorIndexRetriever(
+            index=index,
+            similarity_top_k=optimal_top_k,
+            embed_model=embed_model
         )
+        
+        # Create similarity filter (same as console script)
+        similarity_filter = SimilarityPostprocessor(similarity_cutoff=threshold)
+        
+        # Execute search (same as console script)
+        logger.info(f"?? Searching in {total_docs} documents with top_k={optimal_top_k}")
+        nodes = retriever.retrieve(query)
+        logger.info(f"Retrieved {len(nodes)} candidate nodes")
+        
+        # Apply similarity threshold filtering (same as console script)
+        filtered_nodes = similarity_filter.postprocess_nodes(nodes)
+        logger.info(f"After similarity filter (={threshold}): {len(filtered_nodes)} nodes")
+        
+        # Apply content filter (same as console script)
+        final_nodes = [
+            node for node in filtered_nodes
+            if query.lower() in node.get_content().lower()
+        ]
+        logger.info(f"After content filter (contains '{query}'): {len(final_nodes)} nodes")
+        
+        total_time = time.time() - start_time
+        precision = (len(final_nodes) / len(filtered_nodes) * 100) if filtered_nodes else 0
+        
+        # Log results (same as console script)
+        logger.info(f"?? FILTERING RESULTS:")
+        logger.info(f"   Total candidates: {len(nodes)}")
+        logger.info(f"   After similarity: {len(filtered_nodes)}")
+        logger.info(f"   After content: {len(final_nodes)}")
+        logger.info(f"   Precision: {precision:.1f}%")
+        logger.info(f"   Time: {total_time:.3f}s")
+        
+        # Process nodes for display
+        processed_nodes = []
+        for i, node in enumerate(final_nodes):
+            try:
+                similarity = getattr(node, 'score', 0.0)
+                content = node.get_content()
+                
+                # Get file name from metadata
+                file_name = 'Unknown'
+                if hasattr(node, 'node') and hasattr(node.node, 'metadata'):
+                    metadata = node.node.metadata
+                    if isinstance(metadata, dict):
+                        file_name = metadata.get('file_name', 'Unknown')
+                
+                processed_nodes.append({
+                    'filename': file_name,
+                    'content': content,
+                    'similarity_score': similarity,
+                    'node': node
+                })
+                
+            except Exception as e:
+                logger.warning(f"Error processing node {i}: {e}")
+                continue
+        
+        return {
+            'query': query,
+            'threshold': threshold,
+            'total_docs': total_docs,
+            'optimal_top_k': optimal_top_k,
+            'candidates': len(nodes),
+            'after_similarity': len(filtered_nodes),
+            'after_content': len(final_nodes),
+            'precision': precision,
+            'time': total_time,
+            'processed_nodes': processed_nodes
+        }
+        
     except Exception as e:
-        st.error(f"Error initializing extraction LLM: {e}")
+        logger.error(f"? Error in vector search: {e}")
+        st.error(f"Search error: {e}")
         return None
 
-def extract_entity_with_llm(query: str) -> str:
-    """Smart entity extraction using LLM (from intelligent_rag_app)"""
+def create_simple_answer(search_result):
+    """Create simple answer from search results"""
+    if not search_result or not search_result['processed_nodes']:
+        return "No relevant documents found for your query."
     
-    llm = get_extraction_llm()
-    if not llm:
-        # Fallback to simple extraction
-        return extract_entity_fallback(query)
+    query = search_result['query']
+    nodes = search_result['processed_nodes']
     
-    extraction_prompt = f"""Extract only the person's name from this question. Return ONLY the name, no other words.
+    # Simple answer generation
+    answer_parts = [f"Found {len(nodes)} documents related to '{query}':\n"]
+    
+    for i, node in enumerate(nodes[:3], 1):  # Show top 3
+        preview = node['content'][:200] + "..." if len(node['content']) > 200 else node['content']
+        answer_parts.append(f"{i}. {node['filename']}: {preview}")
+    
+    return "\n\n".join(answer_parts)
 
-Examples:
-- "tell me about John Smith" -> John Smith
-- "who is Mary Johnson" -> Mary Johnson  
-- "find information about Bob Wilson" -> Bob Wilson
-- "show me John Nolan" -> John Nolan
-- "John Nolan certifications" -> John Nolan
-
-Question: {query}
-
-Name:"""
-    
-    try:
-        response = llm.complete(extraction_prompt)
-        extracted_entity = response.text.strip()
-        
-        # Clean extraction
-        extracted_entity = re.sub(r'^(name|answer|result)[:=]\s*', '', extracted_entity, flags=re.IGNORECASE)
-        extracted_entity = re.sub(r'\s*(is|the|answer|result)$', '', extracted_entity, flags=re.IGNORECASE)
-        
-        # Validate extraction
-        if is_valid_entity(extracted_entity, query):
-            return extracted_entity.strip()
-        else:
-            return extract_entity_fallback(query)
-            
-    except Exception as e:
-        logger.warning(f"LLM entity extraction failed: {e}")
-        return extract_entity_fallback(query)
-
-def extract_entity_fallback(query: str) -> str:
-    """Fallback entity extraction using regex"""
-    # Find capitalized word sequences (likely names)
-    name_patterns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
-    
-    # Filter out common question words
-    question_words = {'Tell', 'Show', 'Find', 'What', 'Who', 'Where', 'When', 'Why', 'How'}
-    
-    valid_names = [name for name in name_patterns if name not in question_words]
-    
-    if valid_names:
-        return valid_names[0]  # Return first valid name
-    
-    # If no names found, return the query itself
-    return query.strip()
-
-def is_valid_entity(entity: str, original_query: str) -> bool:
-    """Check if extracted entity is valid"""
-    if not entity or len(entity.strip()) < 2:
-        return False
-    
-    # Check if entity contains question words
-    question_words = {'question', 'query', 'extract', 'name', 'tell', 'about', 'who', 'is', 'find', 'show'}
-    entity_words = entity.lower().split()
-    
-    if any(word in question_words for word in entity_words):
-        return False
-    
-    # Entity should be shorter than or equal to original query
-    if len(entity) > len(original_query):
-        return False
-    
-    return True
-
-def get_required_terms_from_entity(entity: str) -> List[str]:
-    """Get required terms from extracted entity"""
-    # For person names, require ALL parts of the name
-    entity_lower = entity.lower().strip()
-    
-    # Split into words and filter
-    words = re.findall(r'\b[a-z]+\b', entity_lower)
-    
-    # Remove common words that shouldn't be required
-    stop_words = {'the', 'a', 'an', 'and', 'or', 'of'}
-    required_terms = [word for word in words if word not in stop_words and len(word) > 1]
-    
-    return required_terms
-
-def apply_content_filter(search_results: List, required_terms: List[str]) -> List:
-    """Apply strict content filtering based on required terms"""
-    filtered_results = []
-    
-    for result in search_results:
-        try:
-            # Get all text for checking
-            content = result.content.lower()
-            filename = result.filename.lower()
-            full_content = result.full_content.lower()
-            
-            all_text = f"{content} {filename} {full_content}"
-            
-            # Check if ALL required terms are present
-            found_terms = []
-            missing_terms = []
-            
-            for term in required_terms:
-                if term.lower() in all_text:
-                    found_terms.append(term)
-                else:
-                    missing_terms.append(term)
-            
-            # Include only if ALL required terms are found
-            if len(missing_terms) == 0:
-                result.search_info["found_terms"] = found_terms
-                result.search_info["content_filtered"] = True
-                result.search_info["extraction_method"] = "hybrid_smart"
-                filtered_results.append(result)
-                
-        except Exception as e:
-            logger.warning(f"Error filtering result: {e}")
-            continue
-    
-    return filtered_results
-
-def calculate_dynamic_limit(entity: str) -> int:
-    """Calculate dynamic limit based on entity type"""
-    entity_lower = entity.lower()
-    
-    # Person names typically have multiple documents
-    if any(name in entity_lower for name in ['john nolan', 'breeda daly']):
-        return 15
-    elif len(entity.split()) >= 2:  # Multi-word entities (likely names)
-        return 12
-    elif any(word in entity_lower for word in ['training', 'certification', 'course']):
-        return 10
-    else:
-        return 8
-
-async def run_hybrid_search(vector_service, llm_service, question: str):
-    """Execute hybrid search: Smart extraction + Simple search + Content filtering"""
+async def run_simple_search(question: str):
+    """Execute search using console script logic"""
     
     # Progress tracking
     progress_container = st.container()
@@ -294,72 +258,31 @@ async def run_hybrid_search(vector_service, llm_service, question: str):
         progress_bar = st.progress(0)
         status_text = st.empty()
     
-    # STAGE 1: Smart Entity Extraction
-    status_text.text("?? Extracting entity...")
-    progress_bar.progress(20)
+    # STAGE 1: Simple entity extraction
+    status_text.text("?? Processing query...")
+    progress_bar.progress(25)
     
-    extraction_start = time.time()
-    extracted_entity = extract_entity_with_llm(question)
-    extraction_time = time.time() - extraction_start
+    # For simplicity, use query as-is
+    extracted_entity = question.strip()
     
-    # Get required terms from entity
-    required_terms = get_required_terms_from_entity(extracted_entity)
-    dynamic_limit = calculate_dynamic_limit(extracted_entity)
-    
-    # STAGE 2: Vector Search
+    # STAGE 2: Vector search using console logic
     status_text.text("?? Vector search...")
     progress_bar.progress(50)
     
-    search_start = time.time()
-    search_limit = dynamic_limit * 2  # Get more candidates
+    search_result = await vector_search_console_logic(extracted_entity, threshold=0.35)
     
-    raw_search_results = await vector_service.vector_search(
-        query=extracted_entity,  # Use extracted entity, not original question
-        limit=search_limit,
-        similarity_threshold=0.2
-    )
-    
-    # STAGE 3: Content Filtering
-    status_text.text("?? Content filtering...")
+    # STAGE 3: Create answer
+    status_text.text("?? Creating answer...")
     progress_bar.progress(75)
     
-    filter_start = time.time()
-    filtered_results = apply_content_filter(raw_search_results, required_terms)
-    
-    # Sort and limit results
-    filtered_results = sorted(filtered_results, 
-                            key=lambda x: x.similarity_score, 
-                            reverse=True)[:dynamic_limit]
-    
-    filter_time = time.time() - filter_start
-    search_time = time.time() - search_start
-    
-    # STAGE 4: Answer Generation
-    status_text.text("?? Generating answer...")
-    progress_bar.progress(90)
-    
-    llm_start = time.time()
-    
-    context_docs = []
-    for result in filtered_results:
-        context_docs.append({
-            'filename': result.filename,
-            'content': result.content,
-            'similarity_score': result.similarity_score
-        })
-    
-    llm_response = await llm_service.generate_answer(
-        question=question,  # Use original question for answer generation
-        context_docs=context_docs,
-        language="en"
-    )
-    
-    llm_time = time.time() - llm_start
-    total_time = time.time() - extraction_start
+    if search_result:
+        answer = create_simple_answer(search_result)
+    else:
+        answer = "Search failed. Please check the logs for details."
     
     # Complete progress
     progress_bar.progress(100)
-    status_text.text("? Hybrid search completed!")
+    status_text.text("? Search completed!")
     
     # Clear progress after delay
     time.sleep(1)
@@ -368,106 +291,90 @@ async def run_hybrid_search(vector_service, llm_service, question: str):
     return {
         "original_question": question,
         "extracted_entity": extracted_entity,
-        "required_terms": required_terms,
-        "raw_results": len(raw_search_results),
-        "filtered_results": filtered_results,
-        "llm_response": llm_response,
-        "metrics": {
-            "extraction_time": extraction_time,
-            "search_time": search_time,
-            "filter_time": filter_time,
-            "llm_time": llm_time,
-            "total_time": total_time,
-            "dynamic_limit": dynamic_limit,
-            "precision": 1.0 if filtered_results else 0.0
-        }
+        "answer": answer,
+        "search_result": search_result
     }
 
 @st.cache_data(ttl=300)
-def check_service_status_cached():
-    """Cached service status check"""
+def check_service_status():
+    """Check service status"""
     try:
-        vector_service, llm_service = initialize_services()
+        connection_string = os.getenv("SUPABASE_CONNECTION_STRING")
+        if not connection_string:
+            return {"database": {"available": False, "error": "No connection string"}}
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        import psycopg2
+        conn = psycopg2.connect(connection_string)
+        cur = conn.cursor()
         
-        db_stats = loop.run_until_complete(vector_service.get_database_stats())
-        llm_available = loop.run_until_complete(llm_service.check_availability())
+        cur.execute("SELECT COUNT(*) FROM vecs.documents")
+        total_docs = cur.fetchone()[0]
         
-        loop.close()
+        cur.execute("SELECT COUNT(DISTINCT metadata->>'file_name') FROM vecs.documents WHERE metadata->>'file_name' IS NOT NULL")
+        unique_files = cur.fetchone()[0]
+        
+        cur.close()
+        conn.close()
+        
+        # Check Ollama
+        ollama_available = True
+        try:
+            from llama_index.embeddings.ollama import OllamaEmbedding
+            embed_model = OllamaEmbedding(model_name="nomic-embed-text", base_url="http://localhost:11434")
+            test_embedding = embed_model.get_text_embedding("test")
+            ollama_available = len(test_embedding) > 0
+        except:
+            ollama_available = False
         
         return {
             "database": {
                 "available": True,
-                "total_documents": db_stats.get('total_documents', 0),
-                "unique_files": db_stats.get('unique_files', 0)
+                "total_documents": total_docs,
+                "unique_files": unique_files
             },
-            "llm": {
-                "available": llm_available,
-                "model": llm_service.model,
-                "url": llm_service.ollama_url
+            "ollama": {
+                "available": ollama_available,
+                "model": "nomic-embed-text"
             }
         }
+        
     except Exception as e:
         return {
             "database": {"available": False, "error": str(e)},
-            "llm": {"available": False, "error": str(e)}
+            "ollama": {"available": False, "error": str(e)}
         }
 
 def main():
-    """Main Streamlit application function"""
+    """Main Streamlit application"""
     
     init_session_state()
     
     # Header
-    st.markdown('<h1 class="main-header">Hybrid RAG System</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Smart Entity Extraction + Simple Vector Search = Best Results</p>', unsafe_allow_html=True)
-    
-    # Initialize services
-    vector_service, llm_service = initialize_services()
+    st.markdown('<h1 class="main-header">Simple RAG System</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Using Console Script Logic in Streamlit</p>', unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
-        st.header("System Info")
+        st.header("System Status")
         
-        status = check_service_status_cached()
+        status = check_service_status()
         
         if status["database"]["available"]:
             st.success("? Database Connected")
             st.metric("Documents", status["database"]["total_documents"])
             st.metric("Files", status["database"]["unique_files"])
         else:
-            st.error("? Database Error")
+            st.error(f"? Database Error: {status['database'].get('error', 'Unknown')}")
         
-        if status["llm"]["available"]:
-            st.success("? LLM Available")
-            st.info(f"Model: {status['llm']['model']}")
+        if status["ollama"]["available"]:
+            st.success("? Ollama Available")
+            st.info(f"Model: {status['ollama']['model']}")
         else:
-            st.warning("?? LLM Unavailable")
+            st.error(f"? Ollama Error: {status['ollama'].get('error', 'Unknown')}")
         
         st.markdown("---")
-        
-        st.header("Hybrid Features")
-        st.markdown("""
-        **Best of Both Worlds:**
-        - Smart: LLM entity extraction
-        - Fast: Single-pass vector search  
-        - Accurate: Content filtering
-        - Consistent: Same entity = same results
-        - Reliable: Fallback mechanisms
-        """)
-        
-        st.markdown("---")
-        
         st.header("Test Queries")
-        examples = [
-            "John Nolan",
-            "tell me about John Nolan", 
-            "show me John Nolan certifications",
-            "who is Breeda Daly",
-            "find Breeda Daly training"
-        ]
+        examples = ["John Nolan", "Breeda Daly", "tell me about John Nolan"]
         
         for example in examples:
             if st.button(f"?? {example}", key=f"ex_{hash(example)}"):
@@ -480,67 +387,45 @@ def main():
         current_query = st.text_input(
             "Enter your question:",
             value=st.session_state.get("example_query", ""),
-            placeholder="e.g., tell me about John Nolan (press Enter to search)",
+            placeholder="e.g., John Nolan",
             key="main_query",
             on_change=on_query_change
         )
     
     with col2:
-        # FIXED: Button alignment and complete hiding during search
-        st.markdown("") # Empty line
-        st.markdown("") # Empty line  
+        st.markdown("")
+        st.markdown("")
         
-        # Create empty container for button
         button_container = st.empty()
         
-        # Show button or hide it completely
         if st.session_state.search_in_progress:
-            # COMPLETELY HIDE BUTTON during search - show nothing
             button_container.empty()
             search_button = False
         else:
-            # Show button when not searching
             with button_container.container():
                 search_disabled = not current_query.strip()
-                search_button = st.button(
-                    "Search", 
-                    type="primary", 
-                    use_container_width=True,
-                    disabled=search_disabled
-                )
+                search_button = st.button("Search", type="primary", use_container_width=True, disabled=search_disabled)
     
-    # Settings
-    with st.expander("Advanced Settings"):
-        col1, col2 = st.columns(2)
-        with col1:
-            show_extraction = st.checkbox("Show entity extraction", value=True)
-            show_debug = st.checkbox("Show debug info", value=False)
-        with col2:
-            show_metrics = st.checkbox("Show performance metrics", value=True)
-            show_sources = st.checkbox("Show detailed sources", value=True)
-    
-    # Check for auto-search trigger (Enter key pressed)
+    # Auto-search trigger
     auto_search = st.session_state.get("auto_search_triggered", False)
     if auto_search:
-        st.session_state.auto_search_triggered = False  # Reset flag
-        search_button = True  # Trigger search automatically
+        st.session_state.auto_search_triggered = False
+        search_button = True
     
-    # FIXED: Search processing - button completely hidden during search
+    # Search processing
     if search_button and current_query.strip():
         
         if current_query.strip() == st.session_state.last_query and st.session_state.search_results:
-            st.info("?? Showing cached results for same query")
+            st.info("?? Showing cached results")
         else:
-            # Set search in progress - this will HIDE the button completely
             st.session_state.search_in_progress = True
             st.session_state.last_query = current_query.strip()
             
             if "example_query" in st.session_state:
                 st.session_state.example_query = ""
             
-            # Start search (button is now completely hidden)
             try:
-                result = asyncio.run(run_hybrid_search(vector_service, llm_service, current_query.strip()))
+                result = asyncio.run(run_simple_search(current_query.strip()))
                 st.session_state.search_results = result
                 st.session_state.search_performed = True
             
@@ -549,9 +434,8 @@ def main():
                 result = None
             
             finally:
-                # Show button again after search completes
                 st.session_state.search_in_progress = False
-                st.rerun()  # Force rerun to show button again
+                st.rerun()
     
     # Display results
     if st.session_state.search_performed and st.session_state.search_results:
@@ -559,120 +443,41 @@ def main():
         
         st.markdown("---")
         
-        # Show entity extraction
-        if show_extraction:
-            st.markdown(f'<div class="entity-box"><strong>Smart Extraction:</strong><br>Original: "{result["original_question"]}"<br>Extracted Entity: <strong>"{result["extracted_entity"]}"</strong><br>Required Terms: {result["required_terms"]}</div>', unsafe_allow_html=True)
-        
-        # Main answer
+        # Answer
         st.header("Answer")
+        st.markdown(f'<div class="success-box">{result["answer"]}</div>', unsafe_allow_html=True)
         
-        if result["llm_response"].success:
-            st.markdown(f'<div class="success-box">{result["llm_response"].content}</div>', unsafe_allow_html=True)
-        else:
-            st.warning("?? LLM unavailable - showing fallback response:")
-            st.markdown(result["llm_response"].content)
-        
-        # Performance metrics
-        if show_metrics:
-            st.header("Performance Metrics")
+        # Search details
+        if result["search_result"]:
+            search_data = result["search_result"]
             
+            st.header("Search Details")
             col1, col2, col3, col4 = st.columns(4)
             
-            metrics = result["metrics"]
-            
             with col1:
-                st.metric("Total Time", f"{metrics['total_time']:.2f}s")
+                st.metric("Total Candidates", search_data["candidates"])
             with col2:
-                st.metric("Extraction", f"{metrics['extraction_time']:.2f}s")
+                st.metric("After Similarity", search_data["after_similarity"])
             with col3:
-                st.metric("Search + Filter", f"{metrics['search_time']:.2f}s")
+                st.metric("Final Results", search_data["after_content"])
             with col4:
-                st.metric("Precision", f"{metrics['precision']:.1%}")
+                st.metric("Precision", f"{search_data['precision']:.1f}%")
             
-            # Additional metrics
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Raw Results", result["raw_results"])
-            with col2:
-                st.metric("Filtered Results", len(result["filtered_results"]))
-            with col3:
-                st.metric("Dynamic Limit", metrics["dynamic_limit"])
-        
-        # Debug information
-        if show_debug:
-            st.header("Debug Information")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("Extraction Process")
-                st.json({
-                    "original_question": result["original_question"],
-                    "extracted_entity": result["extracted_entity"],
-                    "extraction_method": "LLM + fallback"
-                })
-            with col2:
-                st.subheader("Required Terms")
-                st.json(result["required_terms"])
-            
-            st.subheader("Hybrid Process")
-            st.info(f"1. Extract entity: '{result['extracted_entity']}' ? 2. Search with entity ? 3. Filter by required terms ? 4. Got {len(result['filtered_results'])} precise results")
-        
-        # Sources
-        if result["filtered_results"]:
-            st.header(f"Sources ({len(result['filtered_results'])} documents)")
-            
-            # Special message for John Nolan
-            if len(result["filtered_results"]) == 9 and "john" in result["extracted_entity"].lower() and "nolan" in result["extracted_entity"].lower():
-                st.success("?? Perfect! Found all 9 John Nolan documents - hybrid system working correctly!")
-            
-            for i, doc in enumerate(result["filtered_results"], 1):
-                with st.expander(f"?? {i}. {doc.filename} (similarity: {doc.similarity_score:.3f})"):
-                    
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        st.markdown("**Content Preview:**")
-                        preview = doc.content[:300] + "..." if len(doc.content) > 300 else doc.content
+            # Sources
+            if search_data["processed_nodes"]:
+                st.header(f"Sources ({len(search_data['processed_nodes'])} found)")
+                
+                for i, node in enumerate(search_data["processed_nodes"], 1):
+                    with st.expander(f"?? {i}. {node['filename']} (similarity: {node['similarity_score']:.3f})"):
+                        preview = node['content'][:500] + "..." if len(node['content']) > 500 else node['content']
                         st.text(preview)
-                    
-                    with col2:
-                        st.markdown("**Match Info:**")
-                        st.text(f"Type: {doc.search_info['match_type']}")
-                        st.text(f"Confidence: {doc.search_info['confidence']}")
-                        
-                        found_terms = doc.search_info.get("found_terms", [])
-                        if found_terms:
-                            st.text(f"Found terms: {', '.join(found_terms)}")
-                    
-                    if show_sources:
-                        st.markdown("**Full Content:**")
-                        st.text_area(
-                            "Full document content", 
-                            doc.full_content, 
-                            height=100, 
-                            key=f"content_{i}_{int(time.time())}",
-                            label_visibility="collapsed"
-                        )
-        
-        else:
-            st.warning("? No relevant documents found after filtering")
-            st.info("Try rephrasing your query or using different keywords")
         
         # Clear button
-        if st.button("Clear Results", key="clear_results"):
+        if st.button("Clear Results"):
             st.session_state.search_performed = False
             st.session_state.search_results = None
             st.session_state.last_query = ""
             st.rerun()
-    
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style="text-align: center; color: #666; font-size: 0.9rem;">
-        Hybrid RAG System - Smart Extraction + Simple Search = Consistent Results<br>
-        Built with Streamlit - Powered by LlamaIndex & Ollama
-    </div>
-    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()

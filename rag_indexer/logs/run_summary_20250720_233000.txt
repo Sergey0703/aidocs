@@ -1,0 +1,39 @@
+Processing Run Summary
+==================================================
+Start time: 2025-07-20 22:56:15
+End time: 2025-07-20 23:30:00
+Duration: 33.8m
+
+start_time: 1753048575.50
+documents_loaded: 406
+images_processed: 13
+chunks_created: 461
+embeddings_generated: 440
+records_saved: 440
+encoding_issues: 0
+total_time: 1907.70
+total_nodes: 461
+total_batches: 19
+batches_processed: 19
+failed_batches: 0
+total_saved: 440
+total_failed_chunks: 0
+total_embedding_errors: 0
+success_rate: 95.44
+avg_speed: 0.23
+success: 1
+
+FAILED FILES SUMMARY:
+------------------------------
+? Total failed files: 9
+?? Details saved to: /logs/failed_files_details.log
+
+First 5 failed files:
+  1. 674-MC Safeguarding Adults at risk of abuse HSELD 19.05.2025.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  2. 92-BF Food Hygiene SCTV 27.04.2025.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  3. 7095063-louise lyne statement of care 5th may.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  4. 9760024-kitty scannel statement of care..pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  5. 3585491-sarah flynn statement.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  ... and 4 more (see detailed log)
+
+==================================================

@@ -1,0 +1,37 @@
+Processing Run Summary
+==================================================
+Start time: 2025-07-21 11:52:38
+End time: 2025-07-21 11:56:30
+Duration: 3.9m
+
+start_time: 1753095158.15
+documents_loaded: 184
+images_processed: 6
+chunks_created: 173
+embeddings_generated: 173
+records_saved: 173
+encoding_issues: 0
+total_time: 189.70
+total_nodes: 173
+total_batches: 4
+batches_processed: 4
+failed_batches: 0
+total_saved: 173
+total_failed_chunks: 0
+total_embedding_errors: 0
+success_rate: 100.00
+avg_speed: 0.91
+success: 1
+
+FAILED FILES SUMMARY:
+------------------------------
+? Total failed files: 4
+?? Details saved to: /logs/failed_files_details.log
+
+All failed files:
+  1. 383-AC AMRIC Hand Hygiene HSELD 03.10.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  2. 717-MOC Diversity, Equality and Inclusion Module 1 HSELD 26.09.2024.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  3. 8736840-doc013948.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  4. 669-AF Supervisory Management FETAC 14.08.2024.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+
+==================================================
