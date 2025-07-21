@@ -1,9 +1,10 @@
 # retrieval/multi_retriever.py
-# Multi-strategy retrieval system with DIAGNOSTIC LOGGING and timeout fixes
+# Multi-strategy retrieval system with UNIVERSAL PERSON NAME DETECTION
 
 import time
 import logging
 import asyncio
+import re
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -42,6 +43,120 @@ class MultiRetrievalResult:
         if self.metadata is None:
             self.metadata = {}
 
+class PersonNameDetector:
+    """Universal person name detection using best practices from NLP literature"""
+    
+    def __init__(self):
+        # Universal person name patterns from NLP best practices
+        self.person_patterns = [
+            # Basic: First Last (most common)
+            r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b',
+            
+            # With middle initial: First M. Last
+            r'\b[A-Z][a-z]+\s+[A-Z]\.\s+[A-Z][a-z]+\b',
+            
+            # With middle name: First Middle Last
+            r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\s+[A-Z][a-z]+\b',
+            
+            # Hyphenated names: Smith-Jones, Lloyd-Atkinson
+            r'\b[A-Z][a-z]+-[A-Z][a-z]+\b',
+            r'\b[A-Z][a-z]+\s+[A-Z][a-z]+-[A-Z][a-z]+\b',
+            
+            # Names with apostrophes: D'Angelo, O'Brien
+            r"\b[A-Z]'[A-Z][a-z]+\b",
+            r"\b[A-Z][a-z]+\s+[A-Z]'[A-Z][a-z]+\b",
+            
+            # Names with prefixes: Van der, De, Di, etc.
+            r'\b[A-Z][a-z]+\s+(?:van|de|di|du|da|del|della|von|zu)\s+[A-Z][a-z]+\b',
+            r'\b(?:Van|De|Di|Du|Da|Del|Della|Von|Zu)\s+[A-Z][a-z]+\b',
+            
+            # Names with suffixes: Jr., Sr., III
+            r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\s+(?:Jr|Sr|III|II|IV)\b',
+        ]
+        
+        # Compile patterns for performance
+        self.compiled_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.person_patterns]
+        
+        # Keywords that often indicate person queries
+        self.person_keywords = [
+            'who is', 'tell me about', 'find', 'about', 'information about',
+            'show me', 'give me', 'details about', 'biography', 'profile'
+        ]
+    
+    def is_person_query(self, query: str, extracted_entity: Optional[str] = None) -> bool:
+        """Detect if query is about a person using universal patterns"""
+        
+        # Check extracted entity first (if available)
+        if extracted_entity:
+            if self.contains_person_name(extracted_entity):
+                return True
+        
+        # Check original query
+        if self.contains_person_name(query):
+            return True
+        
+        # Check for person-related keywords + capitalized words
+        query_lower = query.lower()
+        has_person_keywords = any(keyword in query_lower for keyword in self.person_keywords)
+        has_capitalized_words = bool(re.search(r'\b[A-Z][a-z]+\b', query))
+        
+        return has_person_keywords and has_capitalized_words
+    
+    def contains_person_name(self, text: str) -> bool:
+        """Check if text contains a person name using universal patterns"""
+        if not text or len(text.strip()) < 2:
+            return False
+        
+        # Try each compiled pattern
+        for pattern in self.compiled_patterns:
+            if pattern.search(text):
+                return True
+        
+        return False
+    
+    def extract_person_names(self, text: str) -> List[str]:
+        """Extract all person names from text using universal patterns"""
+        names = []
+        
+        for pattern in self.compiled_patterns:
+            matches = pattern.findall(text)
+            names.extend(matches)
+        
+        # Remove duplicates while preserving order
+        unique_names = []
+        for name in names:
+            if name not in unique_names:
+                unique_names.append(name)
+        
+        return unique_names
+    
+    def get_person_name_terms(self, text: str) -> List[str]:
+        """Get individual terms from detected person names for content validation"""
+        # 1. ??????? ????? ??? person names ????????? regex ????????
+        person_names = self.extract_person_names(text)
+        
+        if not person_names:
+            return []  # ???? ???? ??? - ?????????? ?????? ??????
+        
+        # 2. ????? ??????? ??????? ?????? ?? ????????? ????
+        terms = []
+        for name in person_names:
+            # Split name into individual terms and clean them
+            name_terms = [
+                term.strip().lower() 
+                for term in re.split(r'[\s\-\']', name) 
+                if len(term.strip()) > 1
+            ]
+            terms.extend(name_terms)
+        
+        # Remove duplicates while preserving order
+        unique_terms = []
+        for term in terms:
+            if term not in unique_terms:
+                unique_terms.append(term)
+        
+        return unique_terms
+
 class BaseRetriever(ABC):
     """Base class for retrievers"""
     
@@ -61,12 +176,13 @@ class BaseRetriever(ABC):
         pass
 
 class LlamaIndexRetriever(BaseRetriever):
-    """LlamaIndex-based vector retriever with diagnostic logging"""
+    """LlamaIndex-based vector retriever with UNIVERSAL PERSON NAME SUPPORT"""
     
     def __init__(self, config):
         self.config = config
         self.index = None
         self.embed_model = None
+        self.person_detector = PersonNameDetector()
         self._initialize_components()
     
     def _initialize_components(self):
@@ -115,22 +231,49 @@ class LlamaIndexRetriever(BaseRetriever):
     def get_name(self) -> str:
         return "llamaindex_vector"
     
-    async def retrieve(self, query: str, top_k: int = 10, similarity_threshold: float = 0.3, **kwargs) -> List[RetrievalResult]:
-        """Retrieve using LlamaIndex with DETAILED DIAGNOSTIC LOGGING"""
+    def _get_universal_threshold(self, query: str) -> float:
+        """Get smart threshold based on UNIVERSAL person name detection"""
+        
+        # Use universal person detector
+        is_person = self.person_detector.is_person_query(query)
+        
+        if is_person:
+            # High threshold for any person names (universal)
+            return 0.65
+        
+        # Check query complexity for non-person queries
+        word_count = len(query.split())
+        if word_count <= 2:
+            return 0.4  # Simple queries
+        elif word_count >= 6:
+            return 0.3  # Complex queries need lower threshold
+        else:
+            return 0.35  # Standard queries
+    
+    async def retrieve(self, query: str, top_k: int = 10, similarity_threshold: float = None, **kwargs) -> List[RetrievalResult]:
+        """Retrieve using LlamaIndex with UNIVERSAL person name detection"""
         if not self.is_available():
             logger.warning("? LlamaIndex retriever not available")
             return []
         
-        logger.info(f"?? DIAGNOSTIC: Starting LlamaIndex retrieval for '{query}' (threshold: {similarity_threshold}, top_k: {top_k})")
+        # Use universal threshold if not provided
+        if similarity_threshold is None:
+            similarity_threshold = self._get_universal_threshold(query)
+        
+        logger.info(f"?? LlamaIndex retrieval: '{query}' (universal threshold: {similarity_threshold}, top_k: {top_k})")
         
         try:
             from llama_index.core.retrievers import VectorIndexRetriever
             from llama_index.core.postprocessor import SimilarityPostprocessor
             
+            # Adjust candidates based on threshold
+            candidates_multiplier = 3 if similarity_threshold > 0.6 else 2
+            candidate_count = top_k * candidates_multiplier
+            
             # Create retriever
             retriever = VectorIndexRetriever(
                 index=self.index,
-                similarity_top_k=top_k * 2,  # Get more candidates for filtering
+                similarity_top_k=candidate_count,
                 embed_model=self.embed_model
             )
             
@@ -140,22 +283,39 @@ class LlamaIndexRetriever(BaseRetriever):
             )
             
             # Retrieve nodes
-            logger.info(f"?? Retrieving nodes with top_k={top_k * 2}")
+            logger.info(f"?? Retrieving {candidate_count} candidates")
             nodes = retriever.retrieve(query)
-            logger.info(f"?? Retrieved {len(nodes)} raw candidate nodes")
+            logger.info(f"?? Raw candidates: {len(nodes)}")
             
             # Apply similarity filtering
-            logger.info(f"?? Applying similarity filter (threshold: {similarity_threshold})")
             filtered_nodes = similarity_postprocessor.postprocess_nodes(nodes)
-            logger.info(f"?? After similarity filtering: {len(filtered_nodes)} nodes")
+            logger.info(f"?? After similarity filter (={similarity_threshold}): {len(filtered_nodes)}")
+            
+            # UNIVERSAL content validation
+            validated_nodes = []
+            
+            for node in filtered_nodes:
+                try:
+                    content = node.node.text if hasattr(node.node, 'text') else str(node.node)
+                    
+                    # Universal content relevance check
+                    if self._is_content_universally_relevant(query, content):
+                        validated_nodes.append(node)
+                    else:
+                        similarity_score = node.score if hasattr(node, 'score') else 0.0
+                        metadata = node.node.metadata if hasattr(node.node, 'metadata') else {}
+                        filename = metadata.get('file_name', 'Unknown')
+                        logger.warning(f"?? FILTERED OUT: {filename} (score: {similarity_score:.3f}) - not universally relevant")
+                        
+                except Exception as e:
+                    logger.warning(f"Error validating node: {e}")
+                    continue
+            
+            logger.info(f"? After universal validation: {len(validated_nodes)} relevant results")
             
             # Convert to RetrievalResult objects
             results = []
-            query_lower = query.lower()
-            
-            logger.info(f"?? DETAILED ANALYSIS of top {min(len(filtered_nodes), top_k)} results:")
-            
-            for i, node in enumerate(filtered_nodes[:top_k]):
+            for i, node in enumerate(validated_nodes[:top_k]):
                 try:
                     # Extract metadata
                     metadata = node.node.metadata if hasattr(node.node, 'metadata') else {}
@@ -166,32 +326,6 @@ class LlamaIndexRetriever(BaseRetriever):
                     
                     # Get similarity score
                     similarity_score = node.score if hasattr(node, 'score') else 0.0
-                    
-                    # DIAGNOSTIC: Check if query terms are in content
-                    content_lower = content.lower()
-                    contains_query = query_lower in content_lower
-                    
-                    # Extract entity terms for checking
-                    if 'breeda' in query_lower and 'daly' in query_lower:
-                        contains_breeda = 'breeda' in content_lower
-                        contains_daly = 'daly' in content_lower
-                        contains_both = contains_breeda and contains_daly
-                        
-                        logger.info(f"  ?? {i+1}. {filename} (score: {similarity_score:.3f})")
-                        logger.info(f"       Contains 'breeda': {contains_breeda}")
-                        logger.info(f"       Contains 'daly': {contains_daly}")
-                        logger.info(f"       Contains both: {contains_both}")
-                        logger.info(f"       Contains full query: {contains_query}")
-                        logger.info(f"       Content preview: {content[:100].replace(chr(10), ' ')}...")
-                        
-                        # CRITICAL: If this result doesn't contain the person, flag it
-                        if not contains_both:
-                            logger.warning(f"??  PROBLEM: Document '{filename}' has high similarity ({similarity_score:.3f}) but doesn't contain 'Breeda Daly'!")
-                            logger.warning(f"      This suggests vector search is returning irrelevant results!")
-                    else:
-                        logger.info(f"  ?? {i+1}. {filename} (score: {similarity_score:.3f})")
-                        logger.info(f"       Contains query: {contains_query}")
-                        logger.info(f"       Content preview: {content[:100].replace(chr(10), ' ')}...")
                     
                     result = RetrievalResult(
                         content=content[:500] + "..." if len(content) > 500 else content,
@@ -204,60 +338,70 @@ class LlamaIndexRetriever(BaseRetriever):
                         chunk_index=metadata.get('chunk_index', 0)
                     )
                     
-                    # Add diagnostic metadata
+                    # Add universal validation metadata
                     result.metadata.update({
-                        "diagnostic_contains_query": contains_query,
-                        "diagnostic_query_used": query,
-                        "diagnostic_similarity_threshold": similarity_threshold
+                        "content_validated": True,
+                        "universal_threshold_used": similarity_threshold,
+                        "universal_person_detected": self.person_detector.is_person_query(query),
+                        "query_validated": query
                     })
                     
                     results.append(result)
+                    logger.info(f"  ? {i+1}. {filename} (score: {similarity_score:.3f}) - VALIDATED")
                     
                 except Exception as e:
-                    logger.warning(f"?? Error processing node {i}: {e}")
+                    logger.warning(f"Error processing validated node {i}: {e}")
                     continue
             
-            # Final diagnostic summary
-            relevant_results = [r for r in results if r.metadata.get("diagnostic_contains_query", False)]
-            logger.info(f"?? DIAGNOSTIC SUMMARY:")
-            logger.info(f"   Total candidates: {len(nodes)}")
-            logger.info(f"   After similarity filter: {len(filtered_nodes)}")
-            logger.info(f"   Final results: {len(results)}")
-            logger.info(f"   Actually relevant: {len(relevant_results)}")
-            logger.info(f"   Relevance ratio: {len(relevant_results)/len(results)*100 if results else 0:.1f}%")
-            
-            if len(relevant_results) == 0 and len(results) > 0:
-                logger.error(f"?? CRITICAL ISSUE: Vector search returned {len(results)} results but NONE contain the query terms!")
-                logger.error(f"    This indicates a problem with:")
-                logger.error(f"    1. Embedding model understanding")
-                logger.error(f"    2. Similarity threshold too low") 
-                logger.error(f"    3. Database indexing issues")
-                logger.error(f"    4. Query preprocessing problems")
-            
+            logger.info(f"?? LlamaIndex final results: {len(results)} universally validated documents")
             return results
             
         except Exception as e:
             logger.error(f"? LlamaIndex retrieval failed: {e}")
-            import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
             return []
+    
+    def _is_content_universally_relevant(self, query: str, content: str) -> bool:
+        """UNIVERSAL content relevance check using person name detector"""
+        
+        query_lower = query.lower()
+        content_lower = content.lower()
+        
+        # Check if query contains person names using universal detector
+        if self.person_detector.is_person_query(query):
+            # ??????????: ?????????? ???????????? ????? get_person_name_terms
+            person_terms = self.person_detector.get_person_name_terms(query)
+            
+            if person_terms:
+                # Require ALL person name terms to be in content (strict for person queries)
+                found_terms = sum(1 for term in person_terms if term in content_lower)
+                return found_terms == len(person_terms)
+        
+        # For non-person queries - general relevance check
+        query_words = [word for word in query_lower.split() if len(word) > 2]
+        if not query_words:
+            return True
+        
+        # Require at least 70% of significant words to be in content
+        found_words = sum(1 for word in query_words if word in content_lower)
+        return found_words / len(query_words) >= 0.7
 
 class DatabaseRetriever(BaseRetriever):
-    """Direct database retriever for fallback with diagnostic logging"""
+    """Enhanced database retriever with UNIVERSAL person name support"""
     
     def __init__(self, config):
         self.config = config
+        self.person_detector = PersonNameDetector()
     
     def is_available(self) -> bool:
         """Database retriever is always available"""
         return True
     
     def get_name(self) -> str:
-        return "database_direct"
+        return "database_exact"
     
     async def retrieve(self, query: str, top_k: int = 10, **kwargs) -> List[RetrievalResult]:
-        """Retrieve using direct database search with diagnostic logging"""
-        logger.info(f"??? DIAGNOSTIC: Database fallback search for '{query}'")
+        """Database search with UNIVERSAL person name detection"""
+        logger.info(f"??? Database exact search for: '{query}'")
         
         try:
             import psycopg2
@@ -266,157 +410,285 @@ class DatabaseRetriever(BaseRetriever):
             conn = psycopg2.connect(self.config.database.connection_string)
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Simple text search as fallback
-            search_sql = f"""
-            SELECT 
-                id,
-                metadata,
-                (metadata->>'text') as text_content,
-                (metadata->>'file_name') as file_name,
-                (metadata->>'file_path') as file_path
-            FROM {self.config.database.schema}.{self.config.database.table_name}
-            WHERE LOWER(metadata->>'text') LIKE LOWER(%s)
-            ORDER BY LENGTH(metadata->>'text') ASC
-            LIMIT %s
-            """
+            results = []
             
-            # Use wildcards for broader matching
-            search_term = f"%{query}%"
-            logger.info(f"?? SQL search with term: {search_term}")
+            # Strategy 1: Exact phrase match (highest priority)
+            exact_results = await self._exact_phrase_search(cur, query, top_k)
+            results.extend(exact_results)
+            logger.info(f"?? Exact phrase matches: {len(exact_results)}")
             
-            cur.execute(search_sql, (search_term, top_k))
-            rows = cur.fetchall()
+            # Strategy 2: Person name terms match (if query contains person names)
+            if self.person_detector.is_person_query(query) and len(results) < top_k:
+                needed = top_k - len(results)
+                person_results = await self._person_name_search(cur, query, needed, exclude_ids=[r.document_id for r in results])
+                results.extend(person_results)
+                logger.info(f"?? Person name matches: {len(person_results)}")
             
-            logger.info(f"?? Database found {len(rows)} direct matches")
+            # Strategy 3: Individual terms match (if still not enough)
+            if len(results) < top_k:
+                needed = top_k - len(results)
+                terms_results = await self._terms_search(cur, query, needed, exclude_ids=[r.document_id for r in results])
+                results.extend(terms_results)
+                logger.info(f"?? Terms matches: {len(terms_results)}")
             
             cur.close()
             conn.close()
             
-            # Convert to RetrievalResult objects
-            results = []
-            for i, row in enumerate(rows):
-                try:
-                    content = row.get('text_content', '')
-                    if not content:
-                        continue
-                    
-                    metadata = row.get('metadata', {})
-                    filename = row.get('file_name') or metadata.get('file_name', 'Unknown')
-                    
-                    # Calculate simple relevance score based on query occurrence
-                    relevance_score = self._calculate_relevance(content, query)
-                    
-                    logger.info(f"  ?? {i+1}. {filename} (relevance: {relevance_score:.3f})")
-                    logger.info(f"       Direct match found in database")
-                    
-                    result = RetrievalResult(
-                        content=content[:500] + "..." if len(content) > 500 else content,
-                        full_content=content,
-                        filename=filename,
-                        similarity_score=relevance_score,
-                        metadata=metadata,
-                        source_method=self.get_name(),
-                        document_id=str(row.get('id', '')),
-                        chunk_index=metadata.get('chunk_index', 0)
-                    )
-                    
-                    results.append(result)
-                    
-                except Exception as e:
-                    logger.warning(f"?? Error processing database row {i}: {e}")
-                    continue
-            
-            logger.info(f"? Database retrieval completed: {len(results)} results")
+            logger.info(f"? Database search completed: {len(results)} total results")
             return results
             
         except Exception as e:
             logger.error(f"? Database retrieval failed: {e}")
             return []
     
-    def _calculate_relevance(self, content: str, query: str) -> float:
-        """Calculate simple relevance score"""
-        content_lower = content.lower()
-        query_lower = query.lower()
+    async def _exact_phrase_search(self, cur, query: str, limit: int) -> List[RetrievalResult]:
+        """Exact phrase matching"""
+        search_sql = f"""
+        SELECT 
+            id,
+            metadata,
+            (metadata->>'text') as text_content,
+            (metadata->>'file_name') as file_name
+        FROM {self.config.database.schema}.{self.config.database.table_name}
+        WHERE LOWER(metadata->>'text') LIKE LOWER(%s)
+        ORDER BY LENGTH(metadata->>'text') ASC
+        LIMIT %s
+        """
         
-        # Count occurrences
-        occurrences = content_lower.count(query_lower)
-        if occurrences == 0:
+        search_term = f"%{query}%"
+        cur.execute(search_sql, (search_term, limit))
+        rows = cur.fetchall()
+        
+        results = []
+        for row in rows:
+            try:
+                content = row.get('text_content', '')
+                if not content:
+                    continue
+                
+                metadata = row.get('metadata', {})
+                filename = row.get('file_name') or metadata.get('file_name', 'Unknown')
+                
+                result = RetrievalResult(
+                    content=content[:500] + "..." if len(content) > 500 else content,
+                    full_content=content,
+                    filename=filename,
+                    similarity_score=0.95,  # High score for exact matches
+                    metadata=metadata,
+                    source_method=self.get_name(),
+                    document_id=str(row.get('id', '')),
+                    chunk_index=metadata.get('chunk_index', 0)
+                )
+                
+                result.metadata.update({
+                    "match_type": "exact_phrase",
+                    "search_query": query
+                })
+                
+                results.append(result)
+                
+            except Exception as e:
+                logger.warning(f"Error processing exact match: {e}")
+                continue
+        
+        return results
+    
+    async def _person_name_search(self, cur, query: str, limit: int, exclude_ids: List[str] = None) -> List[RetrievalResult]:
+        """UNIVERSAL person name based search"""
+        if exclude_ids is None:
+            exclude_ids = []
+        
+        # ??????????: ?????????? ???????????? ????? get_person_name_terms
+        person_terms = self.person_detector.get_person_name_terms(query)
+        if not person_terms:
+            return []
+        
+        logger.info(f"?? Searching for person terms: {person_terms}")
+        
+        # Build SQL for person name terms
+        conditions = []
+        params = []
+        
+        for term in person_terms:
+            conditions.append("LOWER(metadata->>'text') LIKE LOWER(%s)")
+            params.append(f"%{term}%")
+        
+        exclude_condition = ""
+        if exclude_ids:
+            exclude_condition = f"AND id NOT IN ({','.join(['%s'] * len(exclude_ids))})"
+            params.extend(exclude_ids)
+        
+        search_sql = f"""
+        SELECT 
+            id,
+            metadata,
+            (metadata->>'text') as text_content,
+            (metadata->>'file_name') as file_name
+        FROM {self.config.database.schema}.{self.config.database.table_name}
+        WHERE ({' AND '.join(conditions)}) {exclude_condition}
+        ORDER BY LENGTH(metadata->>'text') ASC
+        LIMIT %s
+        """
+        
+        params.append(limit)
+        cur.execute(search_sql, params)
+        rows = cur.fetchall()
+        
+        results = []
+        for row in rows:
+            try:
+                content = row.get('text_content', '')
+                if not content:
+                    continue
+                
+                metadata = row.get('metadata', {})
+                filename = row.get('file_name') or metadata.get('file_name', 'Unknown')
+                
+                # Calculate relevance based on person term coverage
+                relevance_score = self._calculate_person_relevance(content, person_terms)
+                
+                result = RetrievalResult(
+                    content=content[:500] + "..." if len(content) > 500 else content,
+                    full_content=content,
+                    filename=filename,
+                    similarity_score=relevance_score,
+                    metadata=metadata,
+                    source_method=self.get_name(),
+                    document_id=str(row.get('id', '')),
+                    chunk_index=metadata.get('chunk_index', 0)
+                )
+                
+                result.metadata.update({
+                    "match_type": "person_name_match",
+                    "person_terms": person_terms,
+                    "terms_coverage": relevance_score
+                })
+                
+                results.append(result)
+                
+            except Exception as e:
+                logger.warning(f"Error processing person name match: {e}")
+                continue
+        
+        return results
+    
+    async def _terms_search(self, cur, query: str, limit: int, exclude_ids: List[str] = None) -> List[RetrievalResult]:
+        """Individual terms matching"""
+        if exclude_ids is None:
+            exclude_ids = []
+        
+        # Extract individual terms
+        terms = [term.strip().lower() for term in query.split() if len(term) > 2]
+        if not terms:
+            return []
+        
+        # Build SQL for terms matching
+        conditions = []
+        params = []
+        
+        for term in terms:
+            conditions.append("LOWER(metadata->>'text') LIKE LOWER(%s)")
+            params.append(f"%{term}%")
+        
+        exclude_condition = ""
+        if exclude_ids:
+            exclude_condition = f"AND id NOT IN ({','.join(['%s'] * len(exclude_ids))})"
+            params.extend(exclude_ids)
+        
+        search_sql = f"""
+        SELECT 
+            id,
+            metadata,
+            (metadata->>'text') as text_content,
+            (metadata->>'file_name') as file_name
+        FROM {self.config.database.schema}.{self.config.database.table_name}
+        WHERE ({' AND '.join(conditions)}) {exclude_condition}
+        ORDER BY LENGTH(metadata->>'text') ASC
+        LIMIT %s
+        """
+        
+        params.append(limit)
+        cur.execute(search_sql, params)
+        rows = cur.fetchall()
+        
+        results = []
+        for row in rows:
+            try:
+                content = row.get('text_content', '')
+                if not content:
+                    continue
+                
+                metadata = row.get('metadata', {})
+                filename = row.get('file_name') or metadata.get('file_name', 'Unknown')
+                
+                # Calculate relevance based on term coverage
+                relevance_score = self._calculate_terms_relevance(content, terms)
+                
+                result = RetrievalResult(
+                    content=content[:500] + "..." if len(content) > 500 else content,
+                    full_content=content,
+                    filename=filename,
+                    similarity_score=relevance_score,
+                    metadata=metadata,
+                    source_method=self.get_name(),
+                    document_id=str(row.get('id', '')),
+                    chunk_index=metadata.get('chunk_index', 0)
+                )
+                
+                result.metadata.update({
+                    "match_type": "terms_match",
+                    "search_terms": terms,
+                    "terms_coverage": relevance_score
+                })
+                
+                results.append(result)
+                
+            except Exception as e:
+                logger.warning(f"Error processing terms match: {e}")
+                continue
+        
+        return results
+    
+    def _calculate_person_relevance(self, content: str, person_terms: List[str]) -> float:
+        """Calculate relevance for person name matches"""
+        content_lower = content.lower()
+        found_terms = sum(1 for term in person_terms if term in content_lower)
+        
+        if found_terms == 0:
             return 0.1
         
-        # Normalize by content length
-        relevance = min(1.0, occurrences / (len(content.split()) / 100))
-        return relevance
-
-class ContentFilterRetriever(BaseRetriever):
-    """Content-filtering retriever that requires specific terms"""
+        # High score for person matches (requires ALL terms)
+        if found_terms == len(person_terms):
+            return 0.9
+        
+        # Partial matches get lower scores
+        coverage_score = found_terms / len(person_terms)
+        return 0.4 + coverage_score * 0.4
     
-    def __init__(self, base_retriever: BaseRetriever, required_terms: List[str]):
-        self.base_retriever = base_retriever
-        self.required_terms = [term.lower() for term in required_terms]
-    
-    def is_available(self) -> bool:
-        return self.base_retriever.is_available()
-    
-    def get_name(self) -> str:
-        return f"{self.base_retriever.get_name()}_filtered"
-    
-    async def retrieve(self, query: str, top_k: int = 10, **kwargs) -> List[RetrievalResult]:
-        """Retrieve and filter by required terms with diagnostic logging"""
-        logger.info(f"?? DIAGNOSTIC: Content filtering with required terms: {self.required_terms}")
+    def _calculate_terms_relevance(self, content: str, terms: List[str]) -> float:
+        """Calculate relevance based on term coverage"""
+        content_lower = content.lower()
+        found_terms = sum(1 for term in terms if term in content_lower)
         
-        # Get base results
-        base_results = await self.base_retriever.retrieve(query, top_k * 3, **kwargs)  # Get more for filtering
-        logger.info(f"?? Base retriever returned {len(base_results)} results")
+        if found_terms == 0:
+            return 0.1
         
-        if not self.required_terms:
-            logger.info("?? No required terms specified, returning base results")
-            return base_results[:top_k]
+        # Base score from coverage
+        coverage_score = found_terms / len(terms)
         
-        # Apply content filtering
-        filtered_results = []
-        for i, result in enumerate(base_results):
-            full_text = f"{result.content} {result.filename} {result.full_content}".lower()
-            
-            # Check if ANY required term is present (flexible filtering)
-            found_terms = []
-            for term in self.required_terms:
-                if term in full_text:
-                    found_terms.append(term)
-            
-            logger.info(f"  ?? {i+1}. {result.filename}")
-            logger.info(f"       Required terms: {self.required_terms}")
-            logger.info(f"       Found terms: {found_terms}")
-            logger.info(f"       Match ratio: {len(found_terms)}/{len(self.required_terms)}")
-            
-            if found_terms:  # At least one term found
-                # Update metadata with filtering info
-                result.metadata.update({
-                    "content_filtered": True,
-                    "found_terms": found_terms,
-                    "match_ratio": len(found_terms) / len(self.required_terms),
-                    "required_terms": self.required_terms
-                })
-                result.source_method = self.get_name()
-                filtered_results.append(result)
-                logger.info(f"       ? PASSED content filter")
-            else:
-                logger.info(f"       ? FAILED content filter (no required terms found)")
+        # Boost for multiple occurrences
+        total_occurrences = sum(content_lower.count(term) for term in terms)
+        occurrence_boost = min(0.2, total_occurrences * 0.02)
         
-        # Sort by match ratio and similarity
-        filtered_results.sort(
-            key=lambda x: (x.metadata.get("match_ratio", 0), x.similarity_score),
-            reverse=True
-        )
-        
-        logger.info(f"?? Content filtering result: {len(filtered_results)}/{len(base_results)} results passed filter")
-        return filtered_results[:top_k]
+        return min(0.8, 0.4 + coverage_score * 0.3 + occurrence_boost)
 
 class MultiStrategyRetriever:
-    """Multi-strategy retriever with diagnostic logging and timeout fixes"""
+    """Multi-strategy retriever with UNIVERSAL person name detection"""
     
     def __init__(self, config):
         self.config = config
         self.retrievers = {}
+        self.person_detector = PersonNameDetector()
         self._initialize_retrievers()
     
     def _initialize_retrievers(self):
@@ -426,7 +698,7 @@ class MultiStrategyRetriever:
         if llamaindex_retriever.is_available():
             self.retrievers["llamaindex"] = llamaindex_retriever
         
-        # Fallback database retriever
+        # Enhanced database retriever
         self.retrievers["database"] = DatabaseRetriever(self.config)
         
         logger.info(f"?? Initialized retrievers: {list(self.retrievers.keys())}")
@@ -435,303 +707,242 @@ class MultiStrategyRetriever:
                            queries: List[str], 
                            extracted_entity: Optional[str] = None,
                            required_terms: List[str] = None) -> MultiRetrievalResult:
-        """Retrieve using multiple strategies with comprehensive diagnostic logging"""
+        """Multi-strategy retrieval with UNIVERSAL person name detection"""
         start_time = time.time()
         all_results = []
         methods_used = []
         
-        logger.info(f"?? DIAGNOSTIC: Starting multi-strategy retrieval")
-        logger.info(f"   Queries: {queries}")
-        logger.info(f"   Extracted entity: {extracted_entity}")
+        primary_query = queries[0] if queries else ""
+        
+        logger.info(f"?? Universal multi-strategy retrieval")
+        logger.info(f"   Primary query: '{primary_query}'")
+        logger.info(f"   Entity: '{extracted_entity}'")
         logger.info(f"   Required terms: {required_terms}")
         
-        # Get dynamic search parameters
-        search_params = self.config.get_dynamic_search_params(
-            queries[0] if queries else "", 
-            extracted_entity
-        )
+        # UNIVERSAL person query detection
+        is_person_query = self.person_detector.is_person_query(primary_query, extracted_entity)
         
-        top_k = search_params["top_k"]
-        similarity_threshold = search_params["similarity_threshold"]
+        # Get universal search parameters
+        search_params = self._get_universal_search_params(primary_query, extracted_entity, is_person_query)
+        logger.info(f"?? Universal parameters: {search_params}")
         
-        logger.info(f"?? Dynamic search parameters:")
-        logger.info(f"   Top K: {top_k}")
-        logger.info(f"   Similarity threshold: {similarity_threshold}")
-        
-        # Strategy 1: Primary retriever with all query variants
-        logger.info(f"?? STRATEGY 1: Primary retriever with query variants")
-        primary_results = await self._retrieve_with_variants(
-            queries, top_k, similarity_threshold
-        )
-        
-        if primary_results:
-            all_results.extend(primary_results)
-            methods_used.append("multi_query_primary")
-            logger.info(f"? Strategy 1 succeeded: {len(primary_results)} results")
-        else:
-            logger.warning(f"?? Strategy 1 failed: no results from primary retriever")
-        
-        # Strategy 2: Content-filtered retrieval (if required terms provided)
-        if required_terms and "llamaindex" in self.retrievers:
-            logger.info(f"?? STRATEGY 2: Content-filtered retrieval")
-            filtered_retriever = ContentFilterRetriever(
-                self.retrievers["llamaindex"], 
-                required_terms
+        # STRATEGY 1: Database exact search (highest priority for person queries)
+        if is_person_query and "database" in self.retrievers:
+            logger.info(f"??? STRATEGY 1: Database exact search (universal person detected)")
+            # ??????????: ?????????? extracted_entity ??? person queries ?????? ??????? query
+            search_query = extracted_entity or primary_query
+            logger.info(f"   Using search query: '{search_query}' (extracted from: '{primary_query}')")
+            database_results = await self.retrievers["database"].retrieve(
+                search_query, search_params["top_k"]
             )
             
-            filtered_results = await filtered_retriever.retrieve(
-                queries[0], top_k, similarity_threshold=similarity_threshold
-            )
+            if database_results:
+                all_results.extend(database_results)
+                methods_used.append("database_exact_priority")
+                logger.info(f"? Strategy 1: {len(database_results)} exact matches found")
+                
+                # Early return if sufficient exact matches found
+                if len(database_results) >= 3:
+                    logger.info("?? Sufficient exact matches found, skipping vector search")
+                    final_results = database_results[:search_params["top_k"]]
+                    
+                    return MultiRetrievalResult(
+                        query=primary_query,
+                        results=final_results,
+                        methods_used=methods_used,
+                        total_candidates=len(all_results),
+                        retrieval_time=time.time() - start_time,
+                        fusion_method="database_priority",
+                        metadata={
+                            "search_params": search_params,
+                            "strategy": "database_priority_success",
+                            "universal_person_detected": True
+                        }
+                    )
+        
+        # STRATEGY 2: Vector search with universal thresholds
+        if "llamaindex" in self.retrievers:
+            logger.info(f"?? STRATEGY 2: Vector search with universal threshold")
             
-            if filtered_results:
-                all_results.extend(filtered_results)
-                methods_used.append("content_filtered")
-                logger.info(f"? Strategy 2 succeeded: {len(filtered_results)} filtered results")
+            if is_person_query:
+                # For person queries - single precise query with high threshold
+                vector_results = await self.retrievers["llamaindex"].retrieve(
+                    extracted_entity or primary_query, 
+                    search_params["top_k"],
+                    similarity_threshold=search_params["similarity_threshold"]
+                )
+                logger.info(f"   Single person query: '{extracted_entity or primary_query}'")
             else:
-                logger.warning(f"?? Strategy 2 failed: no results after content filtering")
+                # For general queries - can use multiple variants
+                vector_results = await self._retrieve_with_variants(
+                    queries[:2], search_params["top_k"], search_params["similarity_threshold"]
+                )
+                logger.info(f"   Multiple variants for general query")
+            
+            if vector_results:
+                all_results.extend(vector_results)
+                methods_used.append("vector_universal_threshold")
+                logger.info(f"? Strategy 2: {len(vector_results)} vector results")
         
-        # Strategy 3: Fallback database search (if primary failed)
+        # STRATEGY 3: Database fallback (if primary strategies failed)
         if not all_results and "database" in self.retrievers:
-            logger.info(f"??? STRATEGY 3: Fallback database search")
+            logger.info(f"?? STRATEGY 3: Database fallback")
+            # ??????????: ?????????? extracted_entity ? ??? fallback
+            search_query = extracted_entity or primary_query
+            logger.info(f"   Using fallback search query: '{search_query}'")
             fallback_results = await self.retrievers["database"].retrieve(
-                queries[0], top_k
+                search_query, search_params["top_k"]
             )
             
             if fallback_results:
                 all_results.extend(fallback_results)
                 methods_used.append("database_fallback")
-                logger.info(f"? Strategy 3 succeeded: {len(fallback_results)} database results")
-            else:
-                logger.warning(f"?? Strategy 3 failed: no database results")
+                logger.info(f"? Strategy 3: {len(fallback_results)} fallback results")
         
-        # Fuse and rank results
-        logger.info(f"?? FUSION: Processing {len(all_results)} total results")
-        final_results = self._fuse_results(all_results, queries[0])
+        # Simple deduplication and ranking
+        final_results = self._universal_dedupe_and_rank(all_results, search_params["top_k"])
         
         retrieval_time = time.time() - start_time
         
-        # Final diagnostic summary
-        logger.info(f"?? MULTI-RETRIEVAL COMPLETED:")
-        logger.info(f"   Total candidates found: {len(all_results)}")
-        logger.info(f"   Final results after fusion: {len(final_results)}")
+        logger.info(f"?? UNIVERSAL RETRIEVAL COMPLETED:")
+        logger.info(f"   Query type: {'PERSON' if is_person_query else 'GENERAL'}")
+        logger.info(f"   Total candidates: {len(all_results)}")
+        logger.info(f"   Final results: {len(final_results)}")
         logger.info(f"   Methods used: {', '.join(methods_used)}")
-        logger.info(f"   Total time: {retrieval_time:.3f}s")
-        logger.info(f"   Success rate: {len(final_results)/len(all_results)*100 if all_results else 0:.1f}%")
-        
-        if len(final_results) == 0:
-            logger.error(f"?? CRITICAL: No results returned from any strategy!")
-            logger.error(f"   Possible issues:")
-            logger.error(f"   1. Query terms not in database")
-            logger.error(f"   2. Similarity thresholds too high")
-            logger.error(f"   3. Embedding model problems")
-            logger.error(f"   4. Database connectivity issues")
+        logger.info(f"   Time: {retrieval_time:.3f}s")
         
         return MultiRetrievalResult(
-            query=queries[0],
+            query=primary_query,
             results=final_results,
             methods_used=methods_used,
             total_candidates=len(all_results),
             retrieval_time=retrieval_time,
-            fusion_method=self.config.search.fusion_method,
+            fusion_method="universal_multi_strategy",
             metadata={
                 "search_params": search_params,
-                "queries_used": queries,
-                "extracted_entity": extracted_entity,
-                "required_terms": required_terms,
-                "diagnostic_mode": True
+                "universal_person_detected": is_person_query,
+                "person_names_found": self.person_detector.extract_person_names(primary_query),
+                "strategy": "universal_multi_strategy"
             }
         )
+    
+    def _get_universal_search_params(self, query: str, extracted_entity: Optional[str], is_person_query: bool) -> Dict:
+        """Get universal search parameters based on query analysis"""
+        
+        if is_person_query:
+            # Conservative parameters for person queries
+            return {
+                "similarity_threshold": 0.65,  # High threshold for person names
+                "top_k": 10,
+                "strategy": "universal_person_focused"
+            }
+        else:
+            # Adaptive parameters for general queries
+            word_count = len(query.split())
+            if word_count <= 2:
+                return {
+                    "similarity_threshold": 0.4,
+                    "top_k": 12,
+                    "strategy": "universal_simple"
+                }
+            elif word_count >= 6:
+                return {
+                    "similarity_threshold": 0.3,
+                    "top_k": 18,
+                    "strategy": "universal_complex"
+                }
+            else:
+                return {
+                    "similarity_threshold": 0.35,
+                    "top_k": 15,
+                    "strategy": "universal_standard"
+                }
     
     async def _retrieve_with_variants(self, 
                                     queries: List[str], 
                                     top_k: int, 
                                     similarity_threshold: float) -> List[RetrievalResult]:
-        """Retrieve using multiple query variants with timeout protection"""
+        """Retrieve with query variants (only for non-person queries)"""
+        
         if "llamaindex" not in self.retrievers:
-            logger.warning("? LlamaIndex retriever not available for query variants")
             return []
         
         retriever = self.retrievers["llamaindex"]
         all_results = []
         
-        logger.info(f"?? Retrieving with {len(queries)} query variants")
-        
-        # ??????????: ???????? timeout protection ??? ???????????? ????????
-        if self.config.search.enable_multi_retrieval:
-            logger.info("? Using parallel retrieval")
-            tasks = []
-            for i, query in enumerate(queries[:self.config.search.max_query_variants]):
+        # Simple sequential processing for variants
+        for i, query in enumerate(queries[:2]):  # Max 2 variants
+            try:
                 logger.info(f"   ?? Variant {i+1}: '{query}'")
-                task = asyncio.wait_for(
-                    retriever.retrieve(
-                        query, 
-                        top_k // len(queries) + 5,  # Distribute top_k among queries
-                        similarity_threshold=similarity_threshold
-                    ),
-                    timeout=30.0  # ??????????: ???????? timeout 30 ??????
-                )
-                tasks.append(task)
-            
-            # Execute in parallel with timeout protection
-            try:
-                results_list = await asyncio.gather(*tasks, return_exceptions=True)
                 
-                for i, results in enumerate(results_list):
-                    if isinstance(results, list):
-                        logger.info(f"   ? Variant {i+1} returned {len(results)} results")
-                        all_results.extend(results)
-                    elif isinstance(results, asyncio.TimeoutError):
-                        logger.warning(f"   ? Variant {i+1} timed out")
-                    else:
-                        logger.warning(f"   ? Variant {i+1} failed: {results}")
-                        
-            except Exception as e:
-                logger.error(f"? Parallel retrieval failed: {e}")
-                # Fallback to sequential
-                logger.info("?? Falling back to sequential retrieval")
-                all_results = await self._sequential_retrieval(queries, top_k, similarity_threshold, retriever)
-        
-        else:
-            # Sequential retrieval with timeout protection
-            logger.info("?? Using sequential retrieval")
-            all_results = await self._sequential_retrieval(queries, top_k, similarity_threshold, retriever)
-        
-        logger.info(f"?? Query variants summary: {len(all_results)} total results from {len(queries)} variants")
-        return all_results
-    
-    async def _sequential_retrieval(self, queries, top_k, similarity_threshold, retriever):
-        """Sequential retrieval with individual timeouts"""
-        all_results = []
-        
-        for i, query in enumerate(queries[:self.config.search.max_query_variants]):
-            logger.info(f"   ?? Sequential variant {i+1}: '{query}'")
-            try:
-                # ??????????: individual timeout ??? ??????? ???????
-                results = await asyncio.wait_for(
-                    retriever.retrieve(
-                        query, 
-                        top_k,
-                        similarity_threshold=similarity_threshold
-                    ),
-                    timeout=30.0  # 30 ?????? ?? ?????? ??????
+                results = await retriever.retrieve(
+                    query, 
+                    top_k // len(queries) + 2,  # Distribute top_k
+                    similarity_threshold=similarity_threshold
                 )
                 
-                logger.info(f"   ? Variant {i+1} returned {len(results)} results")
-                all_results.extend(results)
-                
-            except asyncio.TimeoutError:
-                logger.warning(f"   ? Variant {i+1} timed out after 30s")
+                if results:
+                    all_results.extend(results)
+                    logger.info(f"   ? Variant {i+1} returned {len(results)} results")
+                else:
+                    logger.info(f"   ? Variant {i+1} returned no results")
+                    
             except Exception as e:
                 logger.warning(f"   ? Variant {i+1} failed: {e}")
+                continue
         
+        logger.info(f"?? Query variants summary: {len(all_results)} total results")
         return all_results
     
-    def _fuse_results(self, all_results: List[RetrievalResult], original_query: str) -> List[RetrievalResult]:
-        """Fuse and rank results from multiple strategies"""
+    def _universal_dedupe_and_rank(self, all_results: List[RetrievalResult], max_results: int) -> List[RetrievalResult]:
+        """Universal deduplication and ranking"""
+        
         if not all_results:
             return []
         
-        # Remove duplicates based on content hash
+        # Simple deduplication by content hash
         unique_results = {}
+        
         for result in all_results:
-            # Create hash based on content and filename
-            content_hash = hash(result.full_content + result.filename)
+            # Create hash from content + filename
+            content_hash = hash(result.full_content[:200] + result.filename)
             
             if content_hash not in unique_results:
                 unique_results[content_hash] = result
             else:
-                # If duplicate, keep the one with higher similarity or better method
+                # Keep the better result
                 existing = unique_results[content_hash]
                 if (result.similarity_score > existing.similarity_score or
                     self._is_better_method(result.source_method, existing.source_method)):
                     unique_results[content_hash] = result
         
-        # Apply fusion strategy
-        fused_results = list(unique_results.values())
+        # Simple ranking with method weights
+        final_results = list(unique_results.values())
         
-        if self.config.search.fusion_method == "weighted_score":
-            fused_results = self._weighted_score_fusion(fused_results)
-        elif self.config.search.fusion_method == "rank_fusion":
-            fused_results = self._rank_fusion(fused_results)
-        else:
-            # Default: sort by similarity score
-            fused_results.sort(key=lambda x: x.similarity_score, reverse=True)
-        
-        # Limit final results
-        return fused_results[:self.config.search.max_final_results]
-    
-    def _weighted_score_fusion(self, results: List[RetrievalResult]) -> List[RetrievalResult]:
-        """Weighted score fusion considering method quality and other factors"""
         method_weights = {
-            "llamaindex_vector": 1.0,
-            "llamaindex_vector_filtered": 1.2,  # Bonus for content filtering
-            "database_direct": 0.7,
-            "database_direct_filtered": 0.9
+            "database_exact": 1.0,
+            "llamaindex_vector": 0.9,
         }
         
-        for result in results:
-            base_weight = method_weights.get(result.source_method, 1.0)
-            
-            # Additional weighting factors
-            content_boost = 1.0 + result.metadata.get("match_ratio", 0) * 0.3
-            
-            # Calculate final weighted score
-            result.metadata["weighted_score"] = result.similarity_score * base_weight * content_boost
+        for result in final_results:
+            weight = method_weights.get(result.source_method, 0.8)
+            result.metadata["final_score"] = result.similarity_score * weight
         
-        # Sort by weighted score
-        results.sort(key=lambda x: x.metadata.get("weighted_score", x.similarity_score), reverse=True)
-        return results
-    
-    def _rank_fusion(self, results: List[RetrievalResult]) -> List[RetrievalResult]:
-        """Rank-based fusion (RRF - Reciprocal Rank Fusion)"""
-        # Group results by method
-        method_results = {}
-        for result in results:
-            method = result.source_method
-            if method not in method_results:
-                method_results[method] = []
-            method_results[method].append(result)
+        # Sort by final score
+        final_results.sort(key=lambda x: x.metadata.get("final_score", x.similarity_score), reverse=True)
         
-        # Sort each method's results
-        for method in method_results:
-            method_results[method].sort(key=lambda x: x.similarity_score, reverse=True)
+        logger.info(f"?? Universal deduplication: {len(all_results)} ? {len(final_results)} unique ? {min(len(final_results), max_results)} final")
         
-        # Calculate RRF scores
-        rrf_scores = {}
-        k = 60  # RRF constant
-        
-        for result in results:
-            content_id = hash(result.full_content + result.filename)
-            if content_id not in rrf_scores:
-                rrf_scores[content_id] = {"result": result, "score": 0}
-            
-            # Find rank in its method
-            method_list = method_results[result.source_method]
-            try:
-                rank = method_list.index(result) + 1
-                rrf_scores[content_id]["score"] += 1 / (k + rank)
-            except ValueError:
-                pass
-        
-        # Sort by RRF score
-        fused_results = sorted(
-            rrf_scores.values(),
-            key=lambda x: x["score"],
-            reverse=True
-        )
-        
-        return [item["result"] for item in fused_results]
+        return final_results[:max_results]
     
     def _is_better_method(self, method1: str, method2: str) -> bool:
         """Compare which method is better"""
-        method_priority = {
-            "llamaindex_vector_filtered": 4,
-            "llamaindex_vector": 3,
-            "database_direct_filtered": 2,
-            "database_direct": 1
+        priority = {
+            "database_exact": 3,
+            "llamaindex_vector": 2,
+            "database_fallback": 1
         }
-        
-        return method_priority.get(method1, 0) > method_priority.get(method2, 0)
+        return priority.get(method1, 0) > priority.get(method2, 0)
     
     def get_retriever_status(self) -> Dict[str, bool]:
         """Get status of all retrievers"""
