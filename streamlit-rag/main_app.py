@@ -1,5 +1,6 @@
 # main_app.py
 # Production RAG System - Main Streamlit Application
+# CLEAN VERSION: No Unicode symbols, ASCII only
 
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="Production RAG System",
-    page_icon="??",
+    page_icon="������",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -40,8 +41,10 @@ try:
     from query_processing.query_rewriter import ProductionQueryRewriter
     from retrieval.multi_retriever import MultiStrategyRetriever
     from retrieval.results_fusion import ResultsFusionEngine
+    # Import Excel export utilities
+    from utils.excel_export import render_excel_export_section
 except ImportError as e:
-    st.error(f"? Import error: {e}")
+    st.error(f"Import error: {e}")
     st.error("Make sure all required files are in place and dependencies are installed")
     st.stop()
 
@@ -134,7 +137,7 @@ def on_query_change():
 def initialize_production_system():
     """Initialize the production RAG system"""
     try:
-        logger.info("?? Initializing Production RAG System...")
+        logger.info("Initializing Production RAG System...")
         
         # Validate configuration
         validation_results = config.validate_config()
@@ -161,9 +164,9 @@ def initialize_production_system():
         
         failed_components = [k for k, v in component_status.items() if not v]
         if failed_components:
-            logger.warning(f"?? Some components failed to initialize: {failed_components}")
+            logger.warning(f"Some components failed to initialize: {failed_components}")
         
-        logger.info("? Production RAG System initialized successfully")
+        logger.info("Production RAG System initialized successfully")
         
         return {
             "entity_extractor": entity_extractor,
@@ -174,7 +177,7 @@ def initialize_production_system():
         }
         
     except Exception as e:
-        logger.error(f"? Failed to initialize system: {e}")
+        logger.error(f"Failed to initialize system: {e}")
         logger.error(traceback.format_exc())
         raise
 
@@ -191,7 +194,7 @@ async def run_production_search(system_components: Dict, question: str):
     
     try:
         # STAGE 1: Entity Extraction
-        status_text.text("?? Smart entity extraction...")
+        status_text.text("Smart entity extraction...")
         progress_bar.progress(15)
         
         extraction_start = time.time()
@@ -201,7 +204,7 @@ async def run_production_search(system_components: Dict, question: str):
         logger.info(f"Entity extraction: '{entity_result.entity}' via {entity_result.method} (confidence: {entity_result.confidence:.2f})")
         
         # STAGE 2: Query Rewriting  
-        status_text.text("?? Query transformation...")
+        status_text.text("Query transformation...")
         progress_bar.progress(30)
         
         rewrite_start = time.time()
@@ -213,7 +216,7 @@ async def run_production_search(system_components: Dict, question: str):
         logger.info(f"Query rewriting: {len(rewrite_result.rewrites)} variants via {rewrite_result.method}")
         
         # STAGE 3: Multi-Strategy Retrieval
-        status_text.text("?? Multi-strategy retrieval...")
+        status_text.text("Multi-strategy retrieval...")
         progress_bar.progress(50)
         
         retrieval_start = time.time()
@@ -236,7 +239,7 @@ async def run_production_search(system_components: Dict, question: str):
         logger.info(f"Multi-retrieval: {len(multi_retrieval_result.results)} results via {', '.join(multi_retrieval_result.methods_used)}")
         
         # STAGE 4: Results Fusion
-        status_text.text("?? Advanced results fusion...")
+        status_text.text("Advanced results fusion...")
         progress_bar.progress(75)
         
         fusion_start = time.time()
@@ -251,7 +254,7 @@ async def run_production_search(system_components: Dict, question: str):
         logger.info(f"Results fusion: {fusion_result.final_count} final results via {fusion_result.fusion_method}")
         
         # STAGE 5: Answer Generation
-        status_text.text("?? Generating intelligent answer...")
+        status_text.text("Generating intelligent answer...")
         progress_bar.progress(90)
         
         answer_start = time.time()
@@ -264,7 +267,7 @@ async def run_production_search(system_components: Dict, question: str):
         total_time = time.time() - pipeline_start
         
         progress_bar.progress(100)
-        status_text.text("? Production search completed!")
+        status_text.text("Production search completed!")
         
         # Clear progress after delay
         await asyncio.sleep(1)
@@ -296,7 +299,7 @@ async def run_production_search(system_components: Dict, question: str):
         
     except Exception as e:
         progress_container.empty()
-        logger.error(f"? Production search failed: {e}")
+        logger.error(f"Production search failed: {e}")
         logger.error(traceback.format_exc())
         raise
 
@@ -306,12 +309,12 @@ async def generate_production_answer(question: str, results: List[Any], entity_r
     if not results:
         return f"""No relevant information found for your query: "{question}"
 
-?? **Search Summary:**
+Search Summary:
 - Entity extracted: "{entity_result.entity}" (confidence: {entity_result.confidence:.1%})
 - Query variants tried: {len(rewrite_result.rewrites)}
 - Method used: {entity_result.method}
 
-?? **Suggestions:**
+Suggestions:
 - Try rephrasing your query
 - Use more specific terms
 - Check if the information exists in the knowledge base"""
@@ -328,7 +331,7 @@ async def generate_production_answer(question: str, results: List[Any], entity_r
     
     # High quality results summary
     if high_quality:
-        answer_parts.append(f"\n?? **Primary Information** ({len(high_quality)} documents):")
+        answer_parts.append(f"\n**Primary Information** ({len(high_quality)} documents):")
         for i, result in enumerate(high_quality[:3], 1):
             preview = result.content[:200] + "..." if len(result.content) > 200 else result.content
             answer_parts.append(f"{i}. **{result.filename}**: {preview}")
@@ -336,13 +339,13 @@ async def generate_production_answer(question: str, results: List[Any], entity_r
     # Medium quality results summary  
     if medium_quality and len(high_quality) < 3:
         needed = 3 - len(high_quality)
-        answer_parts.append(f"\n?? **Additional Information** ({len(medium_quality)} documents):")
+        answer_parts.append(f"\n**Additional Information** ({len(medium_quality)} documents):")
         for i, result in enumerate(medium_quality[:needed], len(high_quality) + 1):
             preview = result.content[:150] + "..." if len(result.content) > 150 else result.content
             answer_parts.append(f"{i}. **{result.filename}**: {preview}")
     
     # Search intelligence summary
-    answer_parts.append(f"\n?? **Search Intelligence:**")
+    answer_parts.append(f"\n**Search Intelligence:**")
     answer_parts.append(f"- Query analysis: {entity_result.method} extraction")
     answer_parts.append(f"- Search variants: {len(rewrite_result.rewrites)} queries tried")
     answer_parts.append(f"- Best match confidence: {max(r.similarity_score for r in results):.1%}")
@@ -408,71 +411,75 @@ def get_system_status():
 def render_sidebar():
     """Render enhanced sidebar"""
     with st.sidebar:
-        st.header("?? System Status")
+        st.header("System Status")
         
         status = get_system_status()
         
         if "error" in status:
-            st.error(f"? System Error: {status['error']}")
+            st.error(f"System Error: {status['error']}")
             return status
         
         # Database status
         if status["database"]["available"]:
-            st.success("? Database Connected")
+            st.success("Database Connected")
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Documents", status["database"]["total_documents"])
             with col2:
                 st.metric("Files", status["database"]["unique_files"])
         else:
-            st.error("? Database Error")
+            st.error("Database Error")
         
         # Embedding status
         if status["embedding"]["available"]:
-            st.success("? Embeddings Ready")
+            st.success("Embeddings Ready")
             st.info(f"Model: {status['embedding']['model']}")
             st.info(f"Dimension: {status['embedding']['dimension']}")
         else:
-            st.error("? Embedding Error")
+            st.error("Embedding Error")
         
         st.markdown("---")
         
         # Component status
-        st.header("?? Components")
+        st.header("Components")
         
         components = status.get("components", {})
         
         if components.get("entity_extractors"):
-            st.success(f"? Entity Extractors ({len([k for k, v in components['entity_extractors'].items() if v])})")
+            available_count = len([k for k, v in components['entity_extractors'].items() if v])
+            st.success(f"Entity Extractors ({available_count})")
             for name, available in components["entity_extractors"].items():
-                icon = "?" if available else "?"
+                icon = "✓" if available else "✗"
                 st.text(f"  {icon} {name}")
         
         if components.get("query_rewriters"):
-            st.success(f"? Query Rewriters ({len([k for k, v in components['query_rewriters'].items() if v])})")
+            available_count = len([k for k, v in components['query_rewriters'].items() if v])
+            st.success(f"Query Rewriters ({available_count})")
             for name, available in components["query_rewriters"].items():
-                icon = "?" if available else "?"
+                icon = "✓" if available else "✗"
                 st.text(f"  {icon} {name}")
         
         if components.get("retrievers"):
-            st.success(f"? Retrievers ({len([k for k, v in components['retrievers'].items() if v])})")
+            available_count = len([k for k, v in components['retrievers'].items() if v])
+            st.success(f"Retrievers ({available_count})")
             for name, available in components["retrievers"].items():
-                icon = "?" if available else "?"
+                icon = "✓" if available else "✗"
                 st.text(f"  {icon} {name}")
         
         st.markdown("---")
         
         # Features
-        st.header("? Production Features")
+        st.header("Production Features")
         features = [
-            "?? Multi-method entity extraction",
-            "?? Intelligent query rewriting", 
-            "?? Multi-strategy retrieval",
-            "?? Advanced results fusion",
-            "?? Dynamic parameter tuning",
-            "? Parallel processing",
-            "?? Confidence scoring",
-            "?? Performance analytics"
+            "Multi-method entity extraction",
+            "Intelligent query rewriting", 
+            "Multi-strategy retrieval",
+            "Advanced results fusion",
+            "Dynamic parameter tuning",
+            "Parallel processing",
+            "Confidence scoring",
+            "Performance analytics",
+            "Excel export functionality"
         ]
         
         for feature in features:
@@ -481,9 +488,9 @@ def render_sidebar():
         st.markdown("---")
         
         # Example queries
-        st.header("?? Test Queries")
+        st.header("Test Queries")
         for example in config.ui.example_queries:
-            if st.button(f"?? {example}", key=f"ex_{hash(example)}", use_container_width=True):
+            if st.button(f"Search: {example}", key=f"ex_{hash(example)}", use_container_width=True):
                 st.session_state.example_query = example
         
         return status
@@ -493,7 +500,7 @@ def render_main_interface():
     
     # Header
     st.markdown('<h1 class="main-header">Production RAG System</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">Multi-Strategy Intelligence • Advanced Fusion • Production Ready</p>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Multi-Strategy Intelligence Advanced Fusion Excel Export Ready</p>', unsafe_allow_html=True)
     
     # Search interface
     col1, col2 = st.columns([4, 1])
@@ -518,7 +525,7 @@ def render_main_interface():
         else:
             search_disabled = not current_query.strip()
             search_button = button_container.button(
-                "?? Search", 
+                "Search", 
                 type="primary", 
                 use_container_width=True,
                 disabled=search_disabled
@@ -535,7 +542,7 @@ def render_search_results(result: Dict):
     entity_result = result["entity_result"]
     st.markdown(f"""
     <div class="entity-box">
-        <h4>?? Smart Entity Extraction</h4>
+        <h4>Smart Entity Extraction</h4>
         <p><strong>Original:</strong> "{result['original_question']}"</p>
         <p><strong>Extracted:</strong> <span style="font-size: 1.2em; color: #007bff;"><strong>"{entity_result.entity}"</strong></span></p>
         <p><strong>Method:</strong> {entity_result.method} (confidence: {entity_result.confidence:.1%})</p>
@@ -545,19 +552,19 @@ def render_search_results(result: Dict):
     
     # Query rewriting results
     rewrite_result = result["rewrite_result"]
-    with st.expander("?? Query Transformations", expanded=False):
+    with st.expander("Query Transformations", expanded=False):
         st.write(f"**Method:** {rewrite_result.method} (confidence: {rewrite_result.confidence:.1%})")
         st.write(f"**Generated {len(rewrite_result.rewrites)} variants:**")
         for i, variant in enumerate(rewrite_result.rewrites, 1):
             st.write(f"{i}. {variant}")
     
     # Main answer
-    st.header("?? Answer")
+    st.header("Answer")
     st.markdown(f'<div class="success-box">{result["answer"]}</div>', unsafe_allow_html=True)
     
     # Performance metrics
     metrics = result["performance_metrics"]
-    st.header("?? Performance Analytics")
+    st.header("Performance Analytics")
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -570,7 +577,7 @@ def render_search_results(result: Dict):
         st.metric("Fusion Method", result["fusion_result"].fusion_method)
     
     # Detailed metrics
-    with st.expander("?? Pipeline Breakdown", expanded=False):
+    with st.expander("Pipeline Breakdown", expanded=False):
         efficiency = metrics["pipeline_efficiency"]
         st.write("**Time Distribution:**")
         col1, col2, col3 = st.columns(3)
@@ -589,7 +596,7 @@ def render_search_results(result: Dict):
     
     # Retrieval details  
     retrieval_result = result["retrieval_result"]
-    st.header("?? Retrieval Intelligence")
+    st.header("Retrieval Intelligence")
     
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -615,13 +622,13 @@ def render_search_results(result: Dict):
     
     # Sources
     if result["fusion_result"].fused_results:
-        st.header(f"?? Sources ({len(result['fusion_result'].fused_results)} documents)")
+        st.header(f"Sources ({len(result['fusion_result'].fused_results)} documents)")
         
         # Quality breakdown
         quality_dist = result["fusion_result"].fusion_metadata["quality_distribution"]
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("High Quality", quality_dist["high"], "=70% similarity")
+            st.metric("High Quality", quality_dist["high"], "70% similarity")
         with col2:
             st.metric("Medium Quality", quality_dist["medium"], "40-70% similarity")
         with col3:
@@ -631,7 +638,7 @@ def render_search_results(result: Dict):
         for i, doc in enumerate(result["fusion_result"].fused_results, 1):
             quality_color = "#28a745" if doc.similarity_score >= 0.7 else "#ffc107" if doc.similarity_score >= 0.4 else "#dc3545"
             
-            with st.expander(f"?? {i}. {doc.filename} (similarity: {doc.similarity_score:.3f})", expanded=False):
+            with st.expander(f"Document {i}. {doc.filename} (similarity: {doc.similarity_score:.3f})", expanded=False):
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
@@ -656,7 +663,7 @@ def render_search_results(result: Dict):
                         factors = doc.metadata["fusion_factors"]
                         st.write("**Quality Factors:**")
                         for factor, value in factors.items():
-                            icon = "?" if value else "?"
+                            icon = "✓" if value else "✗"
                             st.write(f"  {icon} {factor}")
 
 def main():
@@ -671,7 +678,7 @@ def main():
             st.session_state.system_components = system_components
             st.session_state.system_initialized = True
     except Exception as e:
-        st.error(f"? Failed to initialize system: {e}")
+        st.error(f"Failed to initialize system: {e}")
         st.error("Please check your configuration and dependencies")
         st.stop()
     
@@ -684,7 +691,7 @@ def main():
     current_query, search_button = render_main_interface()
     
     # Advanced settings
-    with st.expander("?? Advanced Settings", expanded=False):
+    with st.expander("Advanced Settings", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
             show_entity_extraction = st.checkbox("Show entity extraction", value=True)
@@ -705,7 +712,7 @@ def main():
         
         # Check for cached results
         if current_query.strip() == st.session_state.last_query and st.session_state.search_results:
-            st.info("?? Showing cached results for the same query")
+            st.info("Showing cached results for the same query")
         else:
             # Execute search
             st.session_state.search_in_progress = True
@@ -723,7 +730,7 @@ def main():
                 st.session_state.search_performed = True
                 
             except Exception as e:
-                st.error(f"? Search failed: {e}")
+                st.error(f"Search failed: {e}")
                 logger.error(f"Search error: {e}")
                 logger.error(traceback.format_exc())
                 result = None
@@ -736,11 +743,14 @@ def main():
     if st.session_state.search_performed and st.session_state.search_results:
         render_search_results(st.session_state.search_results)
         
+        # Add Excel export section
+        render_excel_export_section(st.session_state.search_results)
+        
         # Clear results button
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            if st.button("?? Clear Results", use_container_width=True):
+            if st.button("Clear Results", use_container_width=True):
                 st.session_state.search_performed = False
                 st.session_state.search_results = None
                 st.session_state.last_query = ""
@@ -751,7 +761,7 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: #666; font-size: 1rem; margin-top: 2rem;">
         <strong>Production RAG System</strong><br>
-        Multi-Strategy Intelligence • Advanced Fusion • Enterprise Ready<br>
+        Multi-Strategy Intelligence Advanced Fusion Excel Export Ready<br>
         <small>Powered by LlamaIndex, Ollama & Streamlit</small>
     </div>
     """, unsafe_allow_html=True)
@@ -762,5 +772,5 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Application error: {e}")
         logger.error(traceback.format_exc())
-        st.error(f"? Application error: {e}")
+        st.error(f"Application error: {e}")
         st.error("Please check the logs for more details")

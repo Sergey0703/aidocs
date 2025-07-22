@@ -193,7 +193,7 @@ def test_different_thresholds():
     
     print(f"? Environment OK (using {CONFIG['embed_model']})")
     
-    test_entities = ["John Nolan", "Breeda Daly"]
+    test_entities = ["John Nolan", "Breeda Daly", "Bernie Loughnane"]
     thresholds = [0.3, 0.35, 0.4, 0.45, 0.5]
     
     for entity in test_entities:
@@ -228,7 +228,7 @@ def compare_old_vs_new():
     print("?? Comparing Old vs New Approach")
     print("=" * 60)
     
-    test_entities = ["John Nolan", "Breeda Daly"]
+    test_entities = ["John Nolan", "Breeda Daly", "Bernie Loughnane"]
     
     for entity in test_entities:
         print(f"\n?? Testing entity: {entity}")
@@ -322,7 +322,7 @@ def main():
         compare_old_vs_new()
     elif choice == "3":
         print("\n?? Quick test with default settings:")
-        for entity in ["John Nolan", "Breeda Daly"]:
+        for entity in ["John Nolan", "Breeda Daly", "Bernie Loughnane"]:
             result = vector_search_with_filters(entity)
             if result:
                 print(f"\n? {entity}: Found {result['after_content']} documents (100% precision)")
