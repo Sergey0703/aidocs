@@ -1,6 +1,6 @@
 # main_app.py
 # Production RAG System - Main Streamlit Application
-# CLEAN VERSION: No Unicode symbols, ASCII only
+# Final Clean Version
 
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -40,7 +40,6 @@ try:
     from query_processing.query_rewriter import ProductionQueryRewriter
     from retrieval.multi_retriever import MultiStrategyRetriever
     from retrieval.results_fusion import ResultsFusionEngine
-    # Import Excel export utilities
     from utils.excel_export import render_excel_export_section
 except ImportError as e:
     st.error(f"Import error: {e}")
@@ -90,13 +89,6 @@ st.markdown("""
         padding: 1rem;
         border-radius: 0.8rem;
         margin: 1rem 0;
-    }
-    .metric-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border: 1px solid #e0e0e0;
     }
     .method-badge {
         display: inline-block;
@@ -182,6 +174,9 @@ def initialize_production_system():
 
 async def run_production_search(system_components: Dict, question: str):
     """Execute production-grade search pipeline"""
+    
+    # Set search in progress at the start
+    st.session_state.search_in_progress = True
     
     # Progress tracking
     progress_container = st.container()
@@ -301,6 +296,9 @@ async def run_production_search(system_components: Dict, question: str):
         logger.error(f"Production search failed: {e}")
         logger.error(traceback.format_exc())
         raise
+    finally:
+        # Always clear search in progress flag
+        st.session_state.search_in_progress = False
 
 async def generate_production_answer(question: str, results: List[Any], entity_result: Any, rewrite_result: Any) -> str:
     """Generate production-quality answer"""
@@ -480,27 +478,33 @@ def render_main_interface():
             value=st.session_state.get("example_query", ""),
             placeholder="e.g., tell me about John Nolan (press Enter to search)",
             key="main_query",
-            on_change=on_query_change
+            on_change=on_query_change  # Re-enable Enter key functionality
         )
     
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)  # Spacing
         
-        button_container = st.empty()
+        # Button logic: Check if user actually typed something
+        search_in_progress = st.session_state.get("search_in_progress", False)
         
-        if st.session_state.search_in_progress:
-            button_container.empty()
-            search_button = False
-        else:
-            search_disabled = not current_query.strip()
-            search_button = button_container.button(
-                "Search", 
-                type="primary", 
-                use_container_width=True,
-                disabled=search_disabled
-            )
+        # Try both current_query return value AND session state
+        widget_value = st.session_state.get("main_query", "")
+        return_value = current_query or ""
+        final_query = return_value or widget_value
+        
+        has_actual_text = bool(final_query and final_query.strip() and len(final_query.strip()) > 0)
+        search_disabled = (not has_actual_text) or search_in_progress
+        
+        # Create button with proper logic
+        search_button = st.button(
+            "Search", 
+            type="primary", 
+            use_container_width=True,
+            disabled=search_disabled
+        )
     
-    return current_query, search_button
+    # Return the best available query value
+    return current_query or st.session_state.get("main_query", ""), search_button
 
 def render_search_results(result: Dict):
     """Render comprehensive search results"""
@@ -605,8 +609,6 @@ def render_search_results(result: Dict):
         
         # Individual sources
         for i, doc in enumerate(result["fusion_result"].fused_results, 1):
-            quality_color = "#28a745" if doc.similarity_score >= 0.7 else "#ffc107" if doc.similarity_score >= 0.4 else "#dc3545"
-            
             with st.expander(f"Document {i}. {doc.filename} (similarity: {doc.similarity_score:.3f})", expanded=False):
                 col1, col2 = st.columns([2, 1])
                 
@@ -678,34 +680,31 @@ def main():
     
     if search_button and current_query.strip():
         
-        # Check for cached results
-        if current_query.strip() == st.session_state.last_query and st.session_state.search_results:
-            st.info("Showing cached results for the same query")
-        else:
-            # Execute search
-            st.session_state.search_in_progress = True
-            st.session_state.last_query = current_query.strip()
+        # Always execute search when explicitly requested (button or Enter)
+        # Don't check for cached results on explicit search requests
+        st.session_state.last_query = current_query.strip()
+        
+        if "example_query" in st.session_state:
+            st.session_state.example_query = ""
+        
+        try:
+            result = asyncio.run(run_production_search(
+                st.session_state.system_components, 
+                current_query.strip()
+            ))
+            st.session_state.search_results = result
+            st.session_state.search_performed = True
             
-            if "example_query" in st.session_state:
-                st.session_state.example_query = ""
-            
-            try:
-                result = asyncio.run(run_production_search(
-                    st.session_state.system_components, 
-                    current_query.strip()
-                ))
-                st.session_state.search_results = result
-                st.session_state.search_performed = True
-                
-            except Exception as e:
-                st.error(f"Search failed: {e}")
-                logger.error(f"Search error: {e}")
-                logger.error(traceback.format_exc())
-                result = None
-            
-            finally:
-                st.session_state.search_in_progress = False
-                st.rerun()
+        except Exception as e:
+            st.error(f"Search failed: {e}")
+            logger.error(f"Search error: {e}")
+            logger.error(traceback.format_exc())
+            result = None
+        
+        finally:
+            # Ensure search_in_progress is always reset
+            st.session_state.search_in_progress = False
+            st.rerun()
     
     # Display results
     if st.session_state.search_performed and st.session_state.search_results:
