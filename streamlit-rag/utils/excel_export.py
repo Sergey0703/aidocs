@@ -298,7 +298,7 @@ def render_excel_export_section(search_results: Dict):
         st.success(f"""
         **?? Excel file will include {len(export_dataframes)} sheets:**
         
-        {chr(10).join(f"â€¢ {info}" for info in sheets_info)}
+        {chr(10).join(f" {info}" for info in sheets_info)}
         """)
         
     except Exception as e:

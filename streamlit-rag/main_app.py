@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="Production RAG System",
-    page_icon="Ì†ΩÌ¥ç",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -449,49 +448,19 @@ def render_sidebar():
             available_count = len([k for k, v in components['entity_extractors'].items() if v])
             st.success(f"Entity Extractors ({available_count})")
             for name, available in components["entity_extractors"].items():
-                icon = "‚úì" if available else "‚úó"
-                st.text(f"  {icon} {name}")
+                st.text(f"  {name}: {'Available' if available else 'Unavailable'}")
         
         if components.get("query_rewriters"):
             available_count = len([k for k, v in components['query_rewriters'].items() if v])
             st.success(f"Query Rewriters ({available_count})")
             for name, available in components["query_rewriters"].items():
-                icon = "‚úì" if available else "‚úó"
-                st.text(f"  {icon} {name}")
+                st.text(f"  {name}: {'Available' if available else 'Unavailable'}")
         
         if components.get("retrievers"):
             available_count = len([k for k, v in components['retrievers'].items() if v])
             st.success(f"Retrievers ({available_count})")
             for name, available in components["retrievers"].items():
-                icon = "‚úì" if available else "‚úó"
-                st.text(f"  {icon} {name}")
-        
-        st.markdown("---")
-        
-        # Features
-        st.header("Production Features")
-        features = [
-            "Multi-method entity extraction",
-            "Intelligent query rewriting", 
-            "Multi-strategy retrieval",
-            "Advanced results fusion",
-            "Dynamic parameter tuning",
-            "Parallel processing",
-            "Confidence scoring",
-            "Performance analytics",
-            "Excel export functionality"
-        ]
-        
-        for feature in features:
-            st.markdown(f"- {feature}")
-        
-        st.markdown("---")
-        
-        # Example queries
-        st.header("Test Queries")
-        for example in config.ui.example_queries:
-            if st.button(f"Search: {example}", key=f"ex_{hash(example)}", use_container_width=True):
-                st.session_state.example_query = example
+                st.text(f"  {name}: {'Available' if available else 'Unavailable'}")
         
         return status
 
@@ -663,8 +632,7 @@ def render_search_results(result: Dict):
                         factors = doc.metadata["fusion_factors"]
                         st.write("**Quality Factors:**")
                         for factor, value in factors.items():
-                            icon = "‚úì" if value else "‚úó"
-                            st.write(f"  {icon} {factor}")
+                            st.write(f"  {factor}: {'Yes' if value else 'No'}")
 
 def main():
     """Main application"""
