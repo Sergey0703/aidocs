@@ -1,49 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Embedding processing module for RAG Document Indexer
+Safe Embedding processing module for RAG Document Indexer
 Handles embedding generation, node cleaning, and database saving
+REMOVED unsafe Ollama restarts during embedding generation - moved to batch level
 """
 
 import time
 import os
 from datetime import datetime, timedelta
-
-
-def restart_ollama_if_needed(chunk_index, restart_interval=1000):
-    """
-    Restart Ollama every N chunks to prevent memory leaks
-    
-    Args:
-        chunk_index: Current chunk number
-        restart_interval: Restart every N chunks
-    """
-    if chunk_index > 0 and chunk_index % restart_interval == 0:
-        print(f"\n   INFO: Restarting Ollama after {chunk_index} chunks to prevent memory leaks...")
-        try:
-            os.system("sudo systemctl restart ollama")
-            
-            # ?????????? ???????? ?????????? Ollama (?? 30 ??????)
-            print(f"   INFO: Waiting for Ollama to initialize...")
-            ollama_ready = False
-            
-            for i in range(30):
-                time.sleep(1)
-                try:
-                    import requests
-                    response = requests.get("http://localhost:11434/api/tags", timeout=2)
-                    if response.status_code == 200:
-                        print(f"   SUCCESS: Ollama ready after {i+1} seconds")
-                        ollama_ready = True
-                        break
-                except:
-                    continue
-            
-            if not ollama_ready:
-                print(f"   WARNING: Ollama restart took longer than 30 seconds, continuing anyway...")
-            
-        except Exception as e:
-            print(f"   WARNING: Could not restart Ollama: {e}")
 
 
 def clean_json_recursive(obj):
@@ -81,7 +46,7 @@ def clean_problematic_node(node):
         # Clean problematic characters from content
         content = cleaned_node.get_content()
         
-        # Remove null bytes (\u0000) and other problematic characters - ?????????? ?????!
+        # Remove null bytes (\u0000) and other problematic characters - ?????????? ???????!
         content = content.replace('\u0000', '').replace('\x00', '').replace('\x01', '').replace('\x02', '')
         
         # Remove control characters (except newlines and tabs)
@@ -96,10 +61,10 @@ def clean_problematic_node(node):
         cleaned_node.text = cleaned_content
         cleaned_node.metadata['text'] = cleaned_content
         
-        # Clean metadata values recursively (??? ??????????!)
+        # Clean metadata values recursively (??? ????????????!)
         cleaned_node.metadata = clean_json_recursive(cleaned_node.metadata)
         
-        # ????: ??????? ?????? ???? LlamaIndex ?? null bytes
+        # ????: ??????? ?????? ????? LlamaIndex ?? null bytes
         if hasattr(cleaned_node, 'id_') and cleaned_node.id_:
             cleaned_node.id_ = str(cleaned_node.id_).replace('\u0000', '').replace('\x00', '')
         
@@ -129,7 +94,7 @@ def clean_problematic_node(node):
 
 def aggressive_clean_all_nodes(nodes):
     """
-    ??????????? ??????? ???? nodes ?? null bytes ????? ????????? ? ??
+    ??????????? ??????? ???? nodes ?? null bytes ????? ??????????? ? ??
     
     Args:
         nodes: List of nodes to clean
@@ -141,10 +106,10 @@ def aggressive_clean_all_nodes(nodes):
     
     for node in nodes:
         try:
-            # ????????? ??????? ??????? ??????
+            # ???????? ??????? ??????? ??????
             cleaned_node = clean_problematic_node(node)
             
-            # ?????????????? ??????? - ???????? ??? ????????? ????????
+            # ?????????????? ??????? - ???????? ???? ????????? ?????????
             for attr_name in dir(cleaned_node):
                 if not attr_name.startswith('_'):  # Skip private attributes
                     try:
@@ -171,11 +136,11 @@ def aggressive_clean_all_nodes(nodes):
 
 
 class EmbeddingProcessor:
-    """Processor for generating embeddings and handling database operations"""
+    """Safe processor for generating embeddings and handling database operations"""
     
     def __init__(self, embed_model, vector_store):
         """
-        Initialize embedding processor
+        Initialize safe embedding processor
         
         Args:
             embed_model: Embedding model instance
@@ -205,40 +170,40 @@ class EmbeddingProcessor:
         if len(content.strip()) < 10:
             return False, f"too_short ({len(content)} chars)"
         
-        # ????? ????????: ?????? ?????? ??? PDF/OCR ????????
-        # ????????? ???????????? ??????? ??????????? ???????? (??????? ??? ???????? ????????)
-        sample = content[:1000]  # ????????? ?????? 1000 ????????
+        # ????? ??????? ????????: ?????? ?????????? ????? ? ??????? ???????
+        # ??????? ????????? ???????? ?????? ??? ??????? ??????? ??? ????? ??????
+        sample = content[:1000]  # ???????? ?????? ?????? 1000 ????????
         
-        # ??????????? "???????????" ??????? ? ??????
+        # ?????????? "?????????" ??????? ? ??????
         allowed_special = set('\n\t\r\f\v\x0b\x0c')
         
-        # ??????? "??????? ????????" (????????????) ???????
+        # ??????? "??????" ???????? (????????????) ????????
         truly_binary = 0
         for c in sample:
             if ord(c) < 32:  # ??????????? ???????
-                if c not in '\n\t\r':  # ????? ?????????
+                if c not in '\n\t\r':  # ????? ??????????
                     truly_binary += 1
             elif ord(c) > 127:  # ??????? UTF-8
-                if c not in allowed_special:  # ????? ??????????? ???????????
-                    # ?????????, ??? ??????? ????? ????? ??? ??????
+                if c not in allowed_special:  # ????? ??????????? ??????????
+                    # ????????, ??? ??????? ????? ???? ???? ??? ???? ?????
                     if not (c.isprintable() or c.isspace() or c.isalnum()):
                         truly_binary += 1
         
         binary_ratio = truly_binary / len(sample) if sample else 0
         
-        # ????? ?????: ?????? ???? ????? 90% ???????? ??????!
-        if binary_ratio > 0.9:  # ????? ??????? ????? 90%
+        # ????? ?????? ???????????: ??????? ?????????? ????? 90%!
+        if binary_ratio > 0.9:  # ????? ??????? ????? ????? 90%
             return False, f"binary_data_detected ({binary_ratio:.1%})"
         
-        # ???????? ?? ??????? ???? - ????? ??????
+        # ???????? ?? ??????? ???? - ????? ?????
         letters_digits = sum(1 for c in sample if c.isalnum())
         text_ratio = letters_digits / len(sample) if sample else 0
         
-        # ????? ?????: ?????? ???? ????? 10% ????/????!
+        # ????? ?????? ???????????: ????/???? ????? 10%!
         if text_ratio < 0.1:  # ????? ?????? ????? 10%
             return False, f"low_text_quality ({text_ratio:.1%})"
         
-        # ?????????????? ????????: ???? ?? ???? ?? ??????? ????
+        # ?????????????? ????????: ???? ?? ???? ?? ????? ?????????? ?????
         words = content.split()
         if len(words) < 3:
             return False, f"too_few_words ({len(words)} words)"
@@ -247,11 +212,11 @@ class EmbeddingProcessor:
     
     def generate_embedding_for_node(self, node, chunk_index=0):
         """
-        Generate embedding for a single node
+        SAFE: Generate embedding for a single node WITHOUT unsafe Ollama restarts
         
         Args:
             node: Node object to process
-            chunk_index: Index of chunk for logging
+            chunk_index: Index of chunk for logging (no longer used for restart)
         
         Returns:
             tuple: (success, error_info)
@@ -264,10 +229,10 @@ class EmbeddingProcessor:
             if not is_valid:
                 return False, f"validation_failed: {reason}"
             
-            # Restart Ollama periodically to prevent memory leaks
-            restart_ollama_if_needed(chunk_index + 1, restart_interval=400)
+            # SAFE: NO MORE UNSAFE OLLAMA RESTARTS DURING EMBEDDING GENERATION!
+            # Ollama restarts are now handled safely at batch level in batch_processor.py
             
-            # Generate embedding
+            # Generate embedding safely
             embedding = self.embed_model.get_text_embedding(content)
             node.embedding = embedding
             
@@ -286,7 +251,8 @@ class EmbeddingProcessor:
     
     def robust_embedding_generation(self, batch_nodes, batch_num, embedding_batch_size=5):
         """
-        Generate embeddings for a batch of nodes with robust error handling
+        SAFE: Generate embeddings for a batch of nodes with robust error handling
+        NO MORE dangerous mid-batch Ollama restarts!
         
         Args:
             batch_nodes: List of nodes to process
@@ -308,10 +274,11 @@ class EmbeddingProcessor:
             
             for i, node in enumerate(sub_batch):
                 chunk_index = j + i
-                absolute_chunk_index = self.stats['total_processed']  # Absolute count for restart
+                # Update total processed counter for statistics
                 self.stats['total_processed'] += 1
                 
-                success, error_info = self.generate_embedding_for_node(node, absolute_chunk_index)
+                # SAFE: Generate embedding without unsafe restarts
+                success, error_info = self.generate_embedding_for_node(node, chunk_index)
                 
                 if success:
                     nodes_with_embeddings.append(node)
@@ -324,14 +291,14 @@ class EmbeddingProcessor:
                     else:
                         print(f"   WARNING: Skipping chunk {chunk_index+1}: {error_info}")
             
-            # Progress update with detailed timestamps
+            # Safe progress update with detailed timestamps
             self._print_progress_update(j, batch_nodes, embedding_start_time, batch_num, embedding_batch_size, len(nodes_with_embeddings))
         
         # Final statistics
         embedding_time = time.time() - embedding_start_time
         final_speed = len(nodes_with_embeddings) / embedding_time if embedding_time > 0 else 0
         
-        print(f"Embedding generation completed in {embedding_time:.2f} seconds")
+        print(f"Safe embedding generation completed in {embedding_time:.2f} seconds")
         print(f"Average speed: {final_speed:.2f} chunks/second")
         
         if embedding_errors:
@@ -361,7 +328,7 @@ class EmbeddingProcessor:
         current_time = datetime.now().strftime('%H:%M:%S')
         finish_time = (datetime.now() + timedelta(seconds=eta_seconds)).strftime('%H:%M')
         
-        print(f"   Progress: batch {batch_num} ({progress_pct:.1f}%) | "
+        print(f"   Safe progress: batch {batch_num} ({progress_pct:.1f}%) | "
               f"Processed: {processed_in_batch}/{len(batch_nodes)} chunks | "
               f"Speed: {chunks_per_second:.1f} chunks/sec | "
               f"Elapsed: {format_time(elapsed)} | "
@@ -372,14 +339,14 @@ class EmbeddingProcessor:
         # Show checkpoint every 20 sub-batches
         if (j // embedding_batch_size + 1) % 20 == 0:
             checkpoint_time = datetime.now().strftime('%H:%M:%S')
-            print(f"   CHECKPOINT at {checkpoint_time}: {processed_in_batch}/{len(batch_nodes)} chunks complete")
+            print(f"   SAFE CHECKPOINT at {checkpoint_time}: {processed_in_batch}/{len(batch_nodes)} chunks complete")
     
     def _log_embedding_errors(self, embedding_errors, batch_num):
         """Log embedding errors to file"""
         try:
             with open('./embedding_errors.log', 'a', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"\n--- Embedding errors in batch {batch_num} at {timestamp} ---\n")
+                f.write(f"\n--- Safe embedding errors in batch {batch_num} at {timestamp} ---\n")
                 for error in embedding_errors:
                     f.write(f"File: {error.get('file_name', 'Unknown')}\n")
                     f.write(f"Chunk: {error.get('chunk_index', 'Unknown')}\n")
@@ -391,7 +358,7 @@ class EmbeddingProcessor:
     
     def robust_save_to_database(self, nodes_with_embeddings, batch_num, db_batch_size=25):
         """
-        Save nodes to database with robust error handling
+        SAFE: Save nodes to database with robust error handling
         
         Args:
             nodes_with_embeddings: List of nodes with embeddings
@@ -401,16 +368,16 @@ class EmbeddingProcessor:
         Returns:
             tuple: (total_saved, failed_chunks)
         """
-        print(f"Saving {len(nodes_with_embeddings)} chunks to database...")
+        print(f"Safely saving {len(nodes_with_embeddings)} chunks to database...")
         db_start_time = time.time()
         
         total_saved = 0
         failed_chunks = []
         
-        # ?????????? ?????: ??????????? ??????? ???? nodes ????? ???????????!
-        print(f"   INFO: Cleaning all nodes from null bytes before database save...")
+        # ?????????? ???????: ??????????? ??????? ???? nodes ????? ???????????!
+        print(f"   INFO: Safely cleaning all nodes from null bytes before database save...")
         cleaned_nodes = aggressive_clean_all_nodes(nodes_with_embeddings)
-        print(f"   INFO: Cleaned {len(cleaned_nodes)} nodes (original: {len(nodes_with_embeddings)})")
+        print(f"   INFO: Safely cleaned {len(cleaned_nodes)} nodes (original: {len(nodes_with_embeddings)})")
         
         try:
             # Try to save all cleaned chunks at once first
@@ -419,17 +386,17 @@ class EmbeddingProcessor:
             self.stats['successful_saves'] += total_saved
             
             db_time = time.time() - db_start_time
-            print(f"   SUCCESS: Saved {total_saved} records in {db_time:.2f}s")
+            print(f"   SUCCESS: Safely saved {total_saved} records in {db_time:.2f}s")
             return total_saved, []
             
         except Exception as e:
             print(f"   WARNING: Batch save failed: {e}")
-            print(f"   INFO: Trying individual chunk processing...")
+            print(f"   INFO: Trying individual safe chunk processing...")
             
             # If batch save fails, try saving chunks individually
             for i, node in enumerate(cleaned_nodes):
                 try:
-                    # Double-clean problematic chunks
+                    # Double-clean problematic chunks for safety
                     ultra_cleaned_node = clean_problematic_node(node)
                     self.vector_store.add([ultra_cleaned_node], batch_size=1)
                     total_saved += 1
@@ -458,7 +425,7 @@ class EmbeddingProcessor:
             db_time = time.time() - db_start_time
             
             if total_saved > 0:
-                print(f"   SUCCESS: Saved {total_saved} records individually in {db_time:.2f}s")
+                print(f"   SUCCESS: Safely saved {total_saved} records individually in {db_time:.2f}s")
             
             if failed_chunks:
                 print(f"   WARNING: Failed to save {len(failed_chunks)} problematic chunks")
@@ -471,7 +438,7 @@ class EmbeddingProcessor:
         try:
             with open('./failed_chunks.log', 'a', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"\n--- Failed chunks in batch {batch_num} at {timestamp} ---\n")
+                f.write(f"\n--- Safe processing - Failed chunks in batch {batch_num} at {timestamp} ---\n")
                 for failed in failed_chunks:
                     f.write(f"File: {failed['file_name']}\n")
                     f.write(f"Path: {failed['file_path']}\n")
@@ -503,7 +470,7 @@ class EmbeddingProcessor:
         """Print processing statistics summary"""
         stats = self.get_processing_stats()
         
-        print(f"\nEmbedding Processing Summary:")
+        print(f"\nSafe Embedding Processing Summary:")
         print(f"  Total chunks processed: {stats['total_processed']}")
         print(f"  Successful embeddings: {stats['successful_embeddings']}")
         print(f"  Failed embeddings: {stats['failed_embeddings']}")
@@ -511,6 +478,7 @@ class EmbeddingProcessor:
         print(f"  Successful saves: {stats['successful_saves']}")
         print(f"  Failed saves: {stats['failed_saves']}")
         print(f"  Save success rate: {stats['save_success_rate']:.1f}%")
+        print(f"  Safe processing: NO unsafe Ollama restarts during embedding generation")
     
     def reset_stats(self):
         """Reset processing statistics"""
@@ -524,11 +492,11 @@ class EmbeddingProcessor:
 
 
 class NodeProcessor:
-    """Processor for handling node operations and validation"""
+    """Safe processor for handling node operations and validation"""
     
     def __init__(self, min_chunk_length=100):
         """
-        Initialize node processor
+        Initialize safe node processor
         
         Args:
             min_chunk_length: Minimum length for valid chunks
@@ -563,7 +531,7 @@ class NodeProcessor:
     
     def enhance_node_metadata(self, node, indexed_at=None):
         """
-        Enhance node metadata with additional information
+        Safely enhance node metadata with additional information
         
         Args:
             node: Node to enhance
@@ -581,20 +549,21 @@ class NodeProcessor:
         if 'file_name' not in node.metadata:
             node.metadata['file_name'] = node.get_metadata_str()
         
-        # Add content metadata
+        # Add content metadata safely
         node.metadata.update({
             'text': content,
             'indexed_at': indexed_at,
             'content_length': len(content),
             'word_count': len(content.split()),
-            'paragraph_count': len([p for p in content.split('\n\n') if p.strip()])
+            'paragraph_count': len([p for p in content.split('\n\n') if p.strip()]),
+            'safe_processing': True  # Mark as safely processed
         })
         
         return node
     
     def filter_and_enhance_nodes(self, all_nodes, show_progress=True):
         """
-        Filter and enhance a list of nodes
+        Safely filter and enhance a list of nodes
         
         Args:
             all_nodes: List of nodes to process
@@ -614,7 +583,7 @@ class NodeProcessor:
         
         for i, node in enumerate(all_nodes):
             if show_progress and i % 1000 == 0:
-                print(f"  Processing nodes: {i}/{total_nodes}")
+                print(f"  Safe processing nodes: {i}/{total_nodes}")
             
             is_valid, reason = self.validate_node(node)
             
@@ -641,7 +610,7 @@ class NodeProcessor:
                 invalid_files_summary[file_name][reason] += 1
         
         if show_progress:
-            print(f"  Node filtering complete: {len(valid_nodes)} valid, {len(invalid_nodes)} invalid")
+            print(f"  Safe node filtering complete: {len(valid_nodes)} valid, {len(invalid_nodes)} invalid")
             
             # Print detailed invalid files report
             if invalid_files_summary:
@@ -662,7 +631,7 @@ class NodeProcessor:
             report_file = './invalid_chunks_report.log'
             with open(report_file, 'w', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"Invalid Chunks Report - {timestamp}\n")
+                f.write(f"Safe Processing - Invalid Chunks Report - {timestamp}\n")
                 f.write("=" * 60 + "\n\n")
                 
                 f.write("SUMMARY BY FILE:\n")
@@ -686,7 +655,7 @@ class NodeProcessor:
                 if len(invalid_nodes) > 50:
                     f.write(f"\n... and {len(invalid_nodes) - 50} more invalid chunks\n")
             
-            print(f"Detailed invalid chunks report saved to: {report_file}")
+            print(f"Safe processing - detailed invalid chunks report saved to: {report_file}")
             
         except Exception as e:
             print(f"WARNING: Could not save invalid chunks report: {e}")
@@ -724,32 +693,33 @@ class NodeProcessor:
             'min_word_count': min(word_counts),
             'max_word_count': max(word_counts),
             'unique_files': len(files),
-            'chunks_per_file': sum(files.values()) / len(files)
+            'chunks_per_file': sum(files.values()) / len(files),
+            'safe_processing_enabled': True
         }
 
 
 def create_embedding_processor(embed_model, vector_store):
     """
-    Create an embedding processor instance
+    Create a SAFE embedding processor instance
     
     Args:
         embed_model: Embedding model instance
         vector_store: Vector store instance
     
     Returns:
-        EmbeddingProcessor: Configured processor
+        EmbeddingProcessor: Configured SAFE processor
     """
     return EmbeddingProcessor(embed_model, vector_store)
 
 
 def create_node_processor(min_chunk_length=100):
     """
-    Create a node processor instance
+    Create a SAFE node processor instance
     
     Args:
         min_chunk_length: Minimum length for valid chunks
     
     Returns:
-        NodeProcessor: Configured processor
+        NodeProcessor: Configured SAFE processor
     """
     return NodeProcessor(min_chunk_length)

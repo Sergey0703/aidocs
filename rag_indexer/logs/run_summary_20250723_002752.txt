@@ -1,0 +1,39 @@
+Processing Run Summary
+==================================================
+Start time: 2025-07-23 00:20:18
+End time: 2025-07-23 00:27:52
+Duration: 7.6m
+
+start_time: 1753226418.91
+documents_loaded: 244
+images_processed: 11
+chunks_created: 227
+embeddings_generated: 227
+records_saved: 227
+encoding_issues: 0
+total_time: 286.74
+total_nodes: 227
+total_batches: 5
+batches_processed: 5
+failed_batches: 0
+total_saved: 227
+total_failed_chunks: 0
+total_embedding_errors: 0
+success_rate: 100.00
+avg_speed: 0.79
+success: 1
+
+FAILED FILES SUMMARY:
+------------------------------
+? Total failed files: 21
+?? Details saved to: /logs/failed_files_details.log
+
+First 5 failed files:
+  1. 9704926-mary o sullivan.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  2. 8382313-joan broderick.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  3. 88-GK CPC Module 2 Minimising risks and managing emergencies RDS 25.04.25.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  4. 92-BF Diversity Equality & Inclusion Mod 3 25.05.2025.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  5. 293-GmcG CPC Module 2 Minimising risks and managing emergencies RDS 25.04.25.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  ... and 16 more (see detailed log)
+
+==================================================

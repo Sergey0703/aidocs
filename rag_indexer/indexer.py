@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Main RAG Document Indexer
-Modular version with clean architecture, robust error handling, and end-to-end file analysis
+Enhanced RAG Document Indexer - Complete Integration
+Enhanced version with advanced document parsing, auto-rotation OCR, and text quality analysis
+Optimized for English documents with comprehensive error handling and progress tracking
 """
 
 import logging
@@ -16,9 +17,9 @@ from llama_index.vector_stores.supabase import SupabaseVectorStore
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 
-# --- LOCAL MODULES ---
-from config import get_config
-from file_utils import create_safe_reader
+# --- ENHANCED LOCAL MODULES ---
+from config import get_config, print_feature_status
+from file_utils import create_safe_reader, print_advanced_parsing_info
 from ocr_processor import create_ocr_processor, check_ocr_availability
 from database_manager import create_database_manager
 from embedding_processor import create_embedding_processor, create_node_processor
@@ -32,17 +33,17 @@ from utils import (
 
 def initialize_components(config):
     """
-    Initialize all LlamaIndex components
+    Initialize all LlamaIndex components with enhanced settings
     
     Args:
-        config: Configuration object
+        config: Enhanced configuration object
     
     Returns:
         dict: Initialized components
     """
-    print("Initializing LlamaIndex components...")
+    print("?? Initializing enhanced LlamaIndex components...")
     
-    # Vector store
+    # Vector store with optimized settings
     vector_store = SupabaseVectorStore(
         postgres_connection_string=config.CONNECTION_STRING,
         collection_name=config.TABLE_NAME,
@@ -52,20 +53,26 @@ def initialize_components(config):
     # Storage context
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     
-    # Embedding model
+    # Embedding model with CPU optimizations
+    embed_settings = config.get_embedding_settings()
     embed_model = OllamaEmbedding(
-        model_name=config.EMBED_MODEL, 
-        base_url=config.OLLAMA_BASE_URL
+        model_name=embed_settings['model'], 
+        base_url=embed_settings['base_url'],
+        request_timeout=embed_settings['timeout']
     )
     
-    # Node parser
+    # Enhanced node parser with optimized chunk sizes
+    chunk_settings = config.get_chunk_settings()
     node_parser = SentenceSplitter(
-        chunk_size=config.CHUNK_SIZE, 
-        chunk_overlap=config.CHUNK_OVERLAP,
+        chunk_size=chunk_settings['chunk_size'], 
+        chunk_overlap=chunk_settings['chunk_overlap'],
         paragraph_separator="\n\n",
-        secondary_chunking_regex="[.!?]\\s+"
+        secondary_chunking_regex="[.!?]\\s+",
+        include_metadata=True,
+        include_prev_next_rel=True
     )
     
+    print("? Enhanced components initialized successfully")
     return {
         'vector_store': vector_store,
         'storage_context': storage_context,
@@ -74,116 +81,313 @@ def initialize_components(config):
     }
 
 
-def load_and_process_documents(config, progress_tracker):
+def load_and_process_documents_enhanced(config, progress_tracker):
     """
-    Load and process all documents using simple approach
+    Enhanced document loading with advanced parsing and hybrid processing
     
     Args:
-        config: Configuration object
+        config: Enhanced configuration object
         progress_tracker: Progress tracker instance
     
     Returns:
-        tuple: (text_documents, image_documents, basic_stats)
+        tuple: (text_documents, image_documents, processing_stats)
     """
-    print(f"Loading documents from folder: {config.DOCUMENTS_DIR}")
-    progress_tracker.add_checkpoint("Document loading started")
+    print(f"?? Enhanced document loading from: {config.DOCUMENTS_DIR}")
+    progress_tracker.add_checkpoint("Enhanced document loading started")
     
-    # Load text documents with simple approach
-    print("\n?? Loading text documents...")
-    reader = create_safe_reader(
+    # Create enhanced document loader
+    print("\n?? Loading documents with advanced parsing...")
+    advanced_reader = create_safe_reader(
         config.DOCUMENTS_DIR, 
-        recursive=True
+        recursive=True,
+        config=config  # Pass configuration for advanced features
     )
     
-    # Simple loading - no complex tracking yet
-    text_documents, basic_stats, _ = reader.load_data()
-    
-    progress_tracker.add_checkpoint("Text documents loaded", len(text_documents))
-    
-    # Load images with OCR
-    image_documents = []
+    # Initialize OCR processor for hybrid processing
+    ocr_processor = None
     if config.ENABLE_OCR:
-        print("\n??? Processing images with OCR...")
+        print("?? Initializing enhanced OCR processor...")
         try:
-            # Check OCR availability
             ocr_available, missing_libs = check_ocr_availability()
             if not ocr_available:
-                print(f"WARNING: OCR libraries missing: {', '.join(missing_libs)}")
-                print("Install with: pip install pytesseract pillow opencv-python")
+                print(f"?? OCR libraries missing: {', '.join(missing_libs)}")
+                print("   Install with: pip install pytesseract pillow opencv-python")
+                print("   Continuing without OCR...")
             else:
                 ocr_processor = create_ocr_processor(
                     quality_threshold=config.OCR_QUALITY_THRESHOLD,
-                    batch_size=config.OCR_BATCH_SIZE
+                    batch_size=config.OCR_BATCH_SIZE,
+                    config=config  # Pass full config for enhanced features
                 )
-                image_documents, ocr_stats = ocr_processor.process_images_in_directory(config.DOCUMENTS_DIR)
-                progress_tracker.add_checkpoint("Image documents processed", len(image_documents))
+                
+                # Set OCR processor for hybrid processing
+                advanced_reader.set_ocr_processor(ocr_processor)
+                
+                print(f"? Enhanced OCR processor initialized")
+                print(f"   Auto-rotation: {'?' if config.OCR_AUTO_ROTATION else '?'}")
+                print(f"   Text quality analysis: {'?' if config.ENABLE_TEXT_QUALITY_ANALYSIS else '?'}")
+                
         except Exception as e:
-            print(f"WARNING: OCR processing failed: {e}")
-            print("Continuing without OCR...")
+            print(f"?? OCR initialization failed: {e}")
+            print("   Continuing without OCR...")
     
-    # Print basic loading summary
-    reader.print_loading_summary()
+    # Load documents with enhanced processing
+    print("\n?? Processing documents with hybrid text+image analysis...")
+    start_time = time.time()
     
-    return text_documents, image_documents, basic_stats
+    try:
+        text_documents, loading_stats, failed_files = advanced_reader.load_data()
+        loading_time = time.time() - start_time
+        
+        progress_tracker.add_checkpoint("Enhanced document loading completed", len(text_documents))
+        
+        # Process standalone images if OCR is available
+        image_documents = []
+        if config.ENABLE_OCR and ocr_processor:
+            print("\n?? Processing standalone images with enhanced OCR...")
+            try:
+                image_documents, ocr_stats = ocr_processor.process_images_in_directory(config.DOCUMENTS_DIR)
+                progress_tracker.add_checkpoint("Enhanced image processing completed", len(image_documents))
+                
+                # Update loading stats with OCR info
+                loading_stats.update({
+                    'standalone_images_found': ocr_stats.get('total_found', 0),
+                    'standalone_images_processed': ocr_stats.get('successful', 0),
+                    'ocr_success_rate': ocr_stats.get('success_rate', 0),
+                    'total_ocr_text_length': ocr_stats.get('total_text_length', 0),
+                    'rotation_stats': ocr_stats.get('rotation_stats', {}),
+                    'language_detection': ocr_stats.get('language_detection', {}),
+                    'quality_failures': ocr_stats.get('quality_failures', {})
+                })
+                
+            except Exception as e:
+                print(f"?? Standalone image processing failed: {e}")
+                loading_stats['ocr_error'] = str(e)
+    
+    except Exception as e:
+        print(f"? Enhanced document loading failed: {e}")
+        raise
+    
+    # Print comprehensive loading summary
+    print_enhanced_loading_summary(text_documents, image_documents, loading_stats, loading_time)
+    
+    # Get comprehensive processing summary
+    processing_summary = advanced_reader.get_processing_summary()
+    
+    return text_documents, image_documents, processing_summary
 
 
-def create_and_filter_chunks(documents, config, node_parser, progress_tracker):
+def print_enhanced_loading_summary(text_documents, image_documents, loading_stats, loading_time):
     """
-    Create and filter text chunks
+    Print comprehensive loading summary with enhanced metrics
+    
+    Args:
+        text_documents: List of text documents
+        image_documents: List of image documents  
+        loading_stats: Loading statistics
+        loading_time: Time taken for loading
+    """
+    print(f"\n?? ENHANCED DOCUMENT LOADING RESULTS:")
+    print(f"?? Loading time: {loading_time:.2f}s ({loading_time/60:.1f}m)")
+    
+    # Document counts
+    total_docs = len(text_documents) + len(image_documents)
+    print(f"?? Text documents: {len(text_documents)}")
+    print(f"?? Image documents: {len(image_documents)}")
+    print(f"?? Total documents: {total_docs}")
+    
+    # Advanced parsing statistics
+    if 'file_breakdown' in loading_stats:
+        breakdown = loading_stats['file_breakdown']
+        print(f"\n?? File Type Breakdown:")
+        print(f"   DOCX files: {breakdown.get('docx_files', 0)}")
+        print(f"   DOC files: {breakdown.get('doc_files', 0)}")
+        print(f"   Other files: {breakdown.get('other_files', 0)}")
+    
+    if 'processing_results' in loading_stats:
+        results = loading_stats['processing_results']
+        print(f"\n?? Processing Results:")
+        print(f"   Documents created: {results.get('documents_created', 0)}")
+        print(f"   Images extracted from docs: {results.get('images_extracted', 0)}")
+        print(f"   Processing errors: {results.get('processing_errors', 0)}")
+        print(f"   Success rate: {results.get('success_rate', 0):.1f}%")
+    
+    # OCR statistics
+    if 'standalone_images_found' in loading_stats:
+        print(f"\n?? OCR Statistics:")
+        print(f"   Standalone images found: {loading_stats['standalone_images_found']}")
+        print(f"   Successfully processed: {loading_stats['standalone_images_processed']}")
+        print(f"   OCR success rate: {loading_stats.get('ocr_success_rate', 0):.1f}%")
+        print(f"   Total OCR text extracted: {loading_stats.get('total_ocr_text_length', 0)} characters")
+        
+        # Rotation statistics
+        if 'rotation_stats' in loading_stats:
+            rotation_stats = loading_stats['rotation_stats']
+            if rotation_stats and rotation_stats.get('images_tested', 0) > 0:
+                print(f"\n?? Auto-Rotation Results:")
+                print(f"   Images tested for rotation: {rotation_stats['images_tested']}")
+                print(f"   Rotations applied: {rotation_stats['rotations_applied']}")
+                print(f"   Quality improvements found: {rotation_stats['improvements_found']}")
+                if rotation_stats.get('timeouts', 0) > 0:
+                    print(f"   Rotation timeouts: {rotation_stats['timeouts']}")
+        
+        # Language detection
+        if 'language_detection' in loading_stats:
+            lang_stats = loading_stats['language_detection']
+            if lang_stats:
+                print(f"\n?? Language Detection:")
+                for lang, count in lang_stats.items():
+                    print(f"   {lang.capitalize()}: {count} images")
+        
+        # Quality failure analysis
+        if 'quality_failures' in loading_stats:
+            quality_failures = loading_stats['quality_failures']
+            if quality_failures:
+                print(f"\n?? Quality Failure Analysis:")
+                for reason, count in quality_failures.items():
+                    print(f"   {reason.replace('_', ' ').title()}: {count} images")
+    
+    # Method usage statistics
+    if 'method_usage' in loading_stats:
+        method_usage = loading_stats['method_usage']
+        print(f"\n??? Processing Methods Used:")
+        print(f"   Advanced parsing: {method_usage.get('advanced_parsing', 0)} files")
+        print(f"   Fallback processing: {method_usage.get('fallback_processing', 0)} files")
+    
+    # Feature status
+    if 'features_enabled' in loading_stats:
+        features = loading_stats['features_enabled']
+        print(f"\n? Enhanced Features Status:")
+        feature_list = [
+            ('Advanced parsing', features.get('advanced_parsing', False)),
+            ('Image extraction', features.get('image_extraction', False)),
+            ('Structure preservation', features.get('structure_preservation', False)),
+            ('Table extraction', features.get('table_extraction', False)),
+            ('Hybrid processing', features.get('hybrid_processing', False))
+        ]
+        for feature_name, enabled in feature_list:
+            status = "?" if enabled else "?"
+            print(f"   {feature_name}: {status}")
+
+
+def create_and_filter_chunks_enhanced(documents, config, node_parser, progress_tracker):
+    """
+    Enhanced chunk creation and filtering with quality analysis
     
     Args:
         documents: List of documents
-        config: Configuration object
+        config: Enhanced configuration object
         node_parser: Node parser instance
         progress_tracker: Progress tracker instance
     
     Returns:
-        tuple: (valid_nodes, invalid_nodes, node_stats)
+        tuple: (valid_nodes, invalid_nodes, enhanced_node_stats)
     """
-    print("\nCreating text chunks from all documents...")
+    print("\n?? Enhanced chunk creation and quality analysis...")
     chunk_start_time = time.time()
     
     try:
+        # Create nodes with enhanced metadata
         all_nodes = node_parser.get_nodes_from_documents(documents, show_progress=True)
-        progress_tracker.add_checkpoint("Chunks created", len(all_nodes))
+        progress_tracker.add_checkpoint("Enhanced chunks created", len(all_nodes))
     except Exception as e:
-        print(f"ERROR: Failed to parse documents into chunks: {e}")
+        print(f"? Failed to parse documents into chunks: {e}")
         raise
     
     chunk_time = time.time() - chunk_start_time
-    print(f"Document chunking completed in {chunk_time:.2f} seconds")
+    print(f"? Document chunking completed in {chunk_time:.2f}s")
     
-    # Filter and enhance nodes
-    node_processor = create_node_processor(config.MIN_CHUNK_LENGTH)
-    valid_nodes, invalid_nodes = node_processor.filter_and_enhance_nodes(all_nodes)
+    # Enhanced node processing with quality analysis
+    chunk_settings = config.get_chunk_settings()
+    node_processor = create_node_processor(chunk_settings['min_chunk_length'])
     
-    # Get node statistics
-    node_stats = node_processor.get_node_statistics(valid_nodes)
+    print("?? Applying enhanced quality filters...")
+    filter_start_time = time.time()
     
-    progress_tracker.add_checkpoint("Chunks filtered and enhanced", len(valid_nodes))
+    valid_nodes, invalid_nodes = node_processor.filter_and_enhance_nodes(all_nodes, show_progress=True)
     
-    print(f"Created {len(valid_nodes)} valid chunks for processing")
-    if invalid_nodes:
-        print(f"Filtered out {len(invalid_nodes)} invalid chunks")
+    filter_time = time.time() - filter_start_time
+    print(f"? Quality filtering completed in {filter_time:.2f}s")
     
-    return valid_nodes, invalid_nodes, node_stats
+    # Enhanced statistics
+    enhanced_node_stats = node_processor.get_node_statistics(valid_nodes)
+    
+    # Add filtering statistics
+    enhanced_node_stats.update({
+        'total_nodes_created': len(all_nodes),
+        'valid_nodes': len(valid_nodes),
+        'invalid_nodes': len(invalid_nodes),
+        'filter_success_rate': (len(valid_nodes) / len(all_nodes) * 100) if len(all_nodes) > 0 else 0,
+        'chunk_creation_time': chunk_time,
+        'filter_processing_time': filter_time,
+        'total_processing_time': chunk_time + filter_time
+    })
+    
+    progress_tracker.add_checkpoint("Enhanced chunks filtered", len(valid_nodes))
+    
+    # Print enhanced chunk statistics
+    print_enhanced_chunk_statistics(enhanced_node_stats, invalid_nodes)
+    
+    return valid_nodes, invalid_nodes, enhanced_node_stats
 
 
-def analyze_final_results(config, db_manager, log_dir):
+def print_enhanced_chunk_statistics(node_stats, invalid_nodes):
     """
-    Perform end-to-end analysis: compare directory with database to find missing files
+    Print comprehensive chunk statistics
+    
+    Args:
+        node_stats: Enhanced node statistics
+        invalid_nodes: List of invalid nodes with reasons
+    """
+    print(f"\n?? ENHANCED CHUNK STATISTICS:")
+    print(f"?? Total chunks created: {node_stats['total_nodes_created']:,}")
+    print(f"? Valid chunks: {node_stats['valid_nodes']:,}")
+    print(f"? Invalid chunks filtered: {node_stats['invalid_nodes']:,}")
+    print(f"?? Filter success rate: {node_stats['filter_success_rate']:.1f}%")
+    
+    print(f"\n?? Quality Metrics:")
+    print(f"   Average content length: {node_stats['avg_content_length']:.0f} characters")
+    print(f"   Length range: {node_stats['min_content_length']}-{node_stats['max_content_length']}")
+    print(f"   Average words per chunk: {node_stats['avg_word_count']:.1f}")
+    print(f"   Word count range: {node_stats['min_word_count']}-{node_stats['max_word_count']}")
+    
+    print(f"\n?? File Distribution:")
+    print(f"   Unique files processed: {node_stats['unique_files']:,}")
+    print(f"   Average chunks per file: {node_stats['chunks_per_file']:.1f}")
+    
+    print(f"\n?? Processing Performance:")
+    print(f"   Chunk creation time: {node_stats['chunk_creation_time']:.2f}s")
+    print(f"   Quality filtering time: {node_stats['filter_processing_time']:.2f}s")
+    print(f"   Total processing time: {node_stats['total_processing_time']:.2f}s")
+    
+    # Show sample of invalid chunk reasons
+    if invalid_nodes:
+        invalid_reasons = {}
+        for invalid_node in invalid_nodes[:50]:  # Sample first 50
+            reason = invalid_node.get('reason', 'unknown')
+            invalid_reasons[reason] = invalid_reasons.get(reason, 0) + 1
+        
+        print(f"\n?? Invalid Chunk Analysis (sample):")
+        for reason, count in sorted(invalid_reasons.items()):
+            print(f"   {reason.replace('_', ' ').title()}: {count}")
+
+
+def analyze_final_results_enhanced(config, db_manager, log_dir, processing_stats):
+    """
+    Enhanced end-to-end analysis with comprehensive reporting
     
     Args:
         config: Configuration object
         db_manager: Database manager instance
         log_dir: Directory for log files
+        processing_stats: Processing statistics from all stages
     
     Returns:
         dict: Comprehensive analysis results
     """
-    print(f"\n{'='*60}")
-    print("END-TO-END FILE ANALYSIS")
-    print(f"{'='*60}")
+    print(f"\n{'='*70}")
+    print("?? ENHANCED END-TO-END ANALYSIS")
+    print(f"{'='*70}")
     
     # Perform comprehensive directory vs database comparison
     analysis_results = db_manager.analyze_directory_vs_database(
@@ -198,35 +402,150 @@ def analyze_final_results(config, db_manager, log_dir):
     missing_files_detailed = analysis_results['missing_files_detailed']
     success_rate = analysis_results['success_rate']
     
-    print(f"\n?? Final Analysis Results:")
-    print(f"  ?? Total files in directory: {total_files}")
-    print(f"  ? Files successfully in database: {files_in_db}")
-    print(f"  ? Files missing from database: {missing_files}")
-    print(f"  ?? Success rate: {success_rate:.1f}%")
+    print(f"\n?? Final Processing Results:")
+    print(f"   ?? Total files in directory: {total_files:,}")
+    print(f"   ? Files successfully in database: {files_in_db:,}")
+    print(f"   ? Files missing from database: {missing_files:,}")
+    print(f"   ?? End-to-end success rate: {success_rate:.1f}%")
     
-    # Save failed files details to log if any missing
+    # Enhanced analysis with processing stages
+    if processing_stats:
+        print(f"\n?? Processing Pipeline Analysis:")
+        
+        # Document loading stage
+        if 'documents_loaded' in processing_stats:
+            print(f"   ?? Documents loaded: {processing_stats['documents_loaded']:,}")
+        
+        if 'images_processed' in processing_stats:
+            print(f"   ?? Images processed: {processing_stats['images_processed']:,}")
+        
+        # Chunk processing stage  
+        if 'chunks_created' in processing_stats:
+            print(f"   ?? Chunks created: {processing_stats['chunks_created']:,}")
+        
+        if 'valid_chunks' in processing_stats:
+            print(f"   ? Valid chunks: {processing_stats['valid_chunks']:,}")
+        
+        # Database stage
+        if 'records_saved' in processing_stats:
+            print(f"   ?? Records saved to database: {processing_stats['records_saved']:,}")
+        
+        # Calculate pipeline loss at each stage
+        total_attempted = processing_stats.get('total_nodes', processing_stats.get('chunks_created', 0))
+        if total_attempted > 0:
+            saved_records = processing_stats.get('records_saved', 0)
+            pipeline_loss = total_attempted - saved_records
+            loss_rate = (pipeline_loss / total_attempted * 100)
+            
+            print(f"\n?? Pipeline Loss Analysis:")
+            print(f"   Total chunks attempted: {total_attempted:,}")
+            print(f"   Successfully saved: {saved_records:,}")
+            print(f"   Lost in pipeline: {pipeline_loss:,}")
+            print(f"   Pipeline loss rate: {loss_rate:.2f}%")
+    
+    # Save comprehensive failed files details
     if missing_files_detailed:
-        print(f"\n?? Saving {len(missing_files_detailed)} missing files details to log...")
+        print(f"\n?? Saving detailed analysis...")
         log_file_path = save_failed_files_details(missing_files_detailed, log_dir)
         if log_file_path:
-            print(f"   ? Missing files details saved to: {log_file_path}")
+            print(f"   ?? Missing files details saved to: {log_file_path}")
         else:
-            print(f"   ?? WARNING: Could not save missing files details")
+            print(f"   ?? Could not save missing files details")
         
-        # Show first few missing files
-        print(f"\n? First 5 missing files:")
-        for i, missing_detail in enumerate(missing_files_detailed[:5]):
-            print(f"  {i+1}. {missing_detail}")
+        # Show categorized failure analysis
+        failure_categories = {}
+        for missing_detail in missing_files_detailed:
+            # Extract failure category from detail
+            if " - " in missing_detail:
+                category = missing_detail.split(" - ", 1)[1].split(" ")[0]
+            else:
+                category = "UNKNOWN"
+            failure_categories[category] = failure_categories.get(category, 0) + 1
+        
+        if failure_categories:
+            print(f"\n?? Failure Category Analysis:")
+            for category, count in sorted(failure_categories.items(), key=lambda x: x[1], reverse=True):
+                print(f"   {category}: {count} files")
+        
+        # Show first few missing files for quick reference
+        print(f"\n? Sample Missing Files:")
+        for i, missing_detail in enumerate(missing_files_detailed[:5], 1):
+            print(f"   {i}. {missing_detail}")
         if len(missing_files_detailed) > 5:
-            print(f"  ... and {len(missing_files_detailed) - 5} more (see detailed log)")
+            print(f"   ... and {len(missing_files_detailed) - 5} more (see detailed log)")
     else:
-        print(f"\n? All files successfully processed - no missing files!")
+        print(f"\n?? PERFECT PROCESSING: All files successfully indexed!")
     
-    return analysis_results
+    # Enhanced results with processing context
+    enhanced_analysis = {
+        **analysis_results,  # Include original analysis
+        'processing_stats': processing_stats,
+        'pipeline_success': processing_stats.get('records_saved', 0) > 0,
+        'feature_effectiveness': _analyze_feature_effectiveness(processing_stats),
+        'performance_metrics': _calculate_performance_metrics(processing_stats)
+    }
+    
+    return enhanced_analysis
+
+
+def _analyze_feature_effectiveness(processing_stats):
+    """Analyze effectiveness of enhanced features"""
+    effectiveness = {}
+    
+    # OCR effectiveness
+    if 'images_processed' in processing_stats:
+        ocr_images = processing_stats['images_processed']
+        if 'rotation_stats' in processing_stats and processing_stats['rotation_stats']:
+            rotation_stats = processing_stats['rotation_stats']
+            rotations_applied = rotation_stats.get('rotations_applied', 0)
+            if ocr_images > 0:
+                effectiveness['auto_rotation_usage'] = (rotations_applied / ocr_images * 100)
+        
+        if 'total_ocr_text_length' in processing_stats:
+            avg_text_per_image = processing_stats['total_ocr_text_length'] / ocr_images if ocr_images > 0 else 0
+            effectiveness['avg_ocr_text_extraction'] = avg_text_per_image
+    
+    # Advanced parsing effectiveness
+    if 'method_usage' in processing_stats:
+        method_usage = processing_stats['method_usage']
+        advanced_used = method_usage.get('advanced_parsing', 0)
+        total_files = advanced_used + method_usage.get('fallback_processing', 0)
+        if total_files > 0:
+            effectiveness['advanced_parsing_usage'] = (advanced_used / total_files * 100)
+    
+    # Quality filtering effectiveness
+    if 'filter_success_rate' in processing_stats:
+        effectiveness['quality_filter_success'] = processing_stats['filter_success_rate']
+    
+    return effectiveness
+
+
+def _calculate_performance_metrics(processing_stats):
+    """Calculate performance metrics"""
+    metrics = {}
+    
+    # Processing speed metrics
+    if 'total_time' in processing_stats and 'records_saved' in processing_stats:
+        total_time = processing_stats['total_time']
+        records_saved = processing_stats['records_saved']
+        if total_time > 0:
+            metrics['overall_processing_speed'] = records_saved / total_time
+    
+    # Stage-wise performance
+    if 'chunk_creation_time' in processing_stats:
+        metrics['chunk_creation_speed'] = (
+            processing_stats.get('chunks_created', 0) / 
+            processing_stats['chunk_creation_time']
+        ) if processing_stats['chunk_creation_time'] > 0 else 0
+    
+    if 'avg_speed' in processing_stats:
+        metrics['embedding_speed'] = processing_stats['avg_speed']
+    
+    return metrics
 
 
 def main():
-    """Main function orchestrating the entire indexing process with end-to-end analysis"""
+    """Enhanced main function with comprehensive processing and analysis"""
     
     # Setup
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -238,7 +557,7 @@ def main():
     # Initialize tracking
     progress_tracker = create_progress_tracker()
     performance_monitor = PerformanceMonitor()
-    status_reporter = StatusReporter("RAG Document Indexing")
+    status_reporter = StatusReporter("Enhanced RAG Document Indexing")
     
     # Setup logging
     log_dir = setup_logging_directory()
@@ -247,60 +566,70 @@ def main():
     progress_tracker.start()
     performance_monitor.start()
     
-    # Statistics tracking
+    # Enhanced statistics tracking
     stats = {
         'start_time': start_time,
         'documents_loaded': 0,
         'images_processed': 0,
         'chunks_created': 0,
+        'valid_chunks': 0,
         'embeddings_generated': 0,
         'records_saved': 0,
-        'encoding_issues': 0
+        'encoding_issues': 0,
+        'rotation_stats': {},
+        'quality_analysis_results': {},
+        'advanced_parsing_usage': 0,
+        'processing_stages': []
     }
     
-    # Analysis results (will be filled at the end)
+    # Final analysis results
     final_analysis = None
     
     try:
         with InterruptHandler() as interrupt_handler:
             
             # ===============================================================
-            # 1. LOAD CONFIGURATION
+            # 1. ENHANCED CONFIGURATION LOADING
             # ===============================================================
             
-            print("Loading configuration...")
+            print("?? Loading enhanced configuration...")
             config = get_config()
             config.print_config()
             
-            progress_tracker.add_checkpoint("Configuration loaded")
+            # Print feature status
+            print_feature_status()
+            
+            # Print advanced parsing info
+            print_advanced_parsing_info()
+            
+            progress_tracker.add_checkpoint("Enhanced configuration loaded")
             
             # Print system information
             print_system_info()
             
-            # Check OCR availability
-            try:
-                result = check_ocr_availability()
-                if result and len(result) == 2:
-                    ocr_available, missing_libs = result
+            # Enhanced OCR availability check
+            if config.ENABLE_OCR:
+                try:
+                    ocr_available, missing_libs = check_ocr_availability()
                     if ocr_available:
-                        print("OCR Status: Available")
+                        print("?? OCR Status: ? All libraries available")
+                        print(f"   Enhanced features: Auto-rotation, Quality analysis")
                     else:
-                        print(f"OCR Status: Missing libraries: {', '.join(missing_libs)}")
-                        print("Install with: pip install pytesseract pillow opencv-python")
-                else:
-                    print("OCR Status: Check function returned unexpected result")
-            except Exception as e:
-                print(f"OCR Status: Error checking availability: {e}")
-                print("OCR Status: Assuming not available")
+                        print(f"?? OCR Status: ? Missing: {', '.join(missing_libs)}")
+                        print("   Install with: pip install pytesseract pillow opencv-python")
+                except Exception as e:
+                    print(f"?? OCR Status: ?? Error checking: {e}")
+            else:
+                print("?? OCR Status: ? Disabled in configuration")
             
             # ===============================================================
-            # 2. INITIALIZE COMPONENTS
+            # 2. ENHANCED COMPONENT INITIALIZATION
             # ===============================================================
             
             components = initialize_components(config)
-            progress_tracker.add_checkpoint("Components initialized")
+            progress_tracker.add_checkpoint("Enhanced components initialized")
             
-            # Create processors
+            # Create enhanced processors
             db_manager = create_database_manager(config.CONNECTION_STRING, config.TABLE_NAME)
             embedding_processor = create_embedding_processor(
                 components['embed_model'], 
@@ -317,15 +646,16 @@ def main():
                 return
             
             # ===============================================================
-            # 3. LOAD DOCUMENTS (SIMPLE APPROACH)
+            # 3. ENHANCED DOCUMENT LOADING
             # ===============================================================
             
             try:
-                text_documents, image_documents, basic_stats = load_and_process_documents(
+                text_documents, image_documents, processing_summary = load_and_process_documents_enhanced(
                     config, progress_tracker
                 )
+                stats['processing_stages'].append('document_loading')
             except Exception as e:
-                print(f"ERROR: Failed to load documents: {e}")
+                print(f"? Enhanced document loading failed: {e}")
                 raise
             
             # Combine documents
@@ -333,18 +663,21 @@ def main():
             stats['documents_loaded'] = len(text_documents)
             stats['images_processed'] = len(image_documents)
             
+            # Update stats with processing summary
+            if processing_summary:
+                if 'rotation_stats' in processing_summary:
+                    stats['rotation_stats'] = processing_summary['rotation_stats']
+                if 'method_usage' in processing_summary:
+                    stats['advanced_parsing_usage'] = processing_summary['method_usage'].get('advanced_parsing', 0)
+            
             load_time = time.time() - start_time
-            print(f"\n?? Document Loading Results:")
-            print(f"  ?? Time elapsed: {load_time:.2f} seconds")
-            print(f"  ?? Text documents: {len(text_documents)}")
-            print(f"  ??? Image documents: {len(image_documents)}")
-            print(f"  ?? Total documents: {len(documents)}")
             
             if not documents:
-                print("ERROR: No documents found in the specified directory.")
+                print("? No documents found in the specified directory.")
                 return
             
-            performance_monitor.checkpoint("Documents loaded", len(documents))
+            performance_monitor.checkpoint("Enhanced documents loaded", len(documents))
+            stats['processing_stages'].append('documents_combined')
             
             # Check for interruption
             if interrupt_handler.check_interrupted():
@@ -352,12 +685,12 @@ def main():
                 return
             
             # ===============================================================
-            # 4. SAFE DELETION DIALOG
+            # 4. ENHANCED DELETION DIALOG
             # ===============================================================
             
-            print("\n" + "="*60)
-            print("SAFE DELETION CHECK")
-            print("="*60)
+            print(f"\n{'='*70}")
+            print("??? ENHANCED SAFE DELETION CHECK")
+            print(f"{'='*70}")
             
             # Get file identifiers
             files_to_process = set()
@@ -370,7 +703,8 @@ def main():
                     files_to_process.add(file_name)
             
             deletion_info = db_manager.safe_deletion_dialog(files_to_process)
-            progress_tracker.add_checkpoint("Deletion dialog completed")
+            progress_tracker.add_checkpoint("Enhanced deletion dialog completed")
+            stats['processing_stages'].append('deletion_dialog')
             
             # Check for interruption
             if interrupt_handler.check_interrupted():
@@ -378,7 +712,7 @@ def main():
                 return
             
             # ===============================================================
-            # 5. CREATE AND FILTER CHUNKS
+            # 5. ENHANCED CHUNK CREATION AND FILTERING
             # ===============================================================
             
             # Filter documents with content
@@ -402,23 +736,30 @@ def main():
                 print("   These documents loaded but contain inadequate text for processing.")
             
             if not documents_with_content:
-                print("ERROR: No documents with sufficient text content found. Exiting.")
+                print("? No documents with sufficient text content found. Exiting.")
                 return
             
-            print(f"?? Processing {len(documents_with_content)} documents with valid content.")
+            print(f"? Processing {len(documents_with_content)} documents with valid content.")
             
-            # Create chunks
-            valid_nodes, invalid_nodes, node_stats = create_and_filter_chunks(
+            # Enhanced chunk creation and filtering
+            valid_nodes, invalid_nodes, enhanced_node_stats = create_and_filter_chunks_enhanced(
                 documents_with_content, config, components['node_parser'], progress_tracker
             )
             
-            stats['chunks_created'] = len(valid_nodes)
+            stats['chunks_created'] = enhanced_node_stats['total_nodes_created']
+            stats['valid_chunks'] = enhanced_node_stats['valid_nodes']
+            stats['quality_analysis_results'] = {
+                'filter_success_rate': enhanced_node_stats['filter_success_rate'],
+                'invalid_chunks': enhanced_node_stats['invalid_nodes'],
+                'avg_content_length': enhanced_node_stats['avg_content_length']
+            }
+            stats['processing_stages'].append('chunk_processing')
             
             if not valid_nodes:
-                print("ERROR: No valid text chunks were generated. Exiting.")
+                print("? No valid text chunks were generated. Exiting.")
                 return
             
-            performance_monitor.checkpoint("Chunks processed", len(valid_nodes))
+            performance_monitor.checkpoint("Enhanced chunks processed", len(valid_nodes))
             
             # Check for interruption
             if interrupt_handler.check_interrupted():
@@ -426,131 +767,349 @@ def main():
                 return
             
             # ===============================================================
-            # 6. BATCH PROCESSING
+            # 6. ENHANCED BATCH PROCESSING
             # ===============================================================
             
-            print(f"\n?? Starting batch processing...")
+            print(f"\n?? Starting enhanced batch processing...")
             batch_settings = config.get_batch_settings()
             
-            # Process all batches
+            print(f"?? Enhanced Processing Configuration:")
+            print(f"   Processing batch size: {batch_settings['processing_batch_size']}")
+            print(f"   Embedding batch size: {batch_settings['embedding_batch_size']}")
+            print(f"   Database batch size: {batch_settings['db_batch_size']}")
+            print(f"   CPU threads: {config.OLLAMA_NUM_THREAD}")
+            print(f"   Embedding model: {config.EMBED_MODEL} ({config.EMBED_DIM}D)")
+            
+            # Process all batches with enhanced monitoring
             batch_results = batch_processor.process_all_batches(
                 valid_nodes,
                 batch_settings['embedding_batch_size'],
                 batch_settings['db_batch_size']
             )
             
-            # Update statistics
+            # Update enhanced statistics
             stats['records_saved'] = batch_results['total_saved']
             stats['embeddings_generated'] = batch_results['total_saved']  # Approximate
+            stats['processing_stages'].append('batch_processing')
             
-            performance_monitor.checkpoint("Batch processing completed", batch_results['total_saved'])
-            progress_tracker.add_checkpoint("Processing completed", batch_results['total_saved'])
+            # Add batch processing stats
+            stats.update({
+                'total_batches': batch_results['total_batches'],
+                'failed_batches': batch_results['failed_batches'],
+                'total_failed_chunks': batch_results['total_failed_chunks'],
+                'total_embedding_errors': batch_results['total_embedding_errors'],
+                'avg_speed': batch_results['avg_speed'],
+                'total_time': batch_results['total_time']
+            })
+            
+            performance_monitor.checkpoint("Enhanced batch processing completed", batch_results['total_saved'])
+            progress_tracker.add_checkpoint("Enhanced processing completed", batch_results['total_saved'])
             
             # ===============================================================
-            # 7. END-TO-END ANALYSIS (NEW!)
+            # 7. ENHANCED END-TO-END ANALYSIS
             # ===============================================================
             
-            # Perform comprehensive analysis AFTER everything is done
-            final_analysis = analyze_final_results(config, db_manager, log_dir)
+            # Perform comprehensive enhanced analysis
+            final_analysis = analyze_final_results_enhanced(config, db_manager, log_dir, stats)
+            stats['processing_stages'].append('final_analysis')
             
             # ===============================================================
-            # 8. FINAL RESULTS AND CLEANUP
+            # 8. ENHANCED FINAL RESULTS AND REPORTING
             # ===============================================================
             
-            # Print final results
+            # Print enhanced final results
             success = batch_processor.print_final_results(batch_results, deletion_info)
             
-            # Write comprehensive log
+            # Write comprehensive enhanced log
             batch_processor.write_comprehensive_log(
                 batch_results, 
                 deletion_info, 
                 stats['encoding_issues'],
-                f"{log_dir}/indexing_errors.log"
+                f"{log_dir}/enhanced_indexing_errors.log"
             )
             
-            # Create and save run summary WITH END-TO-END ANALYSIS
+            # Create and save enhanced run summary
             end_time = time.time()
-            summary = create_run_summary(start_time, end_time, {
-                **stats,
-                **batch_results,
-                'success': success
-            }, final_analysis['missing_files_detailed'] if final_analysis else [])
+            enhanced_summary = create_enhanced_run_summary(
+                start_time, end_time, stats, final_analysis, config
+            )
             
-            summary_file = f"{log_dir}/run_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            if safe_file_write(summary_file, summary):
-                print(f"?? Run summary saved to: {summary_file}")
+            summary_file = f"{log_dir}/enhanced_run_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            if safe_file_write(summary_file, enhanced_summary):
+                print(f"?? Enhanced run summary saved to: {summary_file}")
             
-            # Print performance summary
+            # Print enhanced performance summary
             performance_monitor.print_performance_summary()
             progress_tracker.print_progress_summary()
             
-            # Final status report WITH END-TO-END ANALYSIS
-            status_reporter.add_section("Final Statistics", {
-                "Total processing time": f"{end_time - start_time:.2f}s",
-                "Documents loaded": stats['documents_loaded'],
-                "Images processed": stats['images_processed'],
-                "Chunks created": stats['chunks_created'],
-                "Records saved": stats['records_saved'],
-                "Success rate": f"{batch_results['success_rate']:.1f}%",
-                "Processing speed": f"{batch_results['avg_speed']:.2f} chunks/sec"
-            })
-            
-            # END-TO-END ANALYSIS SECTION
-            if final_analysis:
-                status_reporter.add_section("End-to-End File Analysis", {
-                    "Total files in directory": final_analysis['total_files_in_directory'],
-                    "Files successfully in database": final_analysis['files_successfully_in_db'],
-                    "Files missing from database": final_analysis['files_missing_from_db'],
-                    "End-to-end success rate": f"{final_analysis['success_rate']:.1f}%",
-                    "Missing files details": f"Saved to {log_dir}/failed_files_details.log" if final_analysis['missing_files_detailed'] else "No missing files"
-                })
-            
-            status_reporter.add_section("Data Loss Analysis", {
-                "Total chunks attempted": stats['chunks_created'],
-                "Chunks successfully saved": stats['records_saved'],
-                "Chunks lost": stats['chunks_created'] - stats['records_saved'],
-                "Loss rate": f"{((stats['chunks_created'] - stats['records_saved']) / stats['chunks_created'] * 100):.2f}%" if stats['chunks_created'] > 0 else "0%",
-                "Invalid chunks (filtered)": f"See invalid_chunks_report.log"
-            })
-            
-            status_reporter.add_section("Quality Metrics", {
-                "Processing pipeline errors": final_analysis['files_missing_from_db'] if final_analysis else 0,
-                "Encoding issues": stats['encoding_issues'],
-                "Failed chunks": batch_results['total_failed_chunks'],
-                "Failed batches": batch_results['failed_batches'],
-                "Embedding errors": batch_results['total_embedding_errors']
-            })
+            # Enhanced final status report
+            create_enhanced_status_report(
+                status_reporter, stats, final_analysis, batch_results, 
+                deletion_info, start_time, end_time
+            )
             
             status_reporter.print_report()
             
             return success
     
     except KeyboardInterrupt:
-        print("\n\n?? WARNING: Indexing interrupted by user.")
+        print(f"\n\n?? WARNING: Enhanced indexing interrupted by user.")
         if 'stats' in locals():
-            print(f"?? INFO: Partial results: {stats.get('records_saved', 0)} chunks saved")
-        print("?? INFO: No data was corrupted - safe to restart.")
+            print(f"?? Partial results: {stats.get('records_saved', 0)} chunks saved")
+        print(f"?? No data was corrupted - safe to restart.")
         sys.exit(1)
     
     except Exception as e:
         print(f"\n\n? ERROR: FATAL ERROR: {e}")
-        print("?? INFO: Check your configuration and try again.")
+        print(f"?? Check your configuration and try again.")
         
         # Try to save error information
         if 'log_dir' in locals():
-            error_info = f"Fatal error at {datetime.now()}: {str(e)}\n"
-            safe_file_write(f"{log_dir}/fatal_error.log", error_info)
+            error_info = f"Enhanced indexer fatal error at {datetime.now()}: {str(e)}\n"
+            safe_file_write(f"{log_dir}/enhanced_fatal_error.log", error_info)
         
         sys.exit(1)
+
+
+def create_enhanced_run_summary(start_time, end_time, stats, final_analysis, config):
+    """
+    Create enhanced run summary with comprehensive statistics
+    
+    Args:
+        start_time: Start timestamp
+        end_time: End timestamp
+        stats: Enhanced processing statistics
+        final_analysis: Final analysis results
+        config: Configuration object
+    
+    Returns:
+        str: Enhanced formatted summary
+    """
+    duration = end_time - start_time
+    
+    summary = []
+    summary.append("?? ENHANCED RAG INDEXER RUN SUMMARY")
+    summary.append("=" * 70)
+    summary.append(f"Start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
+    summary.append(f"End time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}")
+    summary.append(f"Duration: {duration/60:.1f} minutes ({duration:.1f} seconds)")
+    summary.append("")
+    
+    # Enhanced configuration summary
+    summary.append("?? ENHANCED CONFIGURATION:")
+    summary.append(f"   Embedding model: {config.EMBED_MODEL} ({config.EMBED_DIM}D)")
+    summary.append(f"   Chunk size: {config.CHUNK_SIZE} (overlap: {config.CHUNK_OVERLAP})")
+    summary.append(f"   Processing batch size: {config.PROCESSING_BATCH_SIZE}")
+    summary.append(f"   CPU threads: {config.OLLAMA_NUM_THREAD}")
+    summary.append(f"   Features enabled:")
+    summary.append(f"     - Advanced document parsing: {'?' if config.ENABLE_ADVANCED_DOC_PARSING else '?'}")
+    summary.append(f"     - OCR with auto-rotation: {'?' if config.ENABLE_OCR and config.OCR_AUTO_ROTATION else '?'}")
+    summary.append(f"     - Text quality analysis: {'?' if config.ENABLE_TEXT_QUALITY_ANALYSIS else '?'}")
+    summary.append(f"     - Hybrid processing: {'?' if config.HYBRID_TEXT_IMAGE_PROCESSING else '?'}")
+    summary.append("")
+    
+    # Main statistics
+    summary.append("?? PROCESSING STATISTICS:")
+    for key, value in stats.items():
+        if key in ['rotation_stats', 'quality_analysis_results', 'processing_stages']:
+            continue  # Handle these separately
+        if isinstance(value, float):
+            summary.append(f"   {key}: {value:.2f}")
+        elif isinstance(value, int):
+            summary.append(f"   {key}: {value:,}")
+        else:
+            summary.append(f"   {key}: {value}")
+    
+    # Processing stages
+    if stats.get('processing_stages'):
+        summary.append("")
+        summary.append("?? PROCESSING STAGES COMPLETED:")
+        for i, stage in enumerate(stats['processing_stages'], 1):
+            summary.append(f"   {i}. {stage.replace('_', ' ').title()}")
+    
+    # OCR and rotation statistics
+    if stats.get('rotation_stats'):
+        rotation_stats = stats['rotation_stats']
+        summary.append("")
+        summary.append("?? AUTO-ROTATION STATISTICS:")
+        summary.append(f"   Images tested: {rotation_stats.get('images_tested', 0)}")
+        summary.append(f"   Rotations applied: {rotation_stats.get('rotations_applied', 0)}")
+        summary.append(f"   Quality improvements: {rotation_stats.get('improvements_found', 0)}")
+        if rotation_stats.get('timeouts', 0) > 0:
+            summary.append(f"   Timeouts: {rotation_stats['timeouts']}")
+    
+    # Quality analysis results
+    if stats.get('quality_analysis_results'):
+        quality_results = stats['quality_analysis_results']
+        summary.append("")
+        summary.append("?? TEXT QUALITY ANALYSIS:")
+        summary.append(f"   Filter success rate: {quality_results.get('filter_success_rate', 0):.1f}%")
+        summary.append(f"   Invalid chunks filtered: {quality_results.get('invalid_chunks', 0):,}")
+        summary.append(f"   Average content length: {quality_results.get('avg_content_length', 0):.0f} chars")
+    
+    # Final analysis summary
+    if final_analysis:
+        summary.append("")
+        summary.append("?? END-TO-END ANALYSIS:")
+        summary.append(f"   Total files in directory: {final_analysis['total_files_in_directory']:,}")
+        summary.append(f"   Files successfully in database: {final_analysis['files_successfully_in_db']:,}")
+        summary.append(f"   Files missing from database: {final_analysis['files_missing_from_db']:,}")
+        summary.append(f"   End-to-end success rate: {final_analysis['success_rate']:.1f}%")
+        
+        # Feature effectiveness
+        if 'feature_effectiveness' in final_analysis:
+            effectiveness = final_analysis['feature_effectiveness']
+            summary.append("")
+            summary.append("? FEATURE EFFECTIVENESS:")
+            for feature, value in effectiveness.items():
+                if isinstance(value, float):
+                    summary.append(f"   {feature.replace('_', ' ').title()}: {value:.1f}")
+                else:
+                    summary.append(f"   {feature.replace('_', ' ').title()}: {value}")
+        
+        # Performance metrics
+        if 'performance_metrics' in final_analysis:
+            metrics = final_analysis['performance_metrics']
+            summary.append("")
+            summary.append("? PERFORMANCE METRICS:")
+            for metric, value in metrics.items():
+                summary.append(f"   {metric.replace('_', ' ').title()}: {value:.2f} items/sec")
+    
+    # Failed files summary
+    summary.append("")
+    summary.append("?? FAILED FILES SUMMARY:")
+    summary.append("-" * 40)
+    
+    missing_files_detailed = final_analysis.get('missing_files_detailed', []) if final_analysis else []
+    
+    if not missing_files_detailed:
+        summary.append("? No failed files - perfect processing!")
+    else:
+        summary.append(f"? Total failed files: {len(missing_files_detailed)}")
+        summary.append(f"?? Details saved to: /logs/failed_files_details.log")
+        
+        # Show first 5 for quick reference
+        if len(missing_files_detailed) <= 5:
+            summary.append("")
+            summary.append("All failed files:")
+            for i, failed_file in enumerate(missing_files_detailed, 1):
+                summary.append(f"  {i}. {failed_file}")
+        else:
+            summary.append("")
+            summary.append("First 5 failed files:")
+            for i, failed_file in enumerate(missing_files_detailed[:5], 1):
+                summary.append(f"  {i}. {failed_file}")
+            summary.append(f"  ... and {len(missing_files_detailed) - 5} more (see detailed log)")
+    
+    summary.append("")
+    summary.append("=" * 70)
+    
+    return "\n".join(summary)
+
+
+def create_enhanced_status_report(status_reporter, stats, final_analysis, batch_results, deletion_info, start_time, end_time):
+    """
+    Create enhanced status report with comprehensive metrics
+    
+    Args:
+        status_reporter: Status reporter instance
+        stats: Processing statistics
+        final_analysis: Final analysis results
+        batch_results: Batch processing results
+        deletion_info: Deletion information
+        start_time: Processing start time
+        end_time: Processing end time
+    """
+    # Final statistics
+    status_reporter.add_section("?? Enhanced Final Statistics", {
+        "Total processing time": f"{end_time - start_time:.2f}s ({(end_time - start_time)/60:.1f}m)",
+        "Documents loaded": f"{stats['documents_loaded']:,}",
+        "Images processed": f"{stats['images_processed']:,}",
+        "Chunks created": f"{stats['chunks_created']:,}",
+        "Valid chunks": f"{stats['valid_chunks']:,}",
+        "Records saved": f"{stats['records_saved']:,}",
+        "Processing speed": f"{batch_results['avg_speed']:.2f} chunks/sec",
+        "Overall success rate": f"{batch_results['success_rate']:.1f}%"
+    })
+    
+    # Enhanced features performance
+    enhanced_features = {}
+    if stats.get('rotation_stats'):
+        rotation_stats = stats['rotation_stats']
+        enhanced_features["Auto-rotation applied"] = f"{rotation_stats.get('rotations_applied', 0)} images"
+        enhanced_features["Quality improvements found"] = f"{rotation_stats.get('improvements_found', 0)}"
+    
+    if stats.get('advanced_parsing_usage', 0) > 0:
+        enhanced_features["Advanced document parsing"] = f"{stats['advanced_parsing_usage']} files"
+    
+    if stats.get('quality_analysis_results'):
+        quality_results = stats['quality_analysis_results']
+        enhanced_features["Quality filter success"] = f"{quality_results.get('filter_success_rate', 0):.1f}%"
+    
+    if enhanced_features:
+        status_reporter.add_section("? Enhanced Features Performance", enhanced_features)
+    
+    # End-to-end analysis
+    if final_analysis:
+        status_reporter.add_section("?? End-to-End File Analysis", {
+            "Total files in directory": f"{final_analysis['total_files_in_directory']:,}",
+            "Files successfully in database": f"{final_analysis['files_successfully_in_db']:,}",
+            "Files missing from database": f"{final_analysis['files_missing_from_db']:,}",
+            "End-to-end success rate": f"{final_analysis['success_rate']:.1f}%",
+            "Missing files details": f"Saved to logs/failed_files_details.log" if final_analysis['missing_files_detailed'] else "No missing files"
+        })
+    
+    # Data loss analysis
+    total_attempted = stats.get('chunks_created', 0)
+    total_saved = stats.get('records_saved', 0)
+    total_lost = total_attempted - total_saved
+    loss_rate = (total_lost / total_attempted * 100) if total_attempted > 0 else 0
+    
+    status_reporter.add_section("?? Data Loss Analysis", {
+        "Total chunks attempted": f"{total_attempted:,}",
+        "Chunks successfully saved": f"{total_saved:,}",
+        "Chunks lost in pipeline": f"{total_lost:,}",
+        "Pipeline loss rate": f"{loss_rate:.2f}%",
+        "Main loss causes": f"See logs/invalid_chunks_report.log for details"
+    })
+    
+    # Quality metrics
+    status_reporter.add_section("?? Quality Metrics", {
+        "Processing pipeline errors": final_analysis['files_missing_from_db'] if final_analysis else 0,
+        "Encoding issues": stats['encoding_issues'],
+        "Failed chunks": batch_results['total_failed_chunks'],
+        "Failed batches": batch_results['failed_batches'],
+        "Embedding errors": batch_results['total_embedding_errors'],
+        "Invalid chunks filtered": stats.get('quality_analysis_results', {}).get('invalid_chunks', 0)
+    })
+    
+    # Performance analysis
+    performance_data = {
+        "Average processing speed": f"{batch_results['avg_speed']:.2f} chunks/sec",
+        "Total processing time": f"{batch_results['total_time']:.1f}s"
+    }
+    
+    if final_analysis and 'performance_metrics' in final_analysis:
+        metrics = final_analysis['performance_metrics']
+        for metric, value in metrics.items():
+            performance_data[metric.replace('_', ' ').title()] = f"{value:.2f} items/sec"
+    
+    status_reporter.add_section("? Performance Analysis", performance_data)
 
 
 if __name__ == "__main__":
     try:
+        print("?? Enhanced RAG Document Indexer")
+        print("=" * 50)
+        print("?? Advanced features: OCR auto-rotation, text quality analysis, hybrid processing")
+        print("?? Optimized for English documents with comprehensive error handling")
+        print("=" * 50)
+        
         main()
     except KeyboardInterrupt:
-        print("\n\n?? WARNING: Indexing interrupted by user.")
-        print("?? INFO: Safe to restart.")
+        print(f"\n\n?? Enhanced indexing interrupted by user.")
+        print(f"?? Safe to restart - no data corruption.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n\n? ERROR: FATAL ERROR: {e}")
+        print(f"\n\n? FATAL ERROR: {e}")
         sys.exit(1)
