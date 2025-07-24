@@ -81,58 +81,100 @@ def initialize_components(config):
     }
 
 
-def load_and_process_documents(config, progress_tracker):
+def load_and_process_documents_enhanced(config, progress_tracker):
     """
-    Load and process all documents with automatic .doc conversion
+    Enhanced document loading with advanced parsing and hybrid processing
+    
+    Args:
+        config: Enhanced configuration object
+        progress_tracker: Progress tracker instance
+    
+    Returns:
+        tuple: (text_documents, image_documents, processing_stats)
     """
-    print(f"Loading documents from folder: {config.DOCUMENTS_DIR}")
-    progress_tracker.add_checkpoint("Document loading started")
+    print(f"?? Enhanced document loading from: {config.DOCUMENTS_DIR}")
+    progress_tracker.add_checkpoint("Enhanced document loading started")
     
-    # NEW: Auto-convert .doc files before loading
-    print("\n?? Pre-processing: Converting .doc files to .docx...")
-    from doc_converter import convert_doc_files_in_directory
-    
-    try:
-        conversion_results = convert_doc_files_in_directory(
-            config.DOCUMENTS_DIR,
-            recursive=True,
-            backup_originals=True,  # Keep backups
-            delete_originals=False  # Don't delete originals
-        )
-        
-        if conversion_results['successful'] > 0:
-            print(f"? Pre-processed: {conversion_results['successful']} .doc files converted to .docx")
-        
-    except Exception as e:
-        print(f"?? Warning: .doc conversion failed: {e}")
-        print("Continuing with original files...")
-        conversion_results = {'successful': 0, 'failed': 0}
-    
-    # Continue with normal document loading
-    print("\n?? Loading text documents...")
-    reader = create_safe_reader(
+    # Create enhanced document loader
+    print("\n?? Loading documents with advanced parsing...")
+    advanced_reader = create_safe_reader(
         config.DOCUMENTS_DIR, 
-        recursive=True
+        recursive=True,
+        config=config  # Pass configuration for advanced features
     )
     
-    # Rest of the function remains the same...
-    text_documents, basic_stats, _ = reader.load_data()
-    
-    # Update loading summary to include conversion info
-    if hasattr(reader, 'print_loading_summary'):
-        reader.print_loading_summary(conversion_results)
-    else:
-        print(f"?? Conversion summary: {conversion_results['successful']} .doc files converted")
-    
-    progress_tracker.add_checkpoint("Text documents loaded", len(text_documents))
-    
-    # Load images with OCR (existing code)
-    image_documents = []
+    # Initialize OCR processor for hybrid processing
+    ocr_processor = None
     if config.ENABLE_OCR:
-        # ... existing OCR code ...
-        pass
+        print("?? Initializing enhanced OCR processor...")
+        try:
+            ocr_available, missing_libs = check_ocr_availability()
+            if not ocr_available:
+                print(f"?? OCR libraries missing: {', '.join(missing_libs)}")
+                print("   Install with: pip install pytesseract pillow opencv-python")
+                print("   Continuing without OCR...")
+            else:
+                ocr_processor = create_ocr_processor(
+                    quality_threshold=config.OCR_QUALITY_THRESHOLD,
+                    batch_size=config.OCR_BATCH_SIZE,
+                    config=config  # Pass full config for enhanced features
+                )
+                
+                # Set OCR processor for hybrid processing
+                advanced_reader.set_ocr_processor(ocr_processor)
+                
+                print(f"? Enhanced OCR processor initialized")
+                print(f"   Auto-rotation: {'?' if config.OCR_AUTO_ROTATION else '?'}")
+                print(f"   Text quality analysis: {'?' if config.ENABLE_TEXT_QUALITY_ANALYSIS else '?'}")
+                
+        except Exception as e:
+            print(f"?? OCR initialization failed: {e}")
+            print("   Continuing without OCR...")
     
-    return text_documents, image_documents, basic_stats
+    # Load documents with enhanced processing
+    print("\n?? Processing documents with hybrid text+image analysis...")
+    start_time = time.time()
+    
+    try:
+        text_documents, loading_stats, failed_files = advanced_reader.load_data()
+        loading_time = time.time() - start_time
+        
+        progress_tracker.add_checkpoint("Enhanced document loading completed", len(text_documents))
+        
+        # Process standalone images if OCR is available
+        image_documents = []
+        if config.ENABLE_OCR and ocr_processor:
+            print("\n?? Processing standalone images with enhanced OCR...")
+            try:
+                image_documents, ocr_stats = ocr_processor.process_images_in_directory(config.DOCUMENTS_DIR)
+                progress_tracker.add_checkpoint("Enhanced image processing completed", len(image_documents))
+                
+                # Update loading stats with OCR info
+                loading_stats.update({
+                    'standalone_images_found': ocr_stats.get('total_found', 0),
+                    'standalone_images_processed': ocr_stats.get('successful', 0),
+                    'ocr_success_rate': ocr_stats.get('success_rate', 0),
+                    'total_ocr_text_length': ocr_stats.get('total_text_length', 0),
+                    'rotation_stats': ocr_stats.get('rotation_stats', {}),
+                    'language_detection': ocr_stats.get('language_detection', {}),
+                    'quality_failures': ocr_stats.get('quality_failures', {})
+                })
+                
+            except Exception as e:
+                print(f"?? Standalone image processing failed: {e}")
+                loading_stats['ocr_error'] = str(e)
+    
+    except Exception as e:
+        print(f"? Enhanced document loading failed: {e}")
+        raise
+    
+    # Print comprehensive loading summary
+    print_enhanced_loading_summary(text_documents, image_documents, loading_stats, loading_time)
+    
+    # Get comprehensive processing summary
+    processing_summary = advanced_reader.get_processing_summary()
+    
+    return text_documents, image_documents, processing_summary
 
 
 def print_enhanced_loading_summary(text_documents, image_documents, loading_stats, loading_time):

@@ -60,7 +60,7 @@ class Config:
         self.OCR_SKIP_ROTATION_FOR_GOOD_QUALITY = os.getenv("OCR_SKIP_ROTATION_FOR_GOOD_QUALITY", "true").lower() == "true"
         
         # --- NEW: TEXT QUALITY ANALYSIS ---
-        self.ENABLE_TEXT_QUALITY_ANALYSIS = os.getenv("ENABLE_TEXT_QUALITY_ANALYSIS", "false").lower() == "false"
+        self.ENABLE_TEXT_QUALITY_ANALYSIS = os.getenv("ENABLE_TEXT_QUALITY_ANALYSIS", "true").lower() == "true"
         self.TEXT_QUALITY_MIN_SCORE = float(os.getenv("TEXT_QUALITY_MIN_SCORE", "0.3"))
         self.TEXT_QUALITY_MIN_WORDS = int(os.getenv("TEXT_QUALITY_MIN_WORDS", "5"))
         self.TEXT_QUALITY_MAX_IDENTICAL_CHARS = int(os.getenv("TEXT_QUALITY_MAX_IDENTICAL_CHARS", "10"))
@@ -94,10 +94,6 @@ class Config:
         self.LOG_BATCH_TIMING = os.getenv("LOG_BATCH_TIMING", "true").lower() == "true"
         self.LOG_OCR_ROTATION_ATTEMPTS = os.getenv("LOG_OCR_ROTATION_ATTEMPTS", "false").lower() == "true"
         self.LOG_TEXT_QUALITY_SCORES = os.getenv("LOG_TEXT_QUALITY_SCORES", "false").lower() == "true"
-        # --- DOCUMENT CONVERSION SETTINGS ---
-        self.AUTO_CONVERT_DOC = os.getenv("AUTO_CONVERT_DOC", "true").lower() == "true"
-        self.BACKUP_ORIGINAL_DOC = os.getenv("BACKUP_ORIGINAL_DOC", "true").lower() == "true"
-        self.DELETE_ORIGINAL_DOC = os.getenv("DELETE_ORIGINAL_DOC", "false").lower() == "true"
     
     def _validate_settings(self):
         """Validate configuration settings and raise errors for critical issues"""

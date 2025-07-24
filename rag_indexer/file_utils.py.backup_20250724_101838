@@ -24,7 +24,7 @@ def clean_content_from_null_bytes(content):
     if not isinstance(content, str):
         return content
     
-    # Remove null bytes (\u0000) and other problematic characters - —É—Å–∏–ª–µ–Ω–Ω–∞—è –æ—á–∏—Å—Ç–∫–∞!
+    # Remove null bytes (\u0000) and other problematic characters - усиленная очистка!
     content = content.replace('\u0000', '').replace('\x00', '').replace('\x01', '').replace('\x02', '')
     
     # Remove control characters (except newlines and tabs)
@@ -58,7 +58,7 @@ def safe_read_file(file_path, max_size=50*1024*1024):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                # –§–ò–ö–°: –æ—á–∏—Å—Ç–∫–∞ –æ—Ç null bytes!
+                # ФИКС: очистка от null bytes!
                 content = clean_content_from_null_bytes(content)
                 if content.strip():
                     return content, None
@@ -67,7 +67,7 @@ def safe_read_file(file_path, max_size=50*1024*1024):
             try:
                 with open(file_path, 'r', encoding='latin-1') as f:
                     content = f.read()
-                    # –§–ò–ö–°: –æ—á–∏—Å—Ç–∫–∞ –æ—Ç null bytes!
+                    # ФИКС: очистка от null bytes!
                     content = clean_content_from_null_bytes(content)
                     if content.strip():
                         return content, "LATIN1_FALLBACK"
@@ -82,7 +82,7 @@ def safe_read_file(file_path, max_size=50*1024*1024):
                 content = content.replace('\ufffd', ' ')  # Remove replacement chars
                 content = ''.join(c for c in content if c.isprintable() or c.isspace())
                 
-                # –§–ò–ö–°: –æ—á–∏—Å—Ç–∫–∞ –æ—Ç null bytes!
+                # ФИКС: очистка от null bytes!
                 content = clean_content_from_null_bytes(content)
                 
                 if content.strip():
@@ -289,11 +289,11 @@ class SimpleDirectoryLoader:
         try:
             tools_info = check_conversion_tools()
         except Exception as e:
-            print(f"‚ö†Ô∏è Warning: Could not check conversion tools: {e}")
+            print(f"⚠️ Warning: Could not check conversion tools: {e}")
             return {'skipped': True, 'reason': 'Tool check failed'}
         
         if not tools_info['any_tool_available']:
-            print("‚ö†Ô∏è WARNING: No .doc conversion tools available!")
+            print("⚠️ WARNING: No .doc conversion tools available!")
             print("   Install LibreOffice: sudo apt-get install libreoffice")
             print("   Install pandoc: sudo apt-get install pandoc")
             print("   .doc files will be processed with binary fallback (may produce poor results)")
@@ -307,10 +307,10 @@ class SimpleDirectoryLoader:
                     doc_files.append(os.path.join(root, file))
         
         if not doc_files:
-            print("‚úÖ No .doc files found - no conversion needed")
+            print("✅ No .doc files found - no conversion needed")
             return {'converted': 0, 'message': 'No .doc files found'}
         
-        print(f"Ì†ΩÌ≥Ñ Found {len(doc_files)} .doc files to convert")
+        print(f"������ Found {len(doc_files)} .doc files to convert")
         
         # Convert files
         try:
@@ -326,16 +326,16 @@ class SimpleDirectoryLoader:
             
             # Print results
             if conversion_results['successful'] > 0:
-                print(f"‚úÖ Successfully converted {conversion_results['successful']} .doc files to .docx")
+                print(f"✅ Successfully converted {conversion_results['successful']} .doc files to .docx")
             
             if conversion_results['failed'] > 0:
-                print(f"‚ùå Failed to convert {conversion_results['failed']} .doc files")
+                print(f"❌ Failed to convert {conversion_results['failed']} .doc files")
                 print("   These files will use binary fallback processing")
             
             return conversion_results
             
         except Exception as e:
-            print(f"‚ùå Error during .doc conversion: {e}")
+            print(f"❌ Error during .doc conversion: {e}")
             return {'error': str(e), 'attempted': len(doc_files), 'successful': 0, 'failed': len(doc_files)}
     
     def load_data(self):
@@ -345,13 +345,13 @@ class SimpleDirectoryLoader:
         Returns:
             tuple: (documents, loading_stats, conversion_results)
         """
-        print("Ì†ΩÌ¥Ñ Loading documents with automatic .doc conversion...")
+        print("������ Loading documents with automatic .doc conversion...")
         
         # Step 1: Convert .doc files to .docx
         self.conversion_results = self._preprocess_doc_files()
         
         # Step 2: Load documents normally (now including converted .docx files)
-        print("\nÌ†ΩÌ≥ö Loading documents with SimpleDirectoryReader...")
+        print("\n������ Loading documents with SimpleDirectoryReader...")
         
         # Use standard SimpleDirectoryReader
         reader = SimpleDirectoryReader(
@@ -365,9 +365,9 @@ class SimpleDirectoryLoader:
         try:
             documents = reader.load_data()
             self.documents_loaded = len(documents)
-            print(f"‚úÖ Successfully loaded {self.documents_loaded} documents")
+            print(f"✅ Successfully loaded {self.documents_loaded} documents")
         except Exception as e:
-            print(f"‚ùå Error during document loading: {e}")
+            print(f"❌ Error during document loading: {e}")
             documents = []
             self.documents_loaded = 0
         
@@ -411,27 +411,27 @@ class SimpleDirectoryLoader:
     
     def print_loading_summary(self):
         """Print comprehensive loading summary including conversion results"""
-        print(f"\nÌ†ΩÌ≥ä Enhanced Document Loading Summary:")
-        print(f"  Ì†ΩÌ≥ö Documents loaded: {self.documents_loaded}")
-        print(f"  ‚è±Ô∏è Loading time: {self.loading_time:.2f} seconds")
+        print(f"\n������ Enhanced Document Loading Summary:")
+        print(f"  ������ Documents loaded: {self.documents_loaded}")
+        print(f"  ⏱️ Loading time: {self.loading_time:.2f} seconds")
         
         if self.conversion_results and not self.conversion_results.get('skipped'):
-            print(f"\nÌ†ΩÌ¥Ñ Document Conversion Summary:")
-            print(f"  Ì†ΩÌ≥Ñ .doc files found: {self.conversion_results.get('attempted', 0)}")
-            print(f"  ‚úÖ Successfully converted: {self.conversion_results.get('successful', 0)}")
-            print(f"  ‚ùå Failed conversions: {self.conversion_results.get('failed', 0)}")
+            print(f"\n������ Document Conversion Summary:")
+            print(f"  ������ .doc files found: {self.conversion_results.get('attempted', 0)}")
+            print(f"  ✅ Successfully converted: {self.conversion_results.get('successful', 0)}")
+            print(f"  ❌ Failed conversions: {self.conversion_results.get('failed', 0)}")
             
             if self.conversion_results.get('successful', 0) > 0:
                 success_rate = (self.conversion_results['successful'] / self.conversion_results['attempted']) * 100
-                print(f"  Ì†ΩÌ≥à Conversion success rate: {success_rate:.1f}%")
+                print(f"  ������ Conversion success rate: {success_rate:.1f}%")
             
             if self.conversion_results.get('failed_files'):
-                print(f"  Ì†ΩÌ≥ù Failed files saved to conversion log")
+                print(f"  ������ Failed files saved to conversion log")
         elif self.conversion_results and self.conversion_results.get('skipped'):
             reason = self.conversion_results.get('reason', 'Unknown')
-            print(f"\nÌ†ΩÌ¥Ñ Document Conversion: Skipped ({reason})")
+            print(f"\n������ Document Conversion: Skipped ({reason})")
         
-        print(f"  Ì†ΩÌ≥à File-level analysis will be performed after database operations")
+        print(f"  ������ File-level analysis will be performed after database operations")
 
 
 def create_safe_reader(documents_dir, recursive=True, auto_convert_doc=True, backup_originals=True):
