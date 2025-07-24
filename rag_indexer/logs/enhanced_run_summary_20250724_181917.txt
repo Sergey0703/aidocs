@@ -1,0 +1,79 @@
+🚀 ENHANCED RAG INDEXER RUN SUMMARY
+======================================================================
+Start time: 2025-07-24 18:13:21
+End time: 2025-07-24 18:19:17
+Duration: 5.9 minutes (355.8 seconds)
+
+🔧 ENHANCED CONFIGURATION:
+   Embedding model: nomic-embed-text (768D)
+   Chunk size: 2048 (overlap: 256)
+   Processing batch size: 200
+   CPU threads: 16
+   Features enabled:
+     - Auto .doc conversion: ✅
+     - OCR processing: ✅
+     - Safe Ollama restarts: ✅
+
+📊 PROCESSING STATISTICS:
+   start_time: 1753377201.47
+   documents_loaded: 244
+   images_processed: 11
+   chunks_created: 220
+   valid_chunks: 220
+   embeddings_generated: 220
+   records_saved: 220
+   encoding_issues: 0
+   advanced_parsing_usage: 0
+   total_batches: 2
+   failed_batches: 0
+   total_failed_chunks: 0
+   total_embedding_errors: 0
+   avg_speed: 0.78
+   total_time: 282.38
+
+
+🔄 PROCESSING STAGES COMPLETED:
+   1. Document Loading
+   2. Documents Combined
+   3. Deletion Dialog
+   4. Chunk Processing
+   5. Batch Processing
+   6. Final Analysis
+🔄 AUTO-ROTATION STATISTICS:
+   Images tested: 11
+   Rotations applied: 0
+   Quality improvements: 0
+
+🎯 TEXT QUALITY ANALYSIS:
+   Filter success rate: 100.0%
+   Invalid chunks filtered: 0
+   Average content length: 525 chars
+
+🔍 END-TO-END ANALYSIS:
+   Total files in directory: 231
+   Files successfully in database: 210
+   Files missing from database: 21
+   End-to-end success rate: 90.9%
+
+✨ FEATURE EFFECTIVENESS:
+   Auto Rotation Usage: 0.0
+
+⚡ PERFORMANCE METRICS:
+   Overall Processing Speed: 0.78 items/sec
+   Embedding Speed: 0.78 items/sec
+   Batch Efficiency: 1.56 items/sec
+
+❌ FAILED FILES SUMMARY:
+----------------------------------------
+❌ Total failed files: 21
+📋 Details saved to: /logs/failed_files_details.log
+
+First 5 failed files:
+  1. 4114210-annmaire callan.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  2. 2338946-margaret mccarthy.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  3. 88-GK CPC Module 2 Minimising risks and managing emergencies RDS 25.04.25.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  4. 30-CM Children First HSELD 29.05.2025.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  5. 9704926-mary o sullivan.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  ... and 16 more (see detailed log)
+
+======================================================================

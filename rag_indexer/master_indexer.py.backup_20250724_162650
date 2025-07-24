@@ -3,11 +3,9 @@
 """
 Master RAG Document Indexer Controller
 Manages processing of multiple subdirectories with Ollama restarts and organized logging
-FIXED: Excludes doc_backups directory from processing as it's a service directory
 
 This script orchestrates the indexing process across multiple subdirectories:
 - Scans for subdirectories in the specified root path
-- EXCLUDES doc_backups directory from processing (service directory)
 - Processes each subdirectory independently using the main indexer
 - Restarts Ollama between directories to prevent memory leaks
 - Maintains organized logs with clear directory separation
@@ -19,7 +17,6 @@ Usage:
 Configuration:
     Set MASTER_DOCUMENTS_DIR in .env file or modify the default path below
     The script will process all subdirectories found in the specified path
-    EXCEPT doc_backups directory which contains backup files
 """
 
 import os
@@ -29,20 +26,6 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
-
-
-# FIXED: List of service directories to exclude from processing
-EXCLUDED_DIRECTORIES = [
-    'doc_backups',    # Backup directory for converted .doc files
-    'logs',           # Log files directory
-    'temp',           # Temporary files directory
-    '.git',           # Git repository directory
-    '__pycache__',    # Python cache directory
-    '.vscode',        # VS Code settings
-    '.idea',          # IntelliJ IDEA settings
-    'node_modules',   # Node.js modules
-    '.env'            # Environment files
-]
 
 
 def log_master_message(message, log_file_path="./logs/master_indexer.log"):
@@ -67,41 +50,6 @@ def log_master_message(message, log_file_path="./logs/master_indexer.log"):
     
     # Also print to console
     print(f"[MASTER] {message}")
-
-
-def is_excluded_directory(directory_path):
-    """
-    Check if directory should be excluded from processing
-    FIXED: Added function to check against excluded directories list
-    
-    Args:
-        directory_path: Path to directory to check
-    
-    Returns:
-        tuple: (is_excluded, reason)
-    """
-    directory_name = os.path.basename(directory_path).lower()
-    
-    # Check against excluded directories list
-    for excluded in EXCLUDED_DIRECTORIES:
-        if directory_name == excluded.lower():
-            return True, f"Service directory ({excluded})"
-    
-    # Additional checks
-    if directory_name.startswith('.'):
-        return True, "Hidden directory"
-    
-    if not os.access(directory_path, os.R_OK):
-        return True, "No read permission"
-    
-    # Check if directory is empty
-    try:
-        if not any(os.scandir(directory_path)):
-            return True, "Empty directory"
-    except Exception:
-        return True, "Cannot scan directory"
-    
-    return False, None
 
 
 def restart_ollama_service():
@@ -171,16 +119,14 @@ def restart_ollama_service():
 def scan_subdirectories(root_path):
     """
     Scan for subdirectories in the specified root path
-    FIXED: Excludes service directories like doc_backups from processing
     
     Args:
         root_path: Root directory to scan for subdirectories
     
     Returns:
-        list: List of subdirectory paths sorted by name (excluding service directories)
+        list: List of subdirectory paths sorted by name
     """
-    valid_subdirectories = []
-    excluded_subdirectories = []
+    subdirectories = []
     
     try:
         root_path_obj = Path(root_path)
@@ -193,34 +139,19 @@ def scan_subdirectories(root_path):
             log_master_message(f"ERROR: Root path is not a directory: {root_path}")
             return []
         
-        # Find all subdirectories and filter out excluded ones
+        # Find all subdirectories
         for item in root_path_obj.iterdir():
             if item.is_dir():
-                is_excluded, reason = is_excluded_directory(str(item))
-                
-                if is_excluded:
-                    excluded_subdirectories.append((str(item), reason))
-                    log_master_message(f"EXCLUDED: {item.name} - {reason}")
-                else:
-                    valid_subdirectories.append(str(item))
+                subdirectories.append(str(item))
         
-        # Sort valid subdirectories by name for consistent processing order
-        valid_subdirectories.sort()
+        # Sort subdirectories by name for consistent processing order
+        subdirectories.sort()
         
-        log_master_message(f"Found {len(valid_subdirectories)} valid subdirectories in {root_path}")
-        log_master_message(f"Excluded {len(excluded_subdirectories)} service/system directories")
+        log_master_message(f"Found {len(subdirectories)} subdirectories in {root_path}")
+        for i, subdir in enumerate(subdirectories, 1):
+            log_master_message(f"  {i}. {subdir}")
         
-        if valid_subdirectories:
-            log_master_message("Valid directories for processing:")
-            for i, subdir in enumerate(valid_subdirectories, 1):
-                log_master_message(f"  {i}. {subdir}")
-        
-        if excluded_subdirectories:
-            log_master_message("Excluded directories:")
-            for subdir, reason in excluded_subdirectories:
-                log_master_message(f"  - {os.path.basename(subdir)}: {reason}")
-        
-        return valid_subdirectories
+        return subdirectories
         
     except Exception as e:
         log_master_message(f"ERROR: Failed to scan subdirectories: {e}")
@@ -240,12 +171,6 @@ def process_single_directory(directory_path, directory_index, total_directories)
         bool: True if processing was successful, False otherwise
     """
     directory_name = os.path.basename(directory_path)
-    
-    # FIXED: Double-check that we're not processing excluded directories
-    is_excluded, reason = is_excluded_directory(directory_path)
-    if is_excluded:
-        log_master_message(f"SKIPPING: {directory_name} - {reason} (double-check)")
-        return True  # Return success to not count as failure
     
     log_master_message(f"")
     log_master_message(f"{'='*80}")
@@ -306,40 +231,26 @@ def process_single_directory(directory_path, directory_index, total_directories)
             del os.environ['DOCUMENTS_DIR']
 
 
-def create_final_summary(processed_directories, successful_directories, failed_directories, excluded_directories, total_time):
+def create_final_summary(processed_directories, successful_directories, failed_directories, total_time):
     """
     Create and log final processing summary
-    FIXED: Include information about excluded directories
     
     Args:
         processed_directories: Total directories processed
         successful_directories: Number of successful directories
         failed_directories: Number of failed directories
-        excluded_directories: Number of excluded directories
         total_time: Total processing time in seconds
     """
     log_master_message(f"")
     log_master_message(f"{'='*80}")
     log_master_message(f"MASTER INDEXER FINAL SUMMARY")
     log_master_message(f"{'='*80}")
-    log_master_message(f"Total directories found: {processed_directories + excluded_directories}")
-    log_master_message(f"Directories processed: {processed_directories}")
-    log_master_message(f"Directories excluded: {excluded_directories} (service directories)")
+    log_master_message(f"Total directories processed: {processed_directories}")
     log_master_message(f"Successful directories: {successful_directories}")
     log_master_message(f"Failed directories: {failed_directories}")
     log_master_message(f"Success rate: {(successful_directories/processed_directories*100):.1f}%" if processed_directories > 0 else "0%")
     log_master_message(f"Total processing time: {total_time/60:.1f} minutes")
     log_master_message(f"Average time per directory: {total_time/processed_directories:.1f} seconds" if processed_directories > 0 else "N/A")
-    
-    # FIXED: Show excluded directories information
-    if excluded_directories > 0:
-        log_master_message(f"")
-        log_master_message(f"EXCLUDED DIRECTORIES:")
-        log_master_message(f"  {excluded_directories} service directories were automatically excluded:")
-        log_master_message(f"  - doc_backups (backup files)")
-        log_master_message(f"  - logs (log files)")
-        log_master_message(f"  - temp, .git, __pycache__, etc.")
-        log_master_message(f"  This prevents processing backup/system files")
     
     if failed_directories > 0:
         log_master_message(f"")
@@ -347,7 +258,7 @@ def create_final_summary(processed_directories, successful_directories, failed_d
         log_master_message(f"Check the master log for details on failed directories")
     else:
         log_master_message(f"")
-        log_master_message(f"SUCCESS: All valid directories processed successfully!")
+        log_master_message(f"SUCCESS: All directories processed successfully!")
     
     log_master_message(f"")
     log_master_message(f"Detailed failed files information: ./logs/failed_files_details.log")
@@ -358,12 +269,9 @@ def create_final_summary(processed_directories, successful_directories, failed_d
 def main():
     """
     Main function to orchestrate multi-directory processing
-    FIXED: Enhanced to exclude service directories
     """
     print("Master RAG Document Indexer Controller")
-    print("=" * 50)
-    print("ENHANCED: Automatically excludes service directories (doc_backups, logs, etc.)")
-    print("=" * 50)
+    print("="*50)
     
     # Load environment variables
     load_dotenv()
@@ -373,41 +281,31 @@ def main():
     
     log_master_message(f"Master indexer started")
     log_master_message(f"Root directory: {root_directory}")
-    log_master_message(f"Excluded directories: {', '.join(EXCLUDED_DIRECTORIES)}")
     
-    # Scan for valid subdirectories (excluding service directories)
-    valid_subdirectories = scan_subdirectories(root_directory)
+    # Scan for subdirectories
+    subdirectories = scan_subdirectories(root_directory)
     
-    if not valid_subdirectories:
-        log_master_message(f"ERROR: No valid subdirectories found in {root_directory}")
-        print("ERROR: No valid subdirectories found to process")
-        print("All directories were either excluded (service directories) or inaccessible")
+    if not subdirectories:
+        log_master_message(f"ERROR: No subdirectories found in {root_directory}")
+        print("ERROR: No subdirectories found to process")
         sys.exit(1)
     
     # Initialize counters
-    total_valid_directories = len(valid_subdirectories)
+    total_directories = len(subdirectories)
     successful_directories = 0
     failed_directories = 0
     
-    # Calculate excluded directories for reporting
-    try:
-        all_dirs = [d for d in Path(root_directory).iterdir() if d.is_dir()]
-        excluded_count = len(all_dirs) - total_valid_directories
-    except:
-        excluded_count = 0
-    
-    log_master_message(f"Starting processing of {total_valid_directories} valid directories")
-    log_master_message(f"Excluded {excluded_count} service directories from processing")
+    log_master_message(f"Starting processing of {total_directories} directories")
     
     master_start_time = time.time()
     
-    # Process each valid subdirectory
-    for index, directory_path in enumerate(valid_subdirectories, 1):
+    # Process each subdirectory
+    for index, directory_path in enumerate(subdirectories, 1):
         directory_name = os.path.basename(directory_path)
         
         try:
             # Process the directory
-            success = process_single_directory(directory_path, index, total_valid_directories)
+            success = process_single_directory(directory_path, index, total_directories)
             
             if success:
                 successful_directories += 1
@@ -417,8 +315,8 @@ def main():
                 log_master_message(f"Directory {directory_name} failed")
             
             # Restart Ollama between directories (except after the last one)
-            if index < total_valid_directories:
-                log_master_message(f"Preparing for next directory ({index + 1}/{total_valid_directories})")
+            if index < total_directories:
+                log_master_message(f"Preparing for next directory ({index + 1}/{total_directories})")
                 
                 restart_success = restart_ollama_service()
                 if not restart_success:
@@ -439,20 +337,12 @@ def main():
     # Calculate total time
     total_time = time.time() - master_start_time
     
-    # Create final summary with exclusion information
-    create_final_summary(
-        total_valid_directories, 
-        successful_directories, 
-        failed_directories, 
-        excluded_count, 
-        total_time
-    )
+    # Create final summary
+    create_final_summary(total_directories, successful_directories, failed_directories, total_time)
     
     # Print summary to console
     print(f"\nMaster indexer completed!")
-    print(f"Total directories found: {total_valid_directories + excluded_count}")
-    print(f"Valid directories processed: {total_valid_directories}")
-    print(f"Service directories excluded: {excluded_count} (doc_backups, logs, etc.)")
+    print(f"Processed: {total_directories} directories")
     print(f"Successful: {successful_directories}")
     print(f"Failed: {failed_directories}")
     print(f"Total time: {total_time/60:.1f} minutes")

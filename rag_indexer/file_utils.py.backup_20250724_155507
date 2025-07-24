@@ -4,7 +4,6 @@
 File utilities module for RAG Document Indexer
 Handles safe file reading with encoding detection, error handling, and automatic .doc conversion
 NEW: Integrated with enhanced backup system and blacklist directory filtering
-FIXED: Updated reporting to show original file deletion after conversion
 """
 
 import os
@@ -146,7 +145,6 @@ def scan_directory_files(directory, recursive=True, config=None):
 class SimpleDirectoryLoader:
     """
     Enhanced directory loader with automatic .doc to .docx conversion and blacklist filtering
-    FIXED: Updated to handle original file deletion after conversion
     """
     
     def __init__(self, input_dir, recursive=True, auto_convert_doc=True, backup_originals=True, config=None):
@@ -177,15 +175,14 @@ class SimpleDirectoryLoader:
     def _preprocess_doc_files(self):
         """
         Preprocess .doc files by converting them to .docx with enhanced backup system
-        FIXED: Original files are now deleted after successful backup and conversion
         
         Returns:
-            dict: Conversion results with backup and deletion information
+            dict: Conversion results with backup information
         """
         if not self.auto_convert_doc:
             return {'skipped': True, 'reason': 'Auto-conversion disabled'}
         
-        print("Checking for .doc files that need conversion...")
+        print("Ì†ΩÌ¥ç Checking for .doc files that need conversion...")
         
         # Check if conversion tools are available
         try:
@@ -220,20 +217,19 @@ class SimpleDirectoryLoader:
             print("‚úÖ No .doc files found - no conversion needed")
             return {'converted': 0, 'message': 'No .doc files found'}
         
-        print(f"Ì†ΩÌ≥Ñ Found {len(doc_files)} .doc files to convert")
+        print(f"Ì†ΩÌ≥ä Found {len(doc_files)} .doc files to convert")
         
         # Show backup directory info
         if self.backup_originals and self.config:
             backup_dir = self.config.get_backup_directory()
             print(f"Ì†ΩÌ≥Å Backup directory: {backup_dir}")
             print(f"Ì†ΩÌ≥Å Backup preserves original directory structure")
-            print(f"Ì†ΩÌ∑ëÔ∏è Original .doc files will be deleted after successful backup and conversion")
         
-        # Convert files with enhanced backup and deletion
+        # Convert files with enhanced backup
         try:
             converter = DocumentConverter(
                 backup_originals=self.backup_originals,
-                delete_originals=False,  # Parameter ignored - always delete after backup
+                delete_originals=False,  # Never auto-delete originals for safety
                 config=self.config  # Pass config for backup directory
             )
             
@@ -242,15 +238,11 @@ class SimpleDirectoryLoader:
                 recursive=self.recursive
             )
             
-            # Print enhanced results with deletion info
+            # Print enhanced results
             if conversion_results['successful'] > 0:
                 print(f"‚úÖ Successfully converted {conversion_results['successful']} .doc files to .docx")
                 if conversion_results['backup_created'] > 0:
                     print(f"Ì†ΩÌ≥Å Created {conversion_results['backup_created']} backup files")
-                # FIXED: Show deletion results
-                if conversion_results['originals_deleted'] > 0:
-                    print(f"Ì†ΩÌ∑ëÔ∏è Deleted {conversion_results['originals_deleted']} original .doc files from working directory")
-                    print(f"‚úÖ Working directory now contains only .docx files for processing")
             
             if conversion_results['failed'] > 0:
                 print(f"‚ùå Failed to convert {conversion_results['failed']} .doc files")
@@ -258,11 +250,6 @@ class SimpleDirectoryLoader:
             
             if conversion_results['backup_failed'] > 0:
                 print(f"‚ö†Ô∏è Warning: {conversion_results['backup_failed']} backup operations failed")
-            
-            # FIXED: Show deletion failure warnings
-            if conversion_results['deletion_failed'] > 0:
-                print(f"‚ö†Ô∏è Warning: {conversion_results['deletion_failed']} original files could not be deleted")
-                print(f"   Manual cleanup may be required in working directory")
             
             return conversion_results
             
@@ -274,15 +261,12 @@ class SimpleDirectoryLoader:
                 'successful': 0, 
                 'failed': len(doc_files),
                 'backup_created': 0,
-                'backup_failed': 0,
-                'originals_deleted': 0,  # FIXED: Include deletion stats in error case
-                'deletion_failed': 0
+                'backup_failed': 0
             }
     
     def load_data(self):
         """
         Load data using standard SimpleDirectoryReader with .doc conversion and blacklist filtering
-        FIXED: Updated to handle original file deletion
         
         Returns:
             tuple: (documents, loading_stats, conversion_results)
@@ -300,11 +284,11 @@ class SimpleDirectoryLoader:
             )
             print_directory_scan_summary(stats, show_blacklist_info=True)
         
-        # Step 1: Convert .doc files to .docx with enhanced backup and deletion
+        # Step 1: Convert .doc files to .docx with enhanced backup
         self.conversion_results = self._preprocess_doc_files()
         
         # Step 2: Load documents normally (now including converted .docx files)
-        print("\nÌ†ΩÌ≥ñ Loading documents with SimpleDirectoryReader...")
+        print("\nÌ†ΩÌ≥Ñ Loading documents with SimpleDirectoryReader...")
         
         # Use standard SimpleDirectoryReader
         reader = SimpleDirectoryReader(
@@ -326,7 +310,7 @@ class SimpleDirectoryLoader:
         
         self.loading_time = time.time() - start_time
         
-        # Enhanced statistics with blacklist, backup and deletion info
+        # Enhanced statistics with blacklist and backup info
         loading_stats = {
             'successful_files': self.documents_loaded,  # Approximate
             'failed_files': 0,  # Will be determined later from database comparison
@@ -363,7 +347,6 @@ class SimpleDirectoryLoader:
     def get_loading_stats(self):
         """
         Get enhanced loading statistics with blacklist and conversion info
-        FIXED: Include deletion statistics
         
         Returns:
             dict: Enhanced loading statistics
@@ -390,12 +373,9 @@ class SimpleDirectoryLoader:
         return []
     
     def print_loading_summary(self):
-        """
-        Print comprehensive loading summary including conversion, blacklist and deletion results
-        FIXED: Updated to show original file deletion information
-        """
+        """Print comprehensive loading summary including conversion and blacklist results"""
         print(f"\nÌ†ΩÌ≥ä Enhanced Document Loading Summary:")
-        print(f"  Ì†ΩÌ≥ñ Documents loaded: {self.documents_loaded}")
+        print(f"  Ì†ΩÌ≥Ñ Documents loaded: {self.documents_loaded}")
         print(f"  ‚è±Ô∏è Loading time: {self.loading_time:.2f} seconds")
         
         # Blacklist information
@@ -406,18 +386,14 @@ class SimpleDirectoryLoader:
         else:
             print(f"\nÌ†ΩÌ∫´ Blacklist Filtering: Disabled (all directories scanned)")
         
-        # Conversion information with deletion details
+        # Conversion information
         if self.conversion_results and not self.conversion_results.get('skipped'):
             print(f"\nÌ†ΩÌ¥Ñ Document Conversion Summary:")
-            print(f"  Ì†ΩÌ≥Ñ .doc files found: {self.conversion_results.get('attempted', 0)}")
+            print(f"  Ì†ΩÌ≥ä .doc files found: {self.conversion_results.get('attempted', 0)}")
             print(f"  ‚úÖ Successfully converted: {self.conversion_results.get('successful', 0)}")
             print(f"  ‚ùå Failed conversions: {self.conversion_results.get('failed', 0)}")
             print(f"  Ì†ΩÌ≥Å Backups created: {self.conversion_results.get('backup_created', 0)}")
             print(f"  ‚ö†Ô∏è Backup failures: {self.conversion_results.get('backup_failed', 0)}")
-            
-            # FIXED: Show deletion results
-            print(f"  Ì†ΩÌ∑ëÔ∏è Original files deleted: {self.conversion_results.get('originals_deleted', 0)}")
-            print(f"  ‚ùå Deletion failures: {self.conversion_results.get('deletion_failed', 0)}")
             
             if self.conversion_results.get('successful', 0) > 0:
                 success_rate = (self.conversion_results['successful'] / self.conversion_results['attempted']) * 100
@@ -426,15 +402,6 @@ class SimpleDirectoryLoader:
             if self.conversion_results.get('backup_directory'):
                 print(f"  Ì†ΩÌ≥Å Backup location: {self.conversion_results['backup_directory']}")
                 print(f"  Ì†ΩÌ≥Å Backup preserves original directory structure")
-            
-            # FIXED: Show cleanup status
-            if self.conversion_results.get('originals_deleted', 0) > 0:
-                print(f"  ‚úÖ Cleanup Status: Working directory contains only .docx files")
-                print(f"     Original .doc files safely backed up and removed from processing")
-            
-            if self.conversion_results.get('deletion_failed', 0) > 0:
-                print(f"  ‚ö†Ô∏è Cleanup Warning: {self.conversion_results['deletion_failed']} original files remain")
-                print(f"     Manual cleanup may be needed in working directory")
             
             if self.conversion_results.get('failed_files'):
                 print(f"  ‚ùå Failed files saved to conversion log")
@@ -446,11 +413,10 @@ class SimpleDirectoryLoader:
     
     def get_conversion_summary(self):
         """
-        Get detailed conversion summary including deletion information
-        FIXED: Include deletion statistics
+        Get detailed conversion summary
         
         Returns:
-            dict: Conversion summary with all details including deletion info
+            dict: Conversion summary with all details
         """
         if self.conversion_results:
             return {
@@ -460,13 +426,9 @@ class SimpleDirectoryLoader:
                 'conversions_failed': self.conversion_results.get('failed', 0),
                 'backups_created': self.conversion_results.get('backup_created', 0),
                 'backup_failures': self.conversion_results.get('backup_failed', 0),
-                'originals_deleted': self.conversion_results.get('originals_deleted', 0),  # FIXED: Added
-                'deletion_failures': self.conversion_results.get('deletion_failed', 0),   # FIXED: Added
                 'backup_directory': self.conversion_results.get('backup_directory'),
                 'success_rate': self.conversion_results.get('success_rate', 0),
-                'skip_reason': self.conversion_results.get('reason') if self.conversion_results.get('skipped') else None,
-                'cleanup_completed': self.conversion_results.get('originals_deleted', 0) > 0,  # FIXED: Added
-                'cleanup_needed': self.conversion_results.get('deletion_failed', 0) > 0     # FIXED: Added
+                'skip_reason': self.conversion_results.get('reason') if self.conversion_results.get('skipped') else None
             }
         else:
             return {
@@ -478,7 +440,6 @@ class SimpleDirectoryLoader:
 def create_safe_reader(documents_dir, recursive=True, auto_convert_doc=True, backup_originals=True, config=None):
     """
     Create a SimpleDirectoryLoader instance with .doc conversion and blacklist filtering
-    FIXED: Updated to handle original file deletion
     
     Args:
         documents_dir: Directory to read from
@@ -488,7 +449,7 @@ def create_safe_reader(documents_dir, recursive=True, auto_convert_doc=True, bac
         config: Configuration object with enhanced settings
     
     Returns:
-        SimpleDirectoryLoader: Enhanced loader instance with blacklist support and deletion handling
+        SimpleDirectoryLoader: Enhanced loader instance with blacklist support
     """
     return SimpleDirectoryLoader(
         input_dir=documents_dir,
@@ -502,7 +463,6 @@ def create_safe_reader(documents_dir, recursive=True, auto_convert_doc=True, bac
 def check_directory_for_conversion_issues(documents_dir, config=None):
     """
     Check directory for potential conversion issues and conflicts
-    FIXED: Updated to account for original file deletion
     
     Args:
         documents_dir: Directory to check
@@ -559,11 +519,6 @@ def check_directory_for_conversion_issues(documents_dir, config=None):
             if not os.access(backup_parent, os.W_OK):
                 issues['permissions_issues'].append(f"No write permission for backup parent directory: {backup_parent}")
                 issues['recommendations'].append(f"Ensure write permissions for {backup_parent}")
-            
-            # FIXED: Check write permissions for documents directory (needed for deletion)
-            if not os.access(documents_dir, os.W_OK):
-                issues['permissions_issues'].append(f"No write permission for documents directory: {documents_dir}")
-                issues['recommendations'].append(f"Write permission needed for documents directory to delete original .doc files")
     
     except Exception as e:
         issues['permissions_issues'].append(f"Error checking directory: {str(e)}")
@@ -574,21 +529,20 @@ def check_directory_for_conversion_issues(documents_dir, config=None):
 def print_conversion_readiness_check(documents_dir, config=None):
     """
     Print a readiness check for document conversion
-    FIXED: Updated to mention original file deletion
     
     Args:
         documents_dir: Directory to check
         config: Configuration object
     """
-    print("\nÌ†ΩÌ≥ä DOCUMENT CONVERSION READINESS CHECK:")
+    print("\nÌ†ΩÌ¥ß DOCUMENT CONVERSION READINESS CHECK:")
     print("=" * 50)
     
     # Check conversion tools
     try:
         tools_info = check_conversion_tools()
-        print(f"Ì†ΩÌ≥ä Conversion tools: {'‚úÖ Ready' if tools_info['any_tool_available'] else '‚ùå Missing'}")
+        print(f"Ì†ΩÌ≥ã Conversion tools: {'‚úÖ Ready' if tools_info['any_tool_available'] else '‚ùå Missing'}")
     except Exception as e:
-        print(f"Ì†ΩÌ≥ä Conversion tools: ‚ùå Error checking - {e}")
+        print(f"Ì†ΩÌ≥ã Conversion tools: ‚ùå Error checking - {e}")
     
     # Check directory issues
     if config:
@@ -596,7 +550,6 @@ def print_conversion_readiness_check(documents_dir, config=None):
         
         print(f"Ì†ΩÌ≥Å Backup directory: {config.get_backup_directory()}")
         print(f"Ì†ΩÌ∫´ Blacklist enabled: {'‚úÖ Yes' if config.BLACKLIST_DIRECTORIES else '‚ùå No'}")
-        print(f"Ì†ΩÌ∑ëÔ∏è Original deletion: ‚úÖ Enabled (after successful backup and conversion)")
         
         if issues['backup_conflicts']:
             print(f"‚ö†Ô∏è Backup conflicts: {len(issues['backup_conflicts'])}")
@@ -605,11 +558,6 @@ def print_conversion_readiness_check(documents_dir, config=None):
         
         if issues['doc_files_in_blacklisted_dirs']:
             print(f"‚ö†Ô∏è .doc files in blacklisted dirs: {len(issues['doc_files_in_blacklisted_dirs'])}")
-        
-        if issues['permissions_issues']:
-            print(f"‚ö†Ô∏è Permission issues: {len(issues['permissions_issues'])}")
-            for issue in issues['permissions_issues']:
-                print(f"   - {issue}")
         
         if issues['recommendations']:
             print(f"\nÌ†ΩÌ≤° Recommendations:")

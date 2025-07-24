@@ -1,0 +1,108 @@
+{
+  "timestamp": "2025-07-24T17:18:30.842531",
+  "summary": {
+    "total_chunks_created": 172,
+    "valid_chunks": 172,
+    "invalid_chunks": 0,
+    "success_rate": 100.0,
+    "processing_time": 0.10220766067504883
+  },
+  "quality_analysis": {
+    "total_chunks": 172,
+    "valid_chunks": 172,
+    "invalid_chunks": 0,
+    "success_rate": 100.0,
+    "failure_rate": 0.0,
+    "avg_content_length": 464.0639534883721,
+    "min_content_length": 171,
+    "max_content_length": 2196,
+    "avg_word_count": 67.07558139534883,
+    "min_word_count": 18,
+    "max_word_count": 330
+  },
+  "distribution_stats": {
+    "unique_files": 172,
+    "total_chunks": 172,
+    "avg_chunks_per_file": 1.0,
+    "min_chunks_per_file": 1,
+    "max_chunks_per_file": 1,
+    "files_with_most_chunks": [
+      [
+        "1-BD AMRIC Hand Hygiene HSELD 10.09.2024.pdf",
+        1
+      ],
+      [
+        "1245085-Evacuation Evaluation for Deep Sleep Fire Drill in the Haven on 18.1.2025.docx",
+        1
+      ],
+      [
+        "132-FOS Hand Hygiene HSELD 05.10.2024.pdf",
+        1
+      ],
+      [
+        "170-LT Dignity at Work HSELD 12.09.2024.pdf",
+        1
+      ],
+      [
+        "170-LT Effective Complaints Handling HSELD 12.09.2024.pdf",
+        1
+      ]
+    ],
+    "files_with_least_chunks": [
+      [
+        "227-CB An Introduction to Children First HSELD 17.09.24.jpg",
+        1
+      ],
+      [
+        "740-MOG Assisted Decision Making - Guiding Principles HSELD 30.08.24.jpeg",
+        1
+      ],
+      [
+        "519-TF An Introduction to Children First HSELD 25.09.24.png",
+        1
+      ],
+      [
+        "817-CM Supporting Decision Making in Health and Social Care hseld 04.09.2024.jpg",
+        1
+      ],
+      [
+        "274-KM Fire Training SCTV 10.09.2024.jpg",
+        1
+      ]
+    ],
+    "content_length_median": 380,
+    "content_length_25th_percentile": 352,
+    "content_length_75th_percentile": 468
+  },
+  "validation_results": {
+    "total_validated": 172,
+    "issues_found": 0,
+    "warnings": [
+      "Found 3 potentially duplicate chunks"
+    ],
+    "potential_problems": [
+      "duplicate_content"
+    ]
+  },
+  "optimization_suggestions": {
+    "current_performance": {
+      "chunk_creation_speed": 1717.9291320582183,
+      "filter_success_rate": 100.0,
+      "avg_chunk_size": 464.0639534883721,
+      "processing_efficiency": 1682.8484172712217
+    },
+    "optimization_suggestions": [
+      "Consider reducing CHUNK_SIZE from 2048 to 696 for better efficiency",
+      "Very few chunks per file. Consider reducing CHUNK_SIZE or MIN_CHUNK_LENGTH for better granularity"
+    ],
+    "configuration_recommendations": {
+      "CHUNK_SIZE": 696
+    }
+  },
+  "configuration": {
+    "chunk_size": 2048,
+    "chunk_overlap": 256,
+    "min_chunk_length": 100,
+    "processing_batch_size": 200
+  }
+}

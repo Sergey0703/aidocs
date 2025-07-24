@@ -1,0 +1,110 @@
+{
+  "timestamp": "2025-07-24T18:00:57.840871",
+  "summary": {
+    "total_chunks_created": 399,
+    "valid_chunks": 399,
+    "invalid_chunks": 0,
+    "success_rate": 100.0,
+    "processing_time": 0.47604942321777344
+  },
+  "quality_analysis": {
+    "total_chunks": 399,
+    "valid_chunks": 399,
+    "invalid_chunks": 0,
+    "success_rate": 100.0,
+    "failure_rate": 0.0,
+    "avg_content_length": 731.3634085213033,
+    "min_content_length": 114,
+    "max_content_length": 9734,
+    "avg_word_count": 109.28320802005013,
+    "min_word_count": 17,
+    "max_word_count": 1361
+  },
+  "distribution_stats": {
+    "unique_files": 377,
+    "total_chunks": 399,
+    "avg_chunks_per_file": 1.0583554376657824,
+    "min_chunks_per_file": 1,
+    "max_chunks_per_file": 8,
+    "files_with_most_chunks": [
+      [
+        "4546308-GASTRO LINE LIST HSE South West - MEL May 27th 2025.xlsx",
+        8
+      ],
+      [
+        "9027095-GASTRO LINE LIST HSE South West - MEL May 27th 2025.xlsx",
+        8
+      ],
+      [
+        "5979344-MEL-20250507.pdf",
+        6
+      ],
+      [
+        "4822381-0425 Kellihers Locksmiths   200.00.pdf",
+        2
+      ],
+      [
+        "4937303-restricitve+practice+form-+sedative+medication.docx",
+        2
+      ]
+    ],
+    "files_with_least_chunks": [
+      [
+        "151-UL Applying a Human Based Approach in H and SC Mod 1 HIQA 17.04.2025.jpg",
+        1
+      ],
+      [
+        "408-LG Fire Safety SCTV 14.05.2025.jpg",
+        1
+      ],
+      [
+        "151-UL Applying a Human Based Approach Mod 1 HIQA 11.10.2023.jpg",
+        1
+      ],
+      [
+        "534-RON Diversity Equality & Inclusion Mod 2 HSELD 20.05.2025.jpg",
+        1
+      ],
+      [
+        "672-IC DEI An Introduction HSELD 08.01.2025.png",
+        1
+      ]
+    ],
+    "content_length_median": 399,
+    "content_length_25th_percentile": 380,
+    "content_length_75th_percentile": 483
+  },
+  "validation_results": {
+    "total_validated": 399,
+    "issues_found": 0,
+    "warnings": [
+      "Found 7 unexpectedly long chunks (> 6144 chars)",
+      "Found 8 potentially duplicate chunks"
+    ],
+    "potential_problems": [
+      "some_oversized_chunks",
+      "duplicate_content"
+    ]
+  },
+  "optimization_suggestions": {
+    "current_performance": {
+      "chunk_creation_speed": 852.0658994889216,
+      "filter_success_rate": 100.0,
+      "avg_chunk_size": 731.3634085213033,
+      "processing_efficiency": 838.1482689402893
+    },
+    "optimization_suggestions": [
+      "Consider reducing CHUNK_SIZE from 2048 to 1097 for better efficiency",
+      "Very few chunks per file. Consider reducing CHUNK_SIZE or MIN_CHUNK_LENGTH for better granularity"
+    ],
+    "configuration_recommendations": {
+      "CHUNK_SIZE": 1097
+    }
+  },
+  "configuration": {
+    "chunk_size": 2048,
+    "chunk_overlap": 256,
+    "min_chunk_length": 100,
+    "processing_batch_size": 200
+  }
+}

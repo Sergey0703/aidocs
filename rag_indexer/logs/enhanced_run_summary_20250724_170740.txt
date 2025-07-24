@@ -1,0 +1,79 @@
+🚀 ENHANCED RAG INDEXER RUN SUMMARY
+======================================================================
+Start time: 2025-07-24 16:59:44
+End time: 2025-07-24 17:07:40
+Duration: 7.9 minutes (475.5 seconds)
+
+🔧 ENHANCED CONFIGURATION:
+   Embedding model: nomic-embed-text (768D)
+   Chunk size: 2048 (overlap: 256)
+   Processing batch size: 200
+   CPU threads: 16
+   Features enabled:
+     - Auto .doc conversion: ✅
+     - OCR processing: ✅
+     - Safe Ollama restarts: ✅
+
+📊 PROCESSING STATISTICS:
+   start_time: 1753372784.83
+   documents_loaded: 355
+   images_processed: 17
+   chunks_created: 327
+   valid_chunks: 327
+   embeddings_generated: 327
+   records_saved: 327
+   encoding_issues: 0
+   advanced_parsing_usage: 0
+   total_batches: 2
+   failed_batches: 0
+   total_failed_chunks: 0
+   total_embedding_errors: 0
+   avg_speed: 0.91
+   total_time: 359.02
+
+
+🔄 PROCESSING STAGES COMPLETED:
+   1. Document Loading
+   2. Documents Combined
+   3. Deletion Dialog
+   4. Chunk Processing
+   5. Batch Processing
+   6. Final Analysis
+🔄 AUTO-ROTATION STATISTICS:
+   Images tested: 17
+   Rotations applied: 0
+   Quality improvements: 0
+
+🎯 TEXT QUALITY ANALYSIS:
+   Filter success rate: 100.0%
+   Invalid chunks filtered: 0
+   Average content length: 490 chars
+
+🔍 END-TO-END ANALYSIS:
+   Total files in directory: 343
+   Files successfully in database: 317
+   Files missing from database: 26
+   End-to-end success rate: 92.4%
+
+✨ FEATURE EFFECTIVENESS:
+   Auto Rotation Usage: 0.0
+
+⚡ PERFORMANCE METRICS:
+   Overall Processing Speed: 0.91 items/sec
+   Embedding Speed: 0.91 items/sec
+   Batch Efficiency: 1.82 items/sec
+
+❌ FAILED FILES SUMMARY:
+----------------------------------------
+❌ Total failed files: 26
+📋 Details saved to: /logs/failed_files_details.log
+
+First 5 failed files:
+  1. 432-MOS Applying a Human Rights based Approach in Health & Social Care - Module 3 03.03.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  2. 432-MOS Applying a Human Rights based Approach in Health & Social Care - Module 2 03.03.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  3. 664-AOS CPI Blue Card 11.07.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  4. 432-MOS Assisted Decision Making - Guiding Principles HSELD 21.07.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  5. 432-MOS Supporting Decision Making in Health and Social Care HSELD 02.03.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  ... and 21 more (see detailed log)
+
+======================================================================

@@ -1,0 +1,111 @@
+{
+  "timestamp": "2025-07-24T17:36:59.395617",
+  "summary": {
+    "total_chunks_created": 606,
+    "valid_chunks": 606,
+    "invalid_chunks": 0,
+    "success_rate": 100.0,
+    "processing_time": 0.40651702880859375
+  },
+  "quality_analysis": {
+    "total_chunks": 606,
+    "valid_chunks": 606,
+    "invalid_chunks": 0,
+    "success_rate": 100.0,
+    "failure_rate": 0.0,
+    "avg_content_length": 571.8597359735974,
+    "min_content_length": 172,
+    "max_content_length": 7461,
+    "avg_word_count": 88.45544554455445,
+    "min_word_count": 18,
+    "max_word_count": 1375
+  },
+  "distribution_stats": {
+    "unique_files": 590,
+    "total_chunks": 606,
+    "avg_chunks_per_file": 1.0271186440677966,
+    "min_chunks_per_file": 1,
+    "max_chunks_per_file": 7,
+    "files_with_most_chunks": [
+      [
+        "4652146-1. RCF FAQ 07.01.2025  v1.4 (002) (1).pdf",
+        7
+      ],
+      [
+        "5806710-Job card - GR_2591 Mount Eagle Lodge.pdf",
+        4
+      ],
+      [
+        "1019236-2. KEY ACTIONS DOCUMENT December 2024.pdf (1).pdf",
+        2
+      ],
+      [
+        "2438235-March 25.pdf",
+        2
+      ],
+      [
+        "2644553-2. KEY ACTIONS DOCUMENT December 2024.pdf (1).pdf",
+        2
+      ]
+    ],
+    "files_with_least_chunks": [
+      [
+        "686-COH National Standards for Adult Safeguarding HIQA 10.01.2025.jpeg",
+        1
+      ],
+      [
+        "686-COH Diversity Equality and Inclusion Working in a Diverse Team HSELD 07.01.2025.jpeg",
+        1
+      ],
+      [
+        "634-IC DEI An Introduction HSELD 08.01.2025.png",
+        1
+      ],
+      [
+        "686-COH Mod 4 Putting National Standardds into Practice HOQA 09.01.2025.jpeg",
+        1
+      ],
+      [
+        "612-KM The Fundementals of GDPR HSELD 07.01.2025.jpg",
+        1
+      ]
+    ],
+    "content_length_median": 390,
+    "content_length_25th_percentile": 370,
+    "content_length_75th_percentile": 463
+  },
+  "validation_results": {
+    "total_validated": 606,
+    "issues_found": 3,
+    "warnings": [
+      "Found 3 chunks with potential encoding issues",
+      "Found 2 unexpectedly long chunks (> 6144 chars)",
+      "Found 7 potentially duplicate chunks"
+    ],
+    "potential_problems": [
+      "some_oversized_chunks",
+      "duplicate_content"
+    ]
+  },
+  "optimization_suggestions": {
+    "current_performance": {
+      "chunk_creation_speed": 1524.0290541569582,
+      "filter_success_rate": 100.0,
+      "avg_chunk_size": 571.8597359735974,
+      "processing_efficiency": 1490.7124598840155
+    },
+    "optimization_suggestions": [
+      "Consider reducing CHUNK_SIZE from 2048 to 857 for better efficiency",
+      "Very few chunks per file. Consider reducing CHUNK_SIZE or MIN_CHUNK_LENGTH for better granularity"
+    ],
+    "configuration_recommendations": {
+      "CHUNK_SIZE": 857
+    }
+  },
+  "configuration": {
+    "chunk_size": 2048,
+    "chunk_overlap": 256,
+    "min_chunk_length": 100,
+    "processing_batch_size": 200
+  }
+}
