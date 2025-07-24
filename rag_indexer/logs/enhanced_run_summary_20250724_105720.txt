@@ -1,0 +1,64 @@
+?? ENHANCED RAG INDEXER RUN SUMMARY
+======================================================================
+Start time: 2025-07-24 10:57:00
+End time: 2025-07-24 10:57:20
+Duration: 0.3 minutes (20.5 seconds)
+
+?? ENHANCED CONFIGURATION:
+   Embedding model: nomic-embed-text (768D)
+   Chunk size: 2048 (overlap: 256)
+   Processing batch size: 200
+   CPU threads: 16
+   Features enabled:
+     - Advanced document parsing: ?
+     - OCR with auto-rotation: ?
+     - Text quality analysis: ?
+     - Hybrid processing: ?
+
+?? PROCESSING STATISTICS:
+   start_time: 1753351020.03
+   documents_loaded: 1
+   images_processed: 0
+   chunks_created: 1
+   valid_chunks: 1
+   embeddings_generated: 1
+   records_saved: 1
+   encoding_issues: 0
+   advanced_parsing_usage: 0
+   total_batches: 1
+   failed_batches: 0
+   total_failed_chunks: 0
+   total_embedding_errors: 0
+   avg_speed: 1.04
+   total_time: 0.96
+
+?? PROCESSING STAGES COMPLETED:
+   1. Document Loading
+   2. Documents Combined
+   3. Deletion Dialog
+   4. Chunk Processing
+   5. Batch Processing
+   6. Final Analysis
+
+?? TEXT QUALITY ANALYSIS:
+   Filter success rate: 100.0%
+   Invalid chunks filtered: 0
+   Average content length: 416 chars
+
+?? END-TO-END ANALYSIS:
+   Total files in directory: 1
+   Files successfully in database: 1
+   Files missing from database: 0
+   End-to-end success rate: 100.0%
+
+? FEATURE EFFECTIVENESS:
+
+? PERFORMANCE METRICS:
+   Overall Processing Speed: 1.04 items/sec
+   Embedding Speed: 1.04 items/sec
+
+? FAILED FILES SUMMARY:
+----------------------------------------
+? No failed files - perfect processing!
+
+======================================================================

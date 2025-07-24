@@ -26,13 +26,6 @@ class Config:
         self.DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", "./data/634/2025")
         self.ERROR_LOG_FILE = "./indexing_errors.log"
         
-        # --- NEW: BACKUP AND BLACKLIST SETTINGS ---
-        self.DOC_BACKUP_BASE_NAME = os.getenv("DOC_BACKUP_BASE_NAME", "doc_backups")
-        
-        # Blacklist directories that should be excluded from scanning
-        blacklist_env = os.getenv("BLACKLIST_DIRECTORIES", "doc_backups,logs,temp,.git,__pycache__,.vscode,.idea,node_modules")
-        self.BLACKLIST_DIRECTORIES = [dir.strip() for dir in blacklist_env.split(",") if dir.strip()]
-        
         # --- DATABASE SETTINGS ---
         self.CONNECTION_STRING = os.getenv("SUPABASE_CONNECTION_STRING")
         self.TABLE_NAME = os.getenv("TABLE_NAME", "documents")
@@ -67,7 +60,7 @@ class Config:
         self.OCR_SKIP_ROTATION_FOR_GOOD_QUALITY = os.getenv("OCR_SKIP_ROTATION_FOR_GOOD_QUALITY", "true").lower() == "true"
         
         # --- NEW: TEXT QUALITY ANALYSIS ---
-        self.ENABLE_TEXT_QUALITY_ANALYSIS = os.getenv("ENABLE_TEXT_QUALITY_ANALYSIS", "false").lower() == "false"
+        self.ENABLE_TEXT_QUALITY_ANALYSIS = os.getenv("ENABLE_TEXT_QUALITY_ANALYSIS", "true").lower() == "true"
         self.TEXT_QUALITY_MIN_SCORE = float(os.getenv("TEXT_QUALITY_MIN_SCORE", "0.3"))
         self.TEXT_QUALITY_MIN_WORDS = int(os.getenv("TEXT_QUALITY_MIN_WORDS", "5"))
         self.TEXT_QUALITY_MAX_IDENTICAL_CHARS = int(os.getenv("TEXT_QUALITY_MAX_IDENTICAL_CHARS", "10"))
@@ -101,14 +94,10 @@ class Config:
         self.LOG_BATCH_TIMING = os.getenv("LOG_BATCH_TIMING", "true").lower() == "true"
         self.LOG_OCR_ROTATION_ATTEMPTS = os.getenv("LOG_OCR_ROTATION_ATTEMPTS", "false").lower() == "true"
         self.LOG_TEXT_QUALITY_SCORES = os.getenv("LOG_TEXT_QUALITY_SCORES", "false").lower() == "true"
-        
         # --- DOCUMENT CONVERSION SETTINGS ---
         self.AUTO_CONVERT_DOC = os.getenv("AUTO_CONVERT_DOC", "true").lower() == "true"
         self.BACKUP_ORIGINAL_DOC = os.getenv("BACKUP_ORIGINAL_DOC", "true").lower() == "true"
         self.DELETE_ORIGINAL_DOC = os.getenv("DELETE_ORIGINAL_DOC", "false").lower() == "true"
-        
-        # --- BATCH RESTART SETTINGS ---
-        self.BATCH_RESTART_INTERVAL = int(os.getenv("BATCH_RESTART_INTERVAL", "5"))
     
     def _validate_settings(self):
         """Validate configuration settings and raise errors for critical issues"""
@@ -157,53 +146,17 @@ class Config:
         if self.IMAGE_EXTRACTION_QUALITY not in ["low", "medium", "high"]:
             print(f"WARNING: Invalid IMAGE_EXTRACTION_QUALITY: {self.IMAGE_EXTRACTION_QUALITY}, using 'high'")
             self.IMAGE_EXTRACTION_QUALITY = "high"
-        
-        # NEW: Validate backup settings
-        if not self.DOC_BACKUP_BASE_NAME:
-            raise ValueError("DOC_BACKUP_BASE_NAME cannot be empty")
-        
-        if len(self.BLACKLIST_DIRECTORIES) == 0:
-            print("WARNING: No directories in blacklist - all directories will be scanned")
-    
-    def get_backup_directory(self):
-        """
-        Get the backup directory path based on DOCUMENTS_DIR
-        
-        Returns:
-            str: Path to backup directory
-        """
-        from pathlib import Path
-        documents_path = Path(self.DOCUMENTS_DIR)
-        backup_path = documents_path.parent / self.DOC_BACKUP_BASE_NAME
-        return str(backup_path)
-    
-    def is_blacklisted_directory(self, directory_path):
-        """
-        Check if a directory should be excluded from scanning
-        
-        Args:
-            directory_path: Path to check
-        
-        Returns:
-            bool: True if directory should be excluded
-        """
-        path_parts = str(directory_path).split(os.sep)
-        return any(blacklist_dir in path_parts for blacklist_dir in self.BLACKLIST_DIRECTORIES)
     
     def print_config(self):
         """Print current configuration in a readable format"""
         print("=== ENHANCED RAG INDEXER CONFIGURATION ===")
         print(f"Documents directory: {self.DOCUMENTS_DIR}")
-        print(f"Backup directory: {self.get_backup_directory()}")
-        print(f"Blacklisted directories: {', '.join(self.BLACKLIST_DIRECTORIES)}")
         print(f"Embedding model: {self.EMBED_MODEL} (CPU-optimized)")
         print(f"Chunk size: {self.CHUNK_SIZE}, Overlap: {self.CHUNK_OVERLAP}")
         print(f"Vector dimension: {self.EMBED_DIM}")
         print(f"Batch processing: {self.PROCESSING_BATCH_SIZE} chunks per batch")
-        print(f"Batch restart interval: {self.BATCH_RESTART_INTERVAL} batches")
         print(f"Enhanced features:")
         print(f"  - Advanced document parsing: {'?' if self.ENABLE_ADVANCED_DOC_PARSING else '?'}")
-        print(f"  - Auto .doc conversion: {'?' if self.AUTO_CONVERT_DOC else '?'}")
         print(f"  - OCR auto-rotation: {'?' if self.OCR_AUTO_ROTATION else '?'}")
         print(f"  - Text quality analysis: {'?' if self.ENABLE_TEXT_QUALITY_ANALYSIS else '?'}")
         print(f"  - Hybrid text+image processing: {'?' if self.HYBRID_TEXT_IMAGE_PROCESSING else '?'}")
@@ -278,16 +231,6 @@ class Config:
             'image_quality': self.IMAGE_EXTRACTION_QUALITY
         }
     
-    def get_document_conversion_settings(self):
-        """Return document conversion settings as a dictionary"""
-        return {
-            'auto_convert_doc': self.AUTO_CONVERT_DOC,
-            'backup_original_doc': self.BACKUP_ORIGINAL_DOC,
-            'delete_original_doc': self.DELETE_ORIGINAL_DOC,
-            'backup_directory': self.get_backup_directory(),
-            'blacklist_directories': self.BLACKLIST_DIRECTORIES
-        }
-    
     def get_performance_settings(self):
         """Return performance optimization settings as a dictionary"""
         return {
@@ -328,8 +271,7 @@ class Config:
             'hybrid_processing': self.HYBRID_TEXT_IMAGE_PROCESSING,
             'image_extraction': self.EXTRACT_IMAGES_FROM_DOCS,
             'structure_preservation': self.PRESERVE_DOC_STRUCTURE,
-            'progress_logging': self.ENABLE_PROGRESS_LOGGING,
-            'auto_convert_doc': self.AUTO_CONVERT_DOC
+            'progress_logging': self.ENABLE_PROGRESS_LOGGING
         }
         
         return feature_map.get(feature_name, False)
@@ -358,7 +300,6 @@ def print_feature_status():
     print("\n=== ENHANCED FEATURES STATUS ===")
     features = [
         ("Advanced Document Parsing", config.is_feature_enabled('advanced_doc_parsing')),
-        ("Auto .doc Conversion", config.is_feature_enabled('auto_convert_doc')),
         ("OCR Processing", config.is_feature_enabled('ocr')),
         ("OCR Auto-Rotation", config.is_feature_enabled('auto_rotation')),
         ("Text Quality Analysis", config.is_feature_enabled('text_quality_analysis')),
@@ -372,8 +313,4 @@ def print_feature_status():
         status = "? ENABLED" if enabled else "? DISABLED"
         print(f"  {feature_name:<35}: {status}")
     
-    print(f"\n?? Directory Settings:")
-    print(f"  Documents directory: {config.DOCUMENTS_DIR}")
-    print(f"  Backup directory: {config.get_backup_directory()}")
-    print(f"  Blacklisted directories: {', '.join(config.BLACKLIST_DIRECTORIES)}")
     print("=" * 50)

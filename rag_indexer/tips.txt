@@ -1,0 +1,4 @@
+DROP TABLE vecs.documents;
+
+SELECT replace(metadata ->> 'text', E'\n', ' ') AS full_document
+FROM vecs.documents;

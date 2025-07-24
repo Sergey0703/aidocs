@@ -1,0 +1,69 @@
+🚀 ENHANCED RAG INDEXER RUN SUMMARY
+======================================================================
+Start time: 2025-07-24 14:22:58
+End time: 2025-07-24 14:23:18
+Duration: 0.3 minutes (20.3 seconds)
+
+🔧 ENHANCED CONFIGURATION:
+   Embedding model: nomic-embed-text (768D)
+   Chunk size: 2048 (overlap: 256)
+   Processing batch size: 200
+   CPU threads: 16
+   Features enabled:
+     - Auto .doc conversion: ✅
+     - OCR processing: ✅
+     - Safe Ollama restarts: ✅
+
+📊 PROCESSING STATISTICS:
+   start_time: 1753363378.26
+   documents_loaded: 1
+   images_processed: 0
+   chunks_created: 1
+   valid_chunks: 1
+   embeddings_generated: 1
+   records_saved: 1
+   encoding_issues: 0
+   advanced_parsing_usage: 0
+   total_batches: 1
+   failed_batches: 0
+   total_failed_chunks: 0
+   total_embedding_errors: 0
+   avg_speed: 0.65
+   total_time: 1.53
+
+
+🔄 PROCESSING STAGES COMPLETED:
+   1. Document Loading
+   2. Documents Combined
+   3. Deletion Dialog
+   4. Chunk Processing
+   5. Batch Processing
+   6. Final Analysis
+🔄 AUTO-ROTATION STATISTICS:
+   Images tested: 0
+   Rotations applied: 0
+   Quality improvements: 0
+
+🎯 TEXT QUALITY ANALYSIS:
+   Filter success rate: 100.0%
+   Invalid chunks filtered: 0
+   Average content length: 416 chars
+
+🔍 END-TO-END ANALYSIS:
+   Total files in directory: 1
+   Files successfully in database: 1
+   Files missing from database: 0
+   End-to-end success rate: 100.0%
+
+✨ FEATURE EFFECTIVENESS:
+
+⚡ PERFORMANCE METRICS:
+   Overall Processing Speed: 0.65 items/sec
+   Embedding Speed: 0.65 items/sec
+   Batch Efficiency: 0.65 items/sec
+
+❌ FAILED FILES SUMMARY:
+----------------------------------------
+✅ No failed files - perfect processing!
+
+======================================================================

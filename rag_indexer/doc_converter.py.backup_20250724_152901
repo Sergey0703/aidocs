@@ -124,13 +124,13 @@ class DocumentConverter:
             # Copy the file preserving metadata
             shutil.copy2(doc_path, backup_file_path)
             
-            print(f"   √å‚Ä†Œ©√å‚â•√Ö Backup created: {backup_file_path}")
+            print(f"   Ì†ΩÌ≥Å Backup created: {backup_file_path}")
             self.conversion_stats['backup_created'] += 1
             
             return str(backup_file_path)
             
         except Exception as e:
-            print(f"   ‚Äö√∂‚Ä†√î‚àè√® WARNING: Could not backup {doc_path}: {e}")
+            print(f"   ‚ö†Ô∏è WARNING: Could not backup {doc_path}: {e}")
             self.conversion_stats['backup_failed'] += 1
             return None
     
@@ -229,7 +229,7 @@ class DocumentConverter:
         
         # Check if .docx already exists
         if docx_path.exists():
-            print(f"   ‚Äö√ëœÄ√î‚àè√® INFO: {docx_path.name} already exists, skipping conversion")
+            print(f"   ‚ÑπÔ∏è INFO: {docx_path.name} already exists, skipping conversion")
             return True, docx_path, "Already exists"
         
         self.conversion_stats['attempted'] += 1
@@ -242,7 +242,7 @@ class DocumentConverter:
         error_msg = None
         
         if self.libreoffice_available:
-            print(f"   √å‚Ä†Œ©√å¬•√ë Converting {doc_path.name} with LibreOffice...")
+            print(f"   Ì†ΩÌ¥Ñ Converting {doc_path.name} with LibreOffice...")
             success, result_path, error_msg = self._convert_with_libreoffice(doc_path, target_dir)
             
             if success:
@@ -250,7 +250,7 @@ class DocumentConverter:
         
         # Fallback to pandoc if LibreOffice failed
         if not success and self.pandoc_available:
-            print(f"   √å‚Ä†Œ©√å¬•√ë Retrying {doc_path.name} with pandoc...")
+            print(f"   Ì†ΩÌ¥Ñ Retrying {doc_path.name} with pandoc...")
             success, result_path, error_msg = self._convert_with_pandoc(doc_path, docx_path)
             
             if success:
@@ -259,27 +259,27 @@ class DocumentConverter:
         # Update statistics
         if success:
             self.conversion_stats['successful'] += 1
-            print(f"   ‚Äö√∫√ñ SUCCESS: Converted {doc_path.name} ‚Äö√ú√≠ {docx_path.name}")
+            print(f"   ‚úÖ SUCCESS: Converted {doc_path.name} ‚Üí {docx_path.name}")
             if backup_path:
-                print(f"   √å‚Ä†Œ©√å‚â•√Ö Original backed up to: {Path(backup_path).name}")
+                print(f"   Ì†ΩÌ≥Å Original backed up to: {Path(backup_path).name}")
             
             # Delete original if requested
             if self.delete_originals:
                 try:
                     doc_path.unlink()
-                    print(f"   √å‚Ä†Œ©√å‚àë√´√î‚àè√® INFO: Deleted original {doc_path.name}")
+                    print(f"   Ì†ΩÌ∑ëÔ∏è INFO: Deleted original {doc_path.name}")
                 except Exception as e:
-                    print(f"   ‚Äö√∂‚Ä†√î‚àè√® WARNING: Could not delete original {doc_path.name}: {e}")
+                    print(f"   ‚ö†Ô∏è WARNING: Could not delete original {doc_path.name}: {e}")
             
             return True, docx_path, None
         else:
             self.conversion_stats['failed'] += 1
             self.conversion_stats['failed_files'].append(str(doc_path))
-            print(f"   ‚Äö√π√• ERROR: Failed to convert {doc_path.name}: {error_msg}")
+            print(f"   ‚ùå ERROR: Failed to convert {doc_path.name}: {error_msg}")
             
             # If backup was created but conversion failed, note it
             if backup_path:
-                print(f"   √å‚Ä†Œ©√å‚â•√Ö Original preserved in backup: {Path(backup_path).name}")
+                print(f"   Ì†ΩÌ≥Å Original preserved in backup: {Path(backup_path).name}")
             
             return False, None, error_msg
     
@@ -299,9 +299,9 @@ class DocumentConverter:
         if not directory_path.exists():
             return {'error': f"Directory not found: {directory_path}"}
         
-        print(f"√å‚Ä†Œ©√å‚â•√Ö Scanning for .doc files in: {directory_path}")
+        print(f"Ì†ΩÌ≥Å Scanning for .doc files in: {directory_path}")
         if self.backup_originals:
-            print(f"√å‚Ä†Œ©√å‚â•√Ö Backup directory: {self.backup_base_dir}")
+            print(f"Ì†ΩÌ≥Å Backup directory: {self.backup_base_dir}")
         
         # Find all .doc files
         if recursive:
@@ -310,7 +310,7 @@ class DocumentConverter:
             doc_files = list(directory_path.glob("*.doc"))
         
         if not doc_files:
-            print("‚Äö√ëœÄ√î‚àè√® INFO: No .doc files found")
+            print("‚ÑπÔ∏è INFO: No .doc files found")
             return {
                 'attempted': 0,
                 'successful': 0,
@@ -321,7 +321,7 @@ class DocumentConverter:
                 'message': 'No .doc files found'
             }
         
-        print(f"√å‚Ä†Œ©√å‚â•√§ Found {len(doc_files)} .doc files to convert")
+        print(f"Ì†ΩÌ≥ä Found {len(doc_files)} .doc files to convert")
         
         # Convert each file
         converted_files = []
@@ -345,26 +345,26 @@ class DocumentConverter:
     
     def print_conversion_summary(self):
         """Print enhanced summary of conversion operations"""
-        print(f"\n√å‚Ä†Œ©√å‚â•√§ Document Conversion Summary:")
+        print(f"\nÌ†ΩÌ≥ä Document Conversion Summary:")
         print("=" * 50)
-        print(f"√å‚Ä†Œ©√å‚â•√Ö Backup directory: {self.backup_base_dir}")
-        print(f"√å‚Ä†Œ©√å‚â•√£ Files attempted: {self.conversion_stats['attempted']}")
-        print(f"‚Äö√∫√ñ Successfully converted: {self.conversion_stats['successful']}")
-        print(f"‚Äö√π√• Failed conversions: {self.conversion_stats['failed']}")
-        print(f"√å‚Ä†Œ©√å‚â•√Ö Backups created: {self.conversion_stats['backup_created']}")
-        print(f"‚Äö√∂‚Ä†√î‚àè√® Backup failures: {self.conversion_stats['backup_failed']}")
+        print(f"Ì†ΩÌ≥Å Backup directory: {self.backup_base_dir}")
+        print(f"Ì†ΩÌ≥ã Files attempted: {self.conversion_stats['attempted']}")
+        print(f"‚úÖ Successfully converted: {self.conversion_stats['successful']}")
+        print(f"‚ùå Failed conversions: {self.conversion_stats['failed']}")
+        print(f"Ì†ΩÌ≥Å Backups created: {self.conversion_stats['backup_created']}")
+        print(f"‚ö†Ô∏è Backup failures: {self.conversion_stats['backup_failed']}")
         
         if self.conversion_stats['attempted'] > 0:
             success_rate = (self.conversion_stats['successful'] / self.conversion_stats['attempted']) * 100
-            print(f"√å‚Ä†Œ©√å‚â•√† Success rate: {success_rate:.1f}%")
+            print(f"Ì†ΩÌ≥à Success rate: {success_rate:.1f}%")
         
         if self.conversion_stats['failed_files']:
-            print(f"\n‚Äö√π√• Failed files:")
+            print(f"\n‚ùå Failed files:")
             for failed_file in self.conversion_stats['failed_files']:
                 print(f"   - {failed_file}")
         
         if self.conversion_stats['backup_created'] > 0:
-            print(f"\n√å‚Ä†Œ©√å‚â•√Ö Original files backed up to: {self.backup_base_dir}")
+            print(f"\nÌ†ΩÌ≥Å Original files backed up to: {self.backup_base_dir}")
             print(f"   Backup structure preserves original directory hierarchy")
         
         print("=" * 50)
@@ -426,18 +426,18 @@ def check_conversion_tools():
         'any_tool_available': converter.libreoffice_available or converter.pandoc_available
     }
     
-    print("√å‚Ä†Œ©√å¬•√ü Document Conversion Tools Status:")
+    print("Ì†ΩÌ¥ß Document Conversion Tools Status:")
     print("=" * 50)
-    print(f"LibreOffice: {'‚Äö√∫√ñ Available' if tools_info['libreoffice_available'] else '‚Äö√π√• Not available'}")
-    print(f"Pandoc: {'‚Äö√∫√ñ Available' if tools_info['pandoc_available'] else '‚Äö√π√• Not available'}")
+    print(f"LibreOffice: {'‚úÖ Available' if tools_info['libreoffice_available'] else '‚ùå Not available'}")
+    print(f"Pandoc: {'‚úÖ Available' if tools_info['pandoc_available'] else '‚ùå Not available'}")
     
     if not tools_info['any_tool_available']:
-        print("\n‚Äö√∂‚Ä†√î‚àè√® WARNING: No conversion tools available!")
+        print("\n‚ö†Ô∏è WARNING: No conversion tools available!")
         print("Install with:")
         print("   sudo apt-get install libreoffice")
         print("   sudo apt-get install pandoc")
     else:
-        print("\n‚Äö√∫√ñ Document conversion ready!")
+        print("\n‚úÖ Document conversion ready!")
     
     print("=" * 50)
     
@@ -473,7 +473,7 @@ def get_backup_directory_info(config):
 
 if __name__ == "__main__":
     # Example usage
-    print("√å‚Ä†Œ©√å¬•√ü Document Converter Test")
+    print("Ì†ΩÌ¥ß Document Converter Test")
     check_conversion_tools()
     
     # Test conversion in current directory
