@@ -1,0 +1,57 @@
+# Optimized settings for powerful system (42GB RAM, 2 Xeon CPUs)
+# Configured for nomic-embed-text model with CPU-only processing
+SUPABASE_CONNECTION_STRING="postgresql://postgres:postgres@localhost:54322/postgres"
+OLLAMA_BASE_URL=http://localhost:11434
+MASTER_DOCUMENTS_DIR=./data/634/2025
+DOCUMENTS_DIR=./data/634/2025/1
+TABLE_NAME=documents
+
+# Embedding model settings - nomic-embed-text optimized for CPU
+EMBED_MODEL=nomic-embed-text
+EMBED_DIM=768                  # nomic-embed-text uses 768 dimensions
+
+# Text chunking settings - smaller chunks for faster processing
+CHUNK_SIZE=2048                  # Reduced from 1024 for faster embedding generation
+CHUNK_OVERLAP=256               # Reduced proportionally to maintain quality
+MIN_CHUNK_LENGTH=100             # Slightly reduced minimum length
+BATCH_RESTART_INTERVAL=5
+ENABLE_TEXT_QUALITY_ANALYSIS=true
+
+# Processing batch settings - optimized for CPU performance
+BATCH_SIZE=10                    # Increased from 1 for better CPU utilization
+NUM_WORKERS=4                   # Utilize multiple CPU cores for file processing
+ENABLE_OCR=true
+
+# OCR optimization settings
+OCR_BATCH_SIZE=10
+OCR_WORKERS=4
+OCR_QUALITY_THRESHOLD=0.3
+
+AUTO_CONVERT_DOC=true          # Автоматически конвертировать .doc файлы
+BACKUP_ORIGINAL_DOC=true       # Создавать резервные копии .doc файлов
+DELETE_ORIGINAL_DOC=false 
+
+PDF_CHUNK_SIZE = 1024-2048  # Больше чем для обычного текста
+PDF_PRESERVE_STRUCTURE = True
+PDF_MIN_SECTION_LENGTH = 200
+PDF_HEADER_DETECTION = True
+PDF_FOOTER_CLEANUP = True
+
+# Database batch settings - larger batches for efficiency
+DB_BATCH_SIZE=1000               # Increased for better database performance
+PROCESSING_BATCH_SIZE=200        # Increased from 25 for better throughput
+SKIP_VALIDATION=false
+
+# Ollama optimization settings for CPU-only processing
+OLLAMA_KEEP_ALIVE=-1           # Longer keep-alive to reduce model reload overhead
+OLLAMA_MAX_LOADED_MODELS=1      # Keep only one model loaded to conserve memory
+OLLAMA_NUM_PARALLEL=1           # Single parallel request for CPU processing
+OLLAMA_TIMEOUT=300              # 5 minutes timeout for slower CPU processing
+
+# CPU-specific optimizations
+OLLAMA_NUM_THREAD=16            # Use more CPU threads for nomic-embed-text
+OLLAMA_NUMA=false               # Disable NUMA for consistency on dual-Xeon setup
+
+# Performance monitoring settings
+ENABLE_PROGRESS_LOGGING=true
+LOG_BATCH_TIMING=true
