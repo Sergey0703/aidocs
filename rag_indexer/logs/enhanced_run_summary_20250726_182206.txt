@@ -1,0 +1,78 @@
+🚀 ENHANCED RAG INDEXER RUN SUMMARY
+======================================================================
+Start time: 2025-07-26 18:18:16
+End time: 2025-07-26 18:22:06
+Duration: 3.8 minutes (230.2 seconds)
+
+🔧 ENHANCED CONFIGURATION:
+   Embedding model: nomic-embed-text (768D)
+   Chunk size: 2048 (overlap: 256)
+   Processing batch size: 200
+   CPU threads: 16
+   Features enabled:
+     - Auto .doc conversion: ✅
+     - OCR processing: ✅
+     - Safe Ollama restarts: ✅
+
+📊 PROCESSING STATISTICS:
+   start_time: 1753550296.52
+   documents_loaded: 184
+   images_processed: 6
+   chunks_created: 172
+   valid_chunks: 172
+   embeddings_generated: 172
+   records_saved: 172
+   encoding_issues: 0
+   advanced_parsing_usage: 0
+   total_batches: 1
+   failed_batches: 0
+   total_failed_chunks: 0
+   total_embedding_errors: 0
+   avg_speed: 0.92
+   total_time: 187.57
+
+
+🔄 PROCESSING STAGES COMPLETED:
+   1. Document Loading
+   2. Documents Combined
+   3. Deletion Dialog
+   4. Chunk Processing
+   5. Batch Processing
+   6. Final Analysis
+🔄 AUTO-ROTATION STATISTICS:
+   Images tested: 6
+   Rotations applied: 0
+   Quality improvements: 0
+
+🎯 TEXT QUALITY ANALYSIS:
+   Filter success rate: 100.0%
+   Invalid chunks filtered: 0
+   Average content length: 464 chars
+
+🔍 END-TO-END ANALYSIS:
+   Total files in directory: 177
+   Files successfully in database: 172
+   Files missing from database: 5
+   End-to-end success rate: 97.2%
+
+✨ FEATURE EFFECTIVENESS:
+   Auto Rotation Usage: 0.0
+
+⚡ PERFORMANCE METRICS:
+   Overall Processing Speed: 0.92 items/sec
+   Embedding Speed: 0.92 items/sec
+   Batch Efficiency: 0.92 items/sec
+
+❌ FAILED FILES SUMMARY:
+----------------------------------------
+❌ Total failed files: 5
+📋 Details saved to: /logs/failed_files_details.log
+
+All failed files:
+  1. 383-AC AMRIC Hand Hygiene HSELD 03.10.24.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  2. 606-Diversity & Inclusion 07.07.22.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  3. 717-MOC Diversity, Equality and Inclusion Module 1 HSELD 26.09.2024.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  4. 669-AF Supervisory Management FETAC 14.08.2024.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+  5. 8736840-doc013948.pdf - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)
+
+======================================================================
