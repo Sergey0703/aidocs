@@ -326,7 +326,7 @@ class BatchProcessor:
     def _log_batch_failure(self, batch_num, batch_nodes, error):
         """Log batch failure details"""
         try:
-            with open('./batch_failures.log', 'a', encoding='utf-8') as f:
+            with open('./logs/batch_failures.log', 'a', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 f.write(f"\n--- SAFE PROCESSING: Batch {batch_num} failure at {timestamp} ---\n")
                 f.write(f"Error: {str(error)}\n")

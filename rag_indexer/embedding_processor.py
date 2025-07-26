@@ -344,7 +344,7 @@ class EmbeddingProcessor:
     def _log_embedding_errors(self, embedding_errors, batch_num):
         """Log embedding errors to file"""
         try:
-            with open('./embedding_errors.log', 'a', encoding='utf-8') as f:
+            with open('./logs/embedding_errors.log', 'a', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 f.write(f"\n--- Safe embedding errors in batch {batch_num} at {timestamp} ---\n")
                 for error in embedding_errors:
@@ -436,7 +436,7 @@ class EmbeddingProcessor:
     def _log_failed_chunks(self, failed_chunks, batch_num):
         """Log failed chunks to file"""
         try:
-            with open('./failed_chunks.log', 'a', encoding='utf-8') as f:
+            with open('./logs/failed_chunks.log', 'a', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 f.write(f"\n--- Safe processing - Failed chunks in batch {batch_num} at {timestamp} ---\n")
                 for failed in failed_chunks:
@@ -628,7 +628,7 @@ class NodeProcessor:
     def _save_invalid_chunks_report(self, invalid_files_summary, invalid_nodes):
         """Save detailed report of invalid chunks to file"""
         try:
-            report_file = './invalid_chunks_report.log'
+            report_file = './logs/invalid_chunks_report.log'
             with open(report_file, 'w', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 f.write(f"Safe Processing - Invalid Chunks Report - {timestamp}\n")
