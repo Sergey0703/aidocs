@@ -31,7 +31,7 @@ AUTO_CONVERT_DOC=true          # Автоматически конвертиро
 BACKUP_ORIGINAL_DOC=true       # Создавать резервные копии .doc файлов
 DELETE_ORIGINAL_DOC=false 
 
-PDF_CHUNK_SIZE = 1024-2048  # Больше чем для обычного текста
+PDF_CHUNK_SIZE = 2048  # Больше чем для обычного текста
 PDF_PRESERVE_STRUCTURE = True
 PDF_MIN_SECTION_LENGTH = 200
 PDF_HEADER_DETECTION = True
