@@ -604,12 +604,12 @@ class EnhancedPDFProcessor:
         Returns:
             list: List of Document objects
         """
-        print(f"   Ì†ΩÌ≥Ñ Processing PDF: {os.path.basename(file_path)}")
+        print(f"   ������ Processing PDF: {os.path.basename(file_path)}")
         
         # Analyze PDF to choose strategy
         pdf_analysis = self.detect_pdf_type(file_path)
-        print(f"   Ì†ΩÌ≥ä PDF type: {pdf_analysis['type']} ({pdf_analysis['page_count']} pages)")
-        print(f"   Ì†ºÌæØ Strategy: {pdf_analysis['recommended_method']}")
+        print(f"   ������ PDF type: {pdf_analysis['type']} ({pdf_analysis['page_count']} pages)")
+        print(f"   ������ Strategy: {pdf_analysis['recommended_method']}")
         
         # Extract text using optimal method
         extraction_method = pdf_analysis['recommended_method']
@@ -629,20 +629,20 @@ class EnhancedPDFProcessor:
             elif self.libraries_available['pdfplumber']:
                 text_content, extraction_info = self.extract_text_pdfplumber(file_path)
             else:
-                print(f"   ‚ùå No PDF processing libraries available")
+                print(f"   ❌ No PDF processing libraries available")
                 self.stats['method_usage']['failed_extractions'] += 1
                 return []
         
         # Check extraction result
         if 'error' in extraction_info:
-            print(f"   ‚ùå Extraction failed: {extraction_info['error']}")
+            print(f"   ❌ Extraction failed: {extraction_info['error']}")
             self.stats['method_usage']['failed_extractions'] += 1
             return []
         
         if not text_content or len(text_content.strip()) < 20:
-            print(f"   ‚ö†Ô∏è Insufficient text extracted ({len(text_content)} chars)")
+            print(f"   ⚠️ Insufficient text extracted ({len(text_content)} chars)")
             if self.enable_ocr_fallback and self.ocr_processor and extraction_method != 'ocr':
-                print(f"   Ì†ΩÌ¥Ñ Trying OCR fallback...")
+                print(f"   ������ Trying OCR fallback...")
                 text_content, ocr_info = self.extract_text_ocr_fallback(file_path)
                 if text_content and len(text_content.strip()) >= 20:
                     extraction_info = ocr_info
@@ -687,7 +687,7 @@ class EnhancedPDFProcessor:
         else:
             self.stats['structured_pages'] += extraction_info.get('pages_processed', 0)
         
-        print(f"   ‚úÖ SUCCESS: {len(text_content)} characters extracted in {extraction_info.get('processing_time', 0):.2f}s")
+        print(f"   ✅ SUCCESS: {len(text_content)} characters extracted in {extraction_info.get('processing_time', 0):.2f}s")
         
         return [document]
 
@@ -843,7 +843,7 @@ class AdvancedDocxParser:
                 
                 # Check if paragraph is a list item
                 elif paragraph.style.name.startswith('List'):
-                    structured_content.append(f"‚Ä¢ {paragraph.text.strip()}")
+                    structured_content.append(f"• {paragraph.text.strip()}")
                     metadata_info['list_count'] += 1
                 
                 # Regular paragraph

@@ -187,7 +187,9 @@ def main():
         'master_indexer.py',
         'file_utils.py',
         'ocr_processor.py',
-        'doc_converter.py'
+        'doc_converter.py',
+        'document_parsers.py',
+        'loading_helpers.py'
     ]
     
     print("=" * 60)

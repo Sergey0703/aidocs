@@ -490,9 +490,9 @@ def print_document_validation_summary(documents_with_content, documents_without_
         pdf_failures = file_type_failures.get('pdf', {})
         if pdf_failures:
             print(f"   - PDF-specific suggestions:")
-            print(f"     â€¢ Enable OCR fallback for scanned PDFs")
-            print(f"     â€¢ Check PDF_MIN_CONTENT_LENGTH setting")
-            print(f"     â€¢ Verify PDF processing libraries are installed")
+            print(f"     • Enable OCR fallback for scanned PDFs")
+            print(f"     • Check PDF_MIN_CONTENT_LENGTH setting")
+            print(f"     • Verify PDF processing libraries are installed")
     
     if len(documents_with_content) > 0:
         print(f"\n? Proceeding with {len(documents_with_content)} valid documents")
