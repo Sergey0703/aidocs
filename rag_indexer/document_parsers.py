@@ -3,7 +3,7 @@
 """
 Document parsers module for RAG Document Indexer
 Specialized parsers for different document types
-NOW WITH ENHANCED PDF SUPPORT using hybrid PDF processor
+Enhanced with modular PDF processing architecture
 """
 
 import os
@@ -37,659 +37,16 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-# NEW: Enhanced PDF processing imports
+# Import enhanced PDF processor from separate module
 try:
-    import fitz  # PyMuPDF
-    import pdfplumber
-    from pdf2image import convert_from_path
-    PDF_PROCESSING_AVAILABLE = True
+    from enhanced_pdf_processor import create_enhanced_pdf_processor
+    ENHANCED_PDF_AVAILABLE = True
 except ImportError:
-    PDF_PROCESSING_AVAILABLE = False
-    print("INFO: PDF processing libraries not fully available. Install with: pip install PyMuPDF pdfplumber pdf2image")
+    ENHANCED_PDF_AVAILABLE = False
+    print("WARNING: Enhanced PDF processor not available. PDF processing will be limited.")
 
 # Import utility functions
 from file_utils_core import clean_content_from_null_bytes, clean_metadata_recursive, safe_read_file
-
-
-class EnhancedPDFProcessor:
-    """
-    NEW: Enhanced PDF processor using hybrid approach for optimal text extraction
-    Integrated into the existing document parsing system
-    """
-    
-    def __init__(self, config=None):
-        """
-        Initialize Enhanced PDF processor
-        
-        Args:
-            config: Configuration object with PDF settings
-        """
-        self.config = config
-        
-        # Load settings from config or use defaults
-        if config:
-            self.chunk_size = getattr(config, 'PDF_CHUNK_SIZE', 2048)
-            self.preserve_structure = getattr(config, 'PDF_PRESERVE_STRUCTURE', True)
-            self.min_section_length = getattr(config, 'PDF_MIN_SECTION_LENGTH', 200)
-            self.header_detection = getattr(config, 'PDF_HEADER_DETECTION', True)
-            self.footer_cleanup = getattr(config, 'PDF_FOOTER_CLEANUP', True)
-            self.enable_ocr_fallback = getattr(config, 'ENABLE_OCR', True)
-        else:
-            # Default settings
-            self.chunk_size = 2048
-            self.preserve_structure = True
-            self.min_section_length = 200
-            self.header_detection = True
-            self.footer_cleanup = True
-            self.enable_ocr_fallback = True
-        
-        # Check library availability
-        self.libraries_available = {
-            'pymupdf': self._check_pymupdf(),
-            'pdfplumber': self._check_pdfplumber(), 
-            'pdf2image': self._check_pdf2image()
-        }
-        
-        # OCR processor (will be injected if needed)
-        self.ocr_processor = None
-        
-        # Processing statistics
-        self.stats = {
-            'files_processed': 0,
-            'total_pages': 0,
-            'text_extracted_chars': 0,
-            'ocr_pages': 0,
-            'structured_pages': 0,
-            'processing_time': 0,
-            'method_usage': {
-                'pymupdf_primary': 0,
-                'pdfplumber_tables': 0,
-                'ocr_fallback': 0,
-                'failed_extractions': 0
-            }
-        }
-    
-    def _check_pymupdf(self):
-        """Check if PyMuPDF is available"""
-        try:
-            import fitz
-            return True
-        except ImportError:
-            return False
-    
-    def _check_pdfplumber(self):
-        """Check if pdfplumber is available"""
-        try:
-            import pdfplumber
-            return True
-        except ImportError:
-            return False
-    
-    def _check_pdf2image(self):
-        """Check if pdf2image is available"""
-        try:
-            from pdf2image import convert_from_path
-            return True
-        except ImportError:
-            return False
-    
-    def set_ocr_processor(self, ocr_processor):
-        """
-        Set OCR processor for fallback processing
-        
-        Args:
-            ocr_processor: OCR processor instance
-        """
-        self.ocr_processor = ocr_processor
-    
-    def detect_pdf_type(self, file_path):
-        """
-        Detect PDF type to choose optimal processing strategy
-        
-        Args:
-            file_path: Path to PDF file
-        
-        Returns:
-            dict: PDF analysis results
-        """
-        analysis = {
-            'type': 'unknown',
-            'has_text': False,
-            'has_images': False,
-            'has_tables': False,
-            'is_scanned': False,
-            'page_count': 0,
-            'text_coverage': 0.0,
-            'recommended_method': 'pymupdf'
-        }
-        
-        if not self.libraries_available['pymupdf']:
-            analysis['recommended_method'] = 'fallback'
-            return analysis
-        
-        try:
-            import fitz
-            # Quick analysis with PyMuPDF
-            doc = fitz.open(file_path)
-            analysis['page_count'] = len(doc)
-            
-            # Sample first few pages for analysis
-            sample_pages = min(3, len(doc))
-            total_text_length = 0
-            total_char_count = 0
-            
-            for page_num in range(sample_pages):
-                page = doc[page_num]
-                
-                # Extract text to check coverage
-                text = page.get_text()
-                total_text_length += len(text.strip())
-                
-                # Count characters for density calculation
-                char_count = len([c for c in text if c.isalnum()])
-                total_char_count += char_count
-                
-                # Check for images
-                image_list = page.get_images()
-                if image_list:
-                    analysis['has_images'] = True
-                
-                # Basic table detection (look for table-like structures)
-                if self._detect_table_patterns(text):
-                    analysis['has_tables'] = True
-            
-            doc.close()
-            
-            # Determine PDF characteristics
-            analysis['has_text'] = total_text_length > 50
-            analysis['text_coverage'] = total_char_count / (sample_pages * 1000) if sample_pages > 0 else 0
-            
-            # Classify PDF type
-            if analysis['text_coverage'] < 0.1:
-                analysis['type'] = 'scanned'
-                analysis['is_scanned'] = True
-                analysis['recommended_method'] = 'ocr'
-            elif analysis['has_tables'] and self.libraries_available['pdfplumber']:
-                analysis['type'] = 'structured'
-                analysis['recommended_method'] = 'pdfplumber'
-            elif analysis['has_text']:
-                analysis['type'] = 'digital'
-                analysis['recommended_method'] = 'pymupdf'
-            else:
-                analysis['type'] = 'mixed'
-                analysis['recommended_method'] = 'hybrid'
-            
-        except Exception as e:
-            print(f"   WARNING: PDF analysis failed: {e}")
-            analysis['recommended_method'] = 'fallback'
-        
-        return analysis
-    
-    def _detect_table_patterns(self, text):
-        """
-        Simple heuristic to detect table-like content
-        
-        Args:
-            text: Text content to analyze
-        
-        Returns:
-            bool: True if table patterns detected
-        """
-        if not text:
-            return False
-        
-        lines = text.split('\n')
-        if len(lines) < 3:
-            return False
-        
-        # Look for patterns indicating tables
-        tab_separated_lines = sum(1 for line in lines if '\t' in line)
-        space_separated_lines = sum(1 for line in lines if len(line.split()) > 4)
-        
-        # If more than 30% of lines look table-like
-        table_ratio = (tab_separated_lines + space_separated_lines) / len(lines)
-        return table_ratio > 0.3
-    
-    def extract_text_pymupdf(self, file_path):
-        """
-        Extract text using enhanced PyMuPDF extraction methods
-        
-        Args:
-            file_path: Path to PDF file
-        
-        Returns:
-            tuple: (text_content, extraction_info)
-        """
-        if not self.libraries_available['pymupdf']:
-            return "", {'error': 'PyMuPDF not available'}
-        
-        try:
-            import fitz
-            import time
-            
-            doc = fitz.open(file_path)
-            text_parts = []
-            extraction_info = {
-                'method': 'enhanced_pymupdf',
-                'pages_processed': 0,
-                'total_chars': 0,
-                'processing_time': 0,
-                'extraction_modes_used': []
-            }
-            
-            start_time = time.time()
-            
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                
-                # Enhanced extraction: try multiple methods and use the best
-                extraction_methods = []
-                
-                # Method 1: Standard text extraction
-                text1 = page.get_text("text") if self.preserve_structure else page.get_text()
-                extraction_methods.append(('standard', text1))
-                
-                # Method 2: Blocks extraction
-                try:
-                    blocks = page.get_text("blocks")
-                    text2 = ""
-                    if isinstance(blocks, list):
-                        for block in blocks:
-                            if isinstance(block, tuple) and len(block) > 4:
-                                text2 += str(block[4]) + " "
-                            elif isinstance(block, dict) and 'text' in block:
-                                text2 += block['text'] + " "
-                    extraction_methods.append(('blocks', text2))
-                except:
-                    pass
-                
-                # Method 3: Words extraction
-                try:
-                    words = page.get_text("words")
-                    text3 = ""
-                    if isinstance(words, list):
-                        text3 = " ".join([str(word[4]) for word in words 
-                                        if isinstance(word, tuple) and len(word) > 4])
-                    extraction_methods.append(('words', text3))
-                except:
-                    pass
-                
-                # Method 4: Dictionary extraction
-                try:
-                    text_dict = page.get_text("dict")
-                    text4 = self._extract_from_dict(text_dict)
-                    extraction_methods.append(('dict', text4))
-                except:
-                    pass
-                
-                # Choose the best extraction method for this page
-                best_text = ""
-                best_method = "standard"
-                max_chars = 0
-                
-                for method_name, text in extraction_methods:
-                    if text and len(text.strip()) > max_chars:
-                        best_text = text.strip()
-                        best_method = method_name
-                        max_chars = len(best_text)
-                
-                if best_text:
-                    # Clean and process text
-                    cleaned_text = clean_content_from_null_bytes(best_text)
-                    
-                    # Optional header/footer cleanup
-                    if self.footer_cleanup:
-                        cleaned_text = self._clean_headers_footers(cleaned_text, page_num)
-                    
-                    text_parts.append(cleaned_text)
-                    extraction_info['total_chars'] += len(cleaned_text)
-                    
-                    # Track which method worked best
-                    if best_method not in extraction_info['extraction_modes_used']:
-                        extraction_info['extraction_modes_used'].append(best_method)
-                
-                extraction_info['pages_processed'] += 1
-            
-            doc.close()
-            
-            extraction_info['processing_time'] = time.time() - start_time
-            
-            # Combine text with proper spacing
-            full_text = '\n\n'.join(text_parts)
-            
-            # Update statistics
-            self.stats['method_usage']['pymupdf_primary'] += 1
-            
-            return full_text, extraction_info
-            
-        except Exception as e:
-            return "", {'error': str(e), 'method': 'enhanced_pymupdf'}
-    
-    def _extract_from_dict(self, text_dict):
-        """
-        Extract text from PyMuPDF dictionary format (enhanced method)
-        
-        Args:
-            text_dict: Dictionary from get_text("dict")
-        
-        Returns:
-            str: Extracted text
-        """
-        text_parts = []
-        
-        try:
-            if isinstance(text_dict, dict) and 'blocks' in text_dict:
-                for block in text_dict['blocks']:
-                    if isinstance(block, dict) and 'lines' in block:
-                        for line in block['lines']:
-                            if isinstance(line, dict) and 'spans' in line:
-                                line_text = ""
-                                for span in line['spans']:
-                                    if isinstance(span, dict) and 'text' in span:
-                                        line_text += span['text']
-                                if line_text.strip():
-                                    text_parts.append(line_text.strip())
-        except Exception:
-            pass
-        
-        return ' '.join(text_parts)
-    
-    def extract_text_pdfplumber(self, file_path):
-        """
-        Extract text using pdfplumber (best for tables and complex structures)
-        
-        Args:
-            file_path: Path to PDF file
-        
-        Returns:
-            tuple: (text_content, extraction_info)
-        """
-        if not self.libraries_available['pdfplumber']:
-            return "", {'error': 'pdfplumber not available'}
-        
-        try:
-            import pdfplumber
-            import time
-            
-            text_parts = []
-            extraction_info = {
-                'method': 'pdfplumber',
-                'pages_processed': 0,
-                'tables_found': 0,
-                'total_chars': 0,
-                'processing_time': 0
-            }
-            
-            start_time = time.time()
-            
-            with pdfplumber.open(file_path) as pdf:
-                for page_num, page in enumerate(pdf.pages):
-                    page_text = ""
-                    
-                    # Extract regular text
-                    if self.preserve_structure:
-                        text = page.extract_text(layout=True)
-                    else:
-                        text = page.extract_text()
-                    
-                    if text:
-                        page_text += text
-                    
-                    # Extract tables separately for better formatting
-                    try:
-                        tables = page.extract_tables()
-                        if tables:
-                            extraction_info['tables_found'] += len(tables)
-                            for table in tables:
-                                table_text = self._format_table_text(table)
-                                if table_text:
-                                    page_text += f"\n\n[TABLE]\n{table_text}\n[/TABLE]\n"
-                    except Exception as e:
-                        print(f"   WARNING: Table extraction failed on page {page_num + 1}: {e}")
-                    
-                    if page_text.strip():
-                        cleaned_text = clean_content_from_null_bytes(page_text)
-                        text_parts.append(cleaned_text)
-                        extraction_info['total_chars'] += len(cleaned_text)
-                    
-                    extraction_info['pages_processed'] += 1
-            
-            extraction_info['processing_time'] = time.time() - start_time
-            
-            # Combine text
-            full_text = '\n\n'.join(text_parts)
-            
-            # Update statistics
-            self.stats['method_usage']['pdfplumber_tables'] += 1
-            
-            return full_text, extraction_info
-            
-        except Exception as e:
-            return "", {'error': str(e), 'method': 'pdfplumber'}
-    
-    def _format_table_text(self, table):
-        """
-        Format extracted table data into readable text
-        
-        Args:
-            table: Table data from pdfplumber
-        
-        Returns:
-            str: Formatted table text
-        """
-        if not table:
-            return ""
-        
-        try:
-            formatted_rows = []
-            for row in table:
-                if row:
-                    # Clean and join cells
-                    cells = [str(cell).strip() if cell else "" for cell in row]
-                    row_text = " | ".join(cells)
-                    if row_text.strip():
-                        formatted_rows.append(row_text)
-            
-            return '\n'.join(formatted_rows)
-        except Exception as e:
-            print(f"   WARNING: Table formatting failed: {e}")
-            return ""
-    
-    def _clean_headers_footers(self, text, page_num):
-        """
-        Basic header/footer cleanup
-        
-        Args:
-            text: Text content
-            page_num: Page number
-        
-        Returns:
-            str: Cleaned text
-        """
-        if not text:
-            return text
-        
-        lines = text.split('\n')
-        if len(lines) < 5:
-            return text
-        
-        # Remove common header/footer patterns
-        cleaned_lines = []
-        for i, line in enumerate(lines):
-            line = line.strip()
-            
-            # Skip very short lines at top/bottom
-            if (i < 2 or i >= len(lines) - 2) and len(line) < 50:
-                # Check if it's just page numbers or headers
-                if line.isdigit() or 'page' in line.lower():
-                    continue
-            
-            cleaned_lines.append(line)
-        
-        return '\n'.join(cleaned_lines)
-    
-    def extract_text_ocr_fallback(self, file_path):
-        """
-        Extract text using OCR fallback (for scanned PDFs)
-        
-        Args:
-            file_path: Path to PDF file
-        
-        Returns:
-            tuple: (text_content, extraction_info)
-        """
-        if not (self.libraries_available['pdf2image'] and self.ocr_processor):
-            return "", {'error': 'OCR fallback not available'}
-        
-        try:
-            from pdf2image import convert_from_path
-            import time
-            
-            extraction_info = {
-                'method': 'ocr_fallback',
-                'pages_processed': 0,
-                'total_chars': 0,
-                'processing_time': 0
-            }
-            
-            start_time = time.time()
-            
-            # Convert PDF pages to images
-            images = convert_from_path(file_path, dpi=300, fmt='jpeg')
-            text_parts = []
-            
-            for page_num, image in enumerate(images):
-                try:
-                    # Save image temporarily for OCR processing
-                    temp_image_path = f"/tmp/pdf_page_{page_num}.jpg"
-                    image.save(temp_image_path, 'JPEG')
-                    
-                    # Process with OCR
-                    text = self.ocr_processor.extract_text_from_image(temp_image_path)
-                    
-                    if text and len(text.strip()) > 20:
-                        cleaned_text = clean_content_from_null_bytes(text)
-                        text_parts.append(cleaned_text)
-                        extraction_info['total_chars'] += len(cleaned_text)
-                    
-                    # Clean up temporary file
-                    if os.path.exists(temp_image_path):
-                        os.unlink(temp_image_path)
-                    
-                    extraction_info['pages_processed'] += 1
-                    
-                except Exception as e:
-                    print(f"   WARNING: OCR failed for page {page_num + 1}: {e}")
-            
-            extraction_info['processing_time'] = time.time() - start_time
-            
-            # Combine text
-            full_text = '\n\n'.join(text_parts)
-            
-            # Update statistics
-            self.stats['method_usage']['ocr_fallback'] += 1
-            
-            return full_text, extraction_info
-            
-        except Exception as e:
-            return "", {'error': str(e), 'method': 'ocr_fallback'}
-    
-    def process_pdf_file(self, file_path):
-        """
-        Process a single PDF file using optimal strategy
-        
-        Args:
-            file_path: Path to PDF file
-        
-        Returns:
-            list: List of Document objects
-        """
-        print(f"   Ì†ΩÌ≥Ñ Processing PDF: {os.path.basename(file_path)}")
-        
-        # Analyze PDF to choose strategy
-        pdf_analysis = self.detect_pdf_type(file_path)
-        print(f"   Ì†ΩÌ≥ä PDF type: {pdf_analysis['type']} ({pdf_analysis['page_count']} pages)")
-        print(f"   Ì†ºÌæØ Strategy: {pdf_analysis['recommended_method']}")
-        
-        # Extract text using optimal method
-        extraction_method = pdf_analysis['recommended_method']
-        text_content = ""
-        extraction_info = {}
-        
-        if extraction_method == 'pymupdf' and self.libraries_available['pymupdf']:
-            text_content, extraction_info = self.extract_text_pymupdf(file_path)
-        elif extraction_method == 'pdfplumber' and self.libraries_available['pdfplumber']:
-            text_content, extraction_info = self.extract_text_pdfplumber(file_path)
-        elif extraction_method == 'ocr' and self.ocr_processor:
-            text_content, extraction_info = self.extract_text_ocr_fallback(file_path)
-        else:
-            # Fallback chain
-            if self.libraries_available['pymupdf']:
-                text_content, extraction_info = self.extract_text_pymupdf(file_path)
-            elif self.libraries_available['pdfplumber']:
-                text_content, extraction_info = self.extract_text_pdfplumber(file_path)
-            else:
-                print(f"   ‚ùå No PDF processing libraries available")
-                self.stats['method_usage']['failed_extractions'] += 1
-                return []
-        
-        # Check extraction result
-        if 'error' in extraction_info:
-            print(f"   ‚ùå Extraction failed: {extraction_info['error']}")
-            self.stats['method_usage']['failed_extractions'] += 1
-            return []
-        
-        if not text_content or len(text_content.strip()) < 20:
-            print(f"   ‚ö†Ô∏è Insufficient text extracted ({len(text_content)} chars)")
-            if self.enable_ocr_fallback and self.ocr_processor and extraction_method != 'ocr':
-                print(f"   Ì†ΩÌ¥Ñ Trying OCR fallback...")
-                text_content, ocr_info = self.extract_text_ocr_fallback(file_path)
-                if text_content and len(text_content.strip()) >= 20:
-                    extraction_info = ocr_info
-                else:
-                    self.stats['method_usage']['failed_extractions'] += 1
-                    return []
-            else:
-                self.stats['method_usage']['failed_extractions'] += 1
-                return []
-        
-        # Create document with enhanced metadata
-        clean_file_path = clean_content_from_null_bytes(str(file_path))
-        clean_file_name = clean_content_from_null_bytes(os.path.basename(file_path))
-        
-        metadata = {
-            'file_path': clean_file_path,
-            'file_name': clean_file_name,
-            'file_type': 'pdf',
-            'file_size': os.path.getsize(file_path),
-            'pdf_analysis': pdf_analysis,
-            'extraction_info': extraction_info,
-            'content_length': len(text_content),
-            'processing_timestamp': datetime.now().isoformat(),
-            'processor_version': 'enhanced_pdf_processor_v1.0'
-        }
-        
-        # Clean metadata
-        clean_metadata = clean_metadata_recursive(metadata)
-        
-        document = Document(
-            text=text_content,
-            metadata=clean_metadata
-        )
-        
-        # Update statistics
-        self.stats['files_processed'] += 1
-        self.stats['total_pages'] += pdf_analysis['page_count']
-        self.stats['text_extracted_chars'] += len(text_content)
-        
-        if extraction_info['method'] == 'ocr_fallback':
-            self.stats['ocr_pages'] += extraction_info.get('pages_processed', 0)
-        else:
-            self.stats['structured_pages'] += extraction_info.get('pages_processed', 0)
-        
-        print(f"   ‚úÖ SUCCESS: {len(text_content)} characters extracted in {extraction_info.get('processing_time', 0):.2f}s")
-        
-        return [document]
 
 
 class AdvancedDocxParser:
@@ -1041,7 +398,10 @@ class LegacyDocConverter:
 
 
 class HybridDocumentProcessor:
-    """Processor that combines text extraction with image OCR for complete document processing"""
+    """
+    Processor that combines text extraction with image OCR for complete document processing
+    Now uses modular PDF processor architecture
+    """
     
     def __init__(self, config=None):
         """
@@ -1081,8 +441,18 @@ class HybridDocumentProcessor:
         
         self.doc_converter = LegacyDocConverter() if self.advanced_parsing_enabled else None
         
-        # NEW: Initialize enhanced PDF processor
-        self.pdf_processor = EnhancedPDFProcessor(config) if self.advanced_parsing_enabled else None
+        # Initialize enhanced PDF processor from separate module
+        if self.advanced_parsing_enabled and ENHANCED_PDF_AVAILABLE:
+            try:
+                self.pdf_processor = create_enhanced_pdf_processor(config)
+                print(f"   Ì†ΩÌ≥Ñ Enhanced PDF processor initialized")
+            except Exception as e:
+                print(f"   WARNING: Enhanced PDF processor initialization failed: {e}")
+                self.pdf_processor = None
+        else:
+            self.pdf_processor = None
+            if not ENHANCED_PDF_AVAILABLE:
+                print(f"   WARNING: Enhanced PDF processor not available - install enhanced_pdf_processor.py")
         
         # OCR processor will be injected when needed
         self.ocr_processor = None
@@ -1096,13 +466,14 @@ class HybridDocumentProcessor:
         """
         self.ocr_processor = ocr_processor
         
-        # Also set for PDF processor
+        # Also set for PDF processor if available
         if self.pdf_processor:
             self.pdf_processor.set_ocr_processor(ocr_processor)
+            print(f"   Ì†æÌ¥ñ OCR processor integrated with PDF processor")
     
     def process_pdf_file(self, file_path):
         """
-        NEW: Process PDF file with enhanced PDF processor
+        Process PDF file with enhanced PDF processor
         
         Args:
             file_path: Path to PDF file
@@ -1112,15 +483,17 @@ class HybridDocumentProcessor:
         """
         if not self.pdf_processor or not self.advanced_parsing_enabled:
             # Fallback to simple processing
+            print(f"   WARNING: Enhanced PDF processing not available for {os.path.basename(file_path)}")
             return self._simple_file_processing(file_path)
         
         try:
-            # Use enhanced PDF processor
+            # Use enhanced PDF processor from separate module
             documents = self.pdf_processor.process_pdf_file(file_path)
             return documents if documents else []
             
         except Exception as e:
             print(f"   ERROR: Enhanced PDF processing failed for {file_path}: {e}")
+            print(f"   INFO: Falling back to simple processing...")
             return self._simple_file_processing(file_path)
     
     def process_docx_file(self, file_path):
@@ -1275,3 +648,183 @@ class HybridDocumentProcessor:
         except Exception as e:
             print(f"   ERROR: Simple file processing failed for {file_path}: {e}")
             return []
+    
+    def get_processing_capabilities(self):
+        """
+        Get information about available processing capabilities
+        
+        Returns:
+            dict: Capability information
+        """
+        return {
+            'advanced_parsing_enabled': self.advanced_parsing_enabled,
+            'docx_parser_available': self.docx_parser is not None,
+            'doc_converter_available': self.doc_converter is not None,
+            'pdf_processor_available': self.pdf_processor is not None,
+            'ocr_processor_available': self.ocr_processor is not None,
+            'enhanced_pdf_available': ENHANCED_PDF_AVAILABLE,
+            'features': {
+                'extract_images': self.extract_images,
+                'preserve_structure': self.preserve_structure,
+                'extract_tables': self.extract_tables,
+                'hybrid_processing': self.hybrid_processing,
+                'combine_results': self.combine_results
+            }
+        }
+    
+    def print_capabilities_summary(self):
+        """Print summary of processing capabilities"""
+        capabilities = self.get_processing_capabilities()
+        
+        print(f"\nÌ†ΩÌ≥Ñ Hybrid Document Processor Capabilities:")
+        print(f"   Ì†ΩÌ≥ã Advanced parsing: {'‚úÖ' if capabilities['advanced_parsing_enabled'] else '‚ùå'}")
+        print(f"   Ì†ΩÌ≥Ñ DOCX parser: {'‚úÖ' if capabilities['docx_parser_available'] else '‚ùå'}")
+        print(f"   Ì†ΩÌ≥Ñ DOC converter: {'‚úÖ' if capabilities['doc_converter_available'] else '‚ùå'}")
+        print(f"   Ì†ΩÌ≥Ñ Enhanced PDF processor: {'‚úÖ' if capabilities['pdf_processor_available'] else '‚ùå'}")
+        print(f"   Ì†æÌ¥ñ OCR processor: {'‚úÖ' if capabilities['ocr_processor_available'] else '‚ùå'}")
+        
+        features = capabilities['features']
+        print(f"\n‚öôÔ∏è Feature Settings:")
+        for feature, enabled in features.items():
+            status = "‚úÖ" if enabled else "‚ùå"
+            feature_name = feature.replace('_', ' ').title()
+            print(f"   {status} {feature_name}")
+        
+        if not capabilities['enhanced_pdf_available']:
+            print(f"\n‚ö†Ô∏è Enhanced PDF processing not available:")
+            print(f"   Install enhanced_pdf_processor.py module for full PDF support")
+
+
+# Factory functions for creating processor instances
+def create_hybrid_document_processor(config=None):
+    """
+    Create hybrid document processor instance
+    
+    Args:
+        config: Configuration object
+    
+    Returns:
+        HybridDocumentProcessor: Configured processor
+    """
+    return HybridDocumentProcessor(config)
+
+
+def create_docx_parser(extract_images=True, preserve_structure=True, extract_tables=True):
+    """
+    Create advanced DOCX parser instance
+    
+    Args:
+        extract_images: Whether to extract images
+        preserve_structure: Whether to preserve structure
+        extract_tables: Whether to extract tables
+    
+    Returns:
+        AdvancedDocxParser: Configured parser
+    """
+    return AdvancedDocxParser(extract_images, preserve_structure, extract_tables)
+
+
+def create_doc_converter():
+    """
+    Create legacy DOC converter instance
+    
+    Returns:
+        LegacyDocConverter: DOC converter
+    """
+    return LegacyDocConverter()
+
+
+def check_document_processing_capabilities():
+    """
+    Check available document processing capabilities
+    
+    Returns:
+        dict: Comprehensive capability information
+    """
+    capabilities = {
+        'docx_available': DOCX_AVAILABLE,
+        'pandoc_available': PANDOC_AVAILABLE,
+        'pil_available': PIL_AVAILABLE,
+        'enhanced_pdf_available': ENHANCED_PDF_AVAILABLE,
+        'overall_status': 'unknown'
+    }
+    
+    # Determine overall status
+    basic_available = capabilities['docx_available'] or capabilities['pandoc_available']
+    
+    if basic_available and capabilities['enhanced_pdf_available']:
+        capabilities['overall_status'] = 'excellent'
+    elif basic_available:
+        capabilities['overall_status'] = 'good'
+    elif capabilities['enhanced_pdf_available']:
+        capabilities['overall_status'] = 'pdf_only'
+    else:
+        capabilities['overall_status'] = 'limited'
+    
+    # Feature availability
+    capabilities['features'] = {
+        'docx_parsing': capabilities['docx_available'] and capabilities['pil_available'],
+        'doc_conversion': capabilities['pandoc_available'],
+        'image_extraction': capabilities['pil_available'],
+        'pdf_processing': capabilities['enhanced_pdf_available'],
+        'structure_preservation': capabilities['docx_available'],
+        'table_extraction': capabilities['docx_available']
+    }
+    
+    return capabilities
+
+
+def print_document_processing_status():
+    """Print comprehensive document processing status"""
+    capabilities = check_document_processing_capabilities()
+    
+    print("Ì†ΩÌ≥Ñ Document Processing Capabilities:")
+    print(f"   DOCX parsing: {'‚úÖ' if capabilities['docx_available'] else '‚ùå'}")
+    print(f"   DOC conversion: {'‚úÖ' if capabilities['pandoc_available'] else '‚ùå'}")
+    print(f"   Image processing: {'‚úÖ' if capabilities['pil_available'] else '‚ùå'}")
+    print(f"   Enhanced PDF: {'‚úÖ' if capabilities['enhanced_pdf_available'] else '‚ùå'}")
+    
+    print(f"\nÌ†ΩÌ∫Ä Available Features:")
+    for feature, available in capabilities['features'].items():
+        status = "‚úÖ" if available else "‚ùå"
+        feature_name = feature.replace('_', ' ').title()
+        print(f"   {status} {feature_name}")
+    
+    print(f"\nÌ†ΩÌ≥ä Overall Status: {capabilities['overall_status'].upper()}")
+    
+    # Recommendations
+    recommendations = []
+    if not capabilities['docx_available']:
+        recommendations.append("Install python-docx: pip install python-docx")
+    if not capabilities['pandoc_available']:
+        recommendations.append("Install pypandoc: pip install pypandoc")
+    if not capabilities['pil_available']:
+        recommendations.append("Install Pillow: pip install Pillow")
+    if not capabilities['enhanced_pdf_available']:
+        recommendations.append("Install enhanced_pdf_processor.py module for PDF support")
+    
+    if recommendations:
+        print(f"\nÌ†ΩÌ≤° Recommendations:")
+        for rec in recommendations:
+            print(f"   ‚Ä¢ {rec}")
+    
+    return capabilities
+
+
+if __name__ == "__main__":
+    # Test document processing capabilities when run directly
+    print("Ì†æÌ∑™ Document Parsers - Capability Test")
+    print("=" * 60)
+    
+    capabilities = print_document_processing_status()
+    
+    # Test hybrid processor creation
+    print(f"\nÌ†ΩÌ¥ß Testing Hybrid Processor Creation...")
+    try:
+        processor = create_hybrid_document_processor()
+        processor.print_capabilities_summary()
+        print(f"‚úÖ Hybrid processor created successfully")
+    except Exception as e:
+        print(f"‚ùå Hybrid processor creation failed: {e}")
+    
+    print("=" * 60)

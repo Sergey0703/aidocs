@@ -22,6 +22,7 @@ __pycache__/
 # Logs
 *.log
 indexing_errors.log
+*/logs/
 
 # OS files
 .DS_Store

@@ -189,7 +189,8 @@ def main():
         'ocr_processor.py',
         'doc_converter.py',
         'document_parsers.py',
-        'loading_helpers.py'
+        'loading_helpers.py',
+        'enchanced_pdf_processor.py'
     ]
     
     print("=" * 60)
