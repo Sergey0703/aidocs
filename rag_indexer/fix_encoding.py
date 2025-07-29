@@ -190,7 +190,8 @@ def main():
         'doc_converter.py',
         'document_parsers.py',
         'loading_helpers.py',
-        'enhanced_pdf_processor.py'
+        'enhanced_pdf_processor.py',
+        'file_utils_core.py'
     ]
     
     print("=" * 60)

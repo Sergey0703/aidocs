@@ -151,16 +151,16 @@ class EnhancedPDFProcessor:
     
     def _print_initialization_status(self):
         """Print initialization status and available features"""
-        print(f"📄 Enhanced PDF Processor initialized:")
-        print(f"   PyMuPDF (speed): {'✅' if self.libraries_available['pymupdf'] else '❌'}")
-        print(f"   pdfplumber (tables): {'✅' if self.libraries_available['pdfplumber'] else '❌'}")
-        print(f"   pdf2image (OCR): {'✅' if self.libraries_available['pdf2image'] else '❌'}")
-        print(f"   Auto method selection: {'✅' if self.auto_method_selection else '❌'}")
-        print(f"   OCR fallback: {'✅' if self.enable_ocr_fallback else '❌'}")
-        print(f"   Table extraction: {'✅' if self.enable_table_extraction else '❌'}")
+        print(f"üìÑ Enhanced PDF Processor initialized:")
+        print(f"   PyMuPDF (speed): {'‚úÖ' if self.libraries_available['pymupdf'] else '‚ùå'}")
+        print(f"   pdfplumber (tables): {'‚úÖ' if self.libraries_available['pdfplumber'] else '‚ùå'}")
+        print(f"   pdf2image (OCR): {'‚úÖ' if self.libraries_available['pdf2image'] else '‚ùå'}")
+        print(f"   Auto method selection: {'‚úÖ' if self.auto_method_selection else '‚ùå'}")
+        print(f"   OCR fallback: {'‚úÖ' if self.enable_ocr_fallback else '‚ùå'}")
+        print(f"   Table extraction: {'‚úÖ' if self.enable_table_extraction else '‚ùå'}")
         
         if not any(self.libraries_available.values()):
-            print("   ⚠️ WARNING: No PDF libraries available!")
+            print("   ‚ö†Ô∏è WARNING: No PDF libraries available!")
             print("   Install with: pip install PyMuPDF pdfplumber pdf2image")
     
     def set_ocr_processor(self, ocr_processor):
@@ -171,7 +171,7 @@ class EnhancedPDFProcessor:
             ocr_processor: OCR processor instance
         """
         self.ocr_processor = ocr_processor
-        print(f"   🤖 OCR processor integrated for enhanced PDF processing")
+        print(f"   ü§ñ OCR processor integrated for enhanced PDF processing")
     
     def detect_pdf_type(self, file_path):
         """
@@ -747,26 +747,26 @@ class EnhancedPDFProcessor:
         Returns:
             list: List of Document objects
         """
-        print(f"   📄 Processing PDF: {os.path.basename(file_path)}")
+        print(f"   üìÑ Processing PDF: {os.path.basename(file_path)}")
         
         # Validate file
         is_valid, error_msg = validate_file_path(file_path)
         if not is_valid:
-            print(f"   ❌ Invalid file: {error_msg}")
+            print(f"   ‚ùå Invalid file: {error_msg}")
             return []
         
         # Get file info
         file_info = get_file_info(file_path)
         if 'error' in file_info:
-            print(f"   ❌ File info error: {file_info['error']}")
+            print(f"   ‚ùå File info error: {file_info['error']}")
             return []
         
         start_processing_time = time.time()
         
         # Analyze PDF to choose strategy
         pdf_analysis = self.detect_pdf_type(file_path)
-        print(f"   🔍 PDF type: {pdf_analysis['type']} ({pdf_analysis['page_count']} pages)")
-        print(f"   🎯 Strategy: {pdf_analysis['recommended_method']} (confidence: {pdf_analysis['confidence']:.1f})")
+        print(f"   üîç PDF type: {pdf_analysis['type']} ({pdf_analysis['page_count']} pages)")
+        print(f"   üéØ Strategy: {pdf_analysis['recommended_method']} (confidence: {pdf_analysis['confidence']:.1f})")
         
         # Extract text using optimal method
         extraction_method = pdf_analysis['recommended_method']
@@ -787,13 +787,13 @@ class EnhancedPDFProcessor:
             elif self.libraries_available['pdfplumber']:
                 text_content, extraction_info = self.extract_text_pdfplumber(file_path)
             else:
-                print(f"   ❌ No PDF processing libraries available")
+                print(f"   ‚ùå No PDF processing libraries available")
                 self.stats['method_usage']['failed_extractions'] += 1
                 return []
         
         # Check extraction result
         if 'error' in extraction_info:
-            print(f"   ❌ Extraction failed: {extraction_info['error']}")
+            print(f"   ‚ùå Extraction failed: {extraction_info['error']}")
             self.stats['method_usage']['failed_extractions'] += 1
             return []
         
@@ -801,34 +801,34 @@ class EnhancedPDFProcessor:
         is_valid, validation_details = self._validate_extracted_content(text_content, extraction_info)
         
         if not is_valid:
-            print(f"   ⚠️ Primary extraction insufficient: {validation_details.get('failure_reason', 'unknown')}")
+            print(f"   ‚ö†Ô∏è Primary extraction insufficient: {validation_details.get('failure_reason', 'unknown')}")
             
             # Try OCR fallback if available and not already used
             if self.enable_ocr_fallback and self.ocr_processor and extraction_method != 'ocr':
-                print(f"   🔄 Trying OCR fallback...")
+                print(f"   üîÑ Trying OCR fallback...")
                 fallback_text, ocr_info = self.extract_text_ocr_fallback(file_path)
                 
                 # Validate OCR result
                 ocr_valid, ocr_validation = self._validate_extracted_content(fallback_text, ocr_info)
                 
                 if ocr_valid and len(fallback_text.strip()) > len(text_content.strip()):
-                    print(f"   ✅ OCR fallback successful: {len(fallback_text)} chars")
+                    print(f"   ‚úÖ OCR fallback successful: {len(fallback_text)} chars")
                     text_content = fallback_text
                     extraction_info = ocr_info
                     extraction_info['fallback_used'] = True
                     self.stats['quality_analysis']['ocr_improvements'] += 1
                 elif len(text_content.strip()) >= self.min_content_length:
                     # Accept original if it meets minimum requirements
-                    print(f"   ⚠️ Using original extraction despite low quality: {len(text_content)} chars")
+                    print(f"   ‚ö†Ô∏è Using original extraction despite low quality: {len(text_content)} chars")
                 else:
-                    print(f"   ❌ All extraction methods failed")
+                    print(f"   ‚ùå All extraction methods failed")
                     self.stats['method_usage']['failed_extractions'] += 1
                     return []
             elif len(text_content.strip()) >= self.min_content_length:
                 # Accept content if it meets minimum requirements
-                print(f"   ⚠️ Using low-quality extraction: {len(text_content)} chars")
+                print(f"   ‚ö†Ô∏è Using low-quality extraction: {len(text_content)} chars")
             else:
-                print(f"   ❌ Extraction failed: insufficient content")
+                print(f"   ‚ùå Extraction failed: insufficient content")
                 self.stats['method_usage']['failed_extractions'] += 1
                 return []
         
@@ -871,8 +871,8 @@ class EnhancedPDFProcessor:
         else:
             self.stats['quality_analysis']['low_quality_extractions'] += 1
         
-        print(f"   ✅ SUCCESS: {len(text_content)} characters extracted in {extraction_info.get('processing_time', 0):.2f}s")
-        print(f"   📊 Quality score: {quality_score:.2f}, Method: {extraction_info.get('method', 'unknown')}")
+        print(f"   ‚úÖ SUCCESS: {len(text_content)} characters extracted in {extraction_info.get('processing_time', 0):.2f}s")
+        print(f"   üìä Quality score: {quality_score:.2f}, Method: {extraction_info.get('method', 'unknown')}")
         
         return [document]
     
@@ -923,53 +923,53 @@ class EnhancedPDFProcessor:
         """Print comprehensive processing summary"""
         stats = self.get_processing_stats()
         
-        print(f"\n📄 ENHANCED PDF PROCESSING SUMMARY:")
-        print(f"   📊 Files processed: {stats['files_processed']}")
-        print(f"   📄 Total pages: {stats['total_pages']}")
-        print(f"   📝 Text extracted: {stats['text_extracted_chars']:,} characters")
-        print(f"   ⏱️ Processing time: {stats['processing_time']:.2f}s")
-        print(f"   🚀 Average speed: {stats['average_processing_speed']:.1f} pages/sec")
-        print(f"   ✅ Success rate: {stats['success_rate']:.1f}%")
+        print(f"\nüìÑ ENHANCED PDF PROCESSING SUMMARY:")
+        print(f"   üìä Files processed: {stats['files_processed']}")
+        print(f"   üìÑ Total pages: {stats['total_pages']}")
+        print(f"   üìù Text extracted: {stats['text_extracted_chars']:,} characters")
+        print(f"   ‚è±Ô∏è Processing time: {stats['processing_time']:.2f}s")
+        print(f"   üöÄ Average speed: {stats['average_processing_speed']:.1f} pages/sec")
+        print(f"   ‚úÖ Success rate: {stats['success_rate']:.1f}%")
         
-        print(f"\n🔧 Method Usage:")
+        print(f"\nüîß Method Usage:")
         for method, count in stats['method_usage'].items():
             if count > 0:
                 method_name = method.replace('_', ' ').title()
-                print(f"   📋 {method_name}: {count}")
+                print(f"   üìã {method_name}: {count}")
         
-        print(f"\n🔄 Advanced Features:")
-        print(f"   🤖 OCR pages processed: {stats['ocr_pages']} ({stats['ocr_usage_rate']:.1f}%)")
-        print(f"   📊 Structured pages: {stats['structured_pages']}")
+        print(f"\nüîÑ Advanced Features:")
+        print(f"   ü§ñ OCR pages processed: {stats['ocr_pages']} ({stats['ocr_usage_rate']:.1f}%)")
+        print(f"   üìä Structured pages: {stats['structured_pages']}")
         
         # Rotation statistics
         rotation_stats = stats['rotation_stats']
         if rotation_stats['rotations_applied'] > 0:
-            print(f"   🔄 Auto-rotation applied: {rotation_stats['rotations_applied']} times")
-            print(f"   📈 Quality improvements: {rotation_stats['improvements_found']}")
+            print(f"   üîÑ Auto-rotation applied: {rotation_stats['rotations_applied']} times")
+            print(f"   üìà Quality improvements: {rotation_stats['improvements_found']}")
         
         # Quality analysis
         quality_stats = stats['quality_analysis']
         total_quality_analyzed = quality_stats['high_quality_extractions'] + quality_stats['low_quality_extractions']
         if total_quality_analyzed > 0:
             high_quality_rate = (quality_stats['high_quality_extractions'] / total_quality_analyzed) * 100
-            print(f"\n📊 Quality Analysis:")
-            print(f"   🎯 High quality extractions: {quality_stats['high_quality_extractions']} ({high_quality_rate:.1f}%)")
-            print(f"   ⚠️ Low quality extractions: {quality_stats['low_quality_extractions']}")
-            print(f"   🔧 OCR improvements: {quality_stats['ocr_improvements']} ({stats['quality_improvement_rate']:.1f}%)")
+            print(f"\nüìä Quality Analysis:")
+            print(f"   üéØ High quality extractions: {quality_stats['high_quality_extractions']} ({high_quality_rate:.1f}%)")
+            print(f"   ‚ö†Ô∏è Low quality extractions: {quality_stats['low_quality_extractions']}")
+            print(f"   üîß OCR improvements: {quality_stats['ocr_improvements']} ({stats['quality_improvement_rate']:.1f}%)")
         
         # Performance metrics
         if stats['average_chars_per_page'] > 0:
-            print(f"\n📈 Performance Metrics:")
-            print(f"   📄 Average chars per page: {stats['average_chars_per_page']:.0f}")
+            print(f"\nüìà Performance Metrics:")
+            print(f"   üìÑ Average chars per page: {stats['average_chars_per_page']:.0f}")
             if stats['files_processed'] > 0:
                 avg_file_size = stats['text_extracted_chars'] / stats['files_processed']
-                print(f"   📊 Average extraction per file: {avg_file_size:.0f} chars")
+                print(f"   üìä Average extraction per file: {avg_file_size:.0f} chars")
         
         # Feature status
         features = stats['features_enabled']
-        print(f"\n⚙️ Features Status:")
+        print(f"\n‚öôÔ∏è Features Status:")
         for feature, enabled in features.items():
-            status = "✅" if enabled else "❌"
+            status = "‚úÖ" if enabled else "‚ùå"
             feature_name = feature.replace('_', ' ').title()
             print(f"   {status} {feature_name}")
     
@@ -1000,7 +1000,7 @@ class EnhancedPDFProcessor:
                 'ocr_improvements': 0
             }
         }
-        print("📊 Enhanced PDF processor statistics reset")
+        print("üìä Enhanced PDF processor statistics reset")
 
 
 def create_enhanced_pdf_processor(config=None):
@@ -1062,23 +1062,23 @@ def check_enhanced_pdf_capabilities():
         capabilities['recommendations'].append("Install all PDF libraries: pip install PyMuPDF pdfplumber pdf2image")
     
     # Print status
-    print("📄 Enhanced PDF Processing Capabilities:")
-    print(f"   PyMuPDF (speed): {'✅' if capabilities['libraries']['pymupdf'] else '❌'}")
-    print(f"   pdfplumber (tables): {'✅' if capabilities['libraries']['pdfplumber'] else '❌'}")
-    print(f"   pdf2image (OCR): {'✅' if capabilities['libraries']['pdf2image'] else '❌'}")
+    print("üìÑ Enhanced PDF Processing Capabilities:")
+    print(f"   PyMuPDF (speed): {'‚úÖ' if capabilities['libraries']['pymupdf'] else '‚ùå'}")
+    print(f"   pdfplumber (tables): {'‚úÖ' if capabilities['libraries']['pdfplumber'] else '‚ùå'}")
+    print(f"   pdf2image (OCR): {'‚úÖ' if capabilities['libraries']['pdf2image'] else '‚ùå'}")
     
-    print(f"\n🚀 Available Features:")
+    print(f"\nüöÄ Available Features:")
     for feature, available in capabilities['features'].items():
-        status = "✅" if available else "❌"
+        status = "‚úÖ" if available else "‚ùå"
         feature_name = feature.replace('_', ' ').title()
         print(f"   {status} {feature_name}")
     
-    print(f"\n📊 Overall Status: {capabilities['overall_status'].upper()}")
+    print(f"\nüìä Overall Status: {capabilities['overall_status'].upper()}")
     
     if capabilities['recommendations']:
-        print(f"\n💡 Recommendations:")
+        print(f"\nüí° Recommendations:")
         for rec in capabilities['recommendations']:
-            print(f"   • {rec}")
+            print(f"   ‚Ä¢ {rec}")
     
     return capabilities
 
@@ -1156,16 +1156,16 @@ def check_pdf_processing_capabilities():
 
 if __name__ == "__main__":
     # Test enhanced PDF processor capabilities when run directly
-    print("🧪 Enhanced PDF Processor - Capability Test")
+    print("üß™ Enhanced PDF Processor - Capability Test")
     print("=" * 60)
     
     capabilities = check_enhanced_pdf_capabilities()
     
     if capabilities['overall_status'] != 'unavailable':
-        print(f"\n✅ Enhanced PDF processor ready!")
-        print(f"📄 Features available: {sum(capabilities['features'].values())}/{len(capabilities['features'])}")
+        print(f"\n‚úÖ Enhanced PDF processor ready!")
+        print(f"üìÑ Features available: {sum(capabilities['features'].values())}/{len(capabilities['features'])}")
     else:
-        print(f"\n❌ Enhanced PDF processor not available")
-        print(f"📋 Install required libraries to enable PDF processing")
+        print(f"\n‚ùå Enhanced PDF processor not available")
+        print(f"üìã Install required libraries to enable PDF processing")
     
     print("=" * 60)

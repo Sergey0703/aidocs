@@ -4,12 +4,14 @@
 Enhanced Master RAG Document Indexer Controller
 Manages processing of multiple subdirectories with advanced features integration
 ENHANCED: Full integration with new PDF processing, backup system, and safe restarts
+FIXED: Backup directory correctly set to root level (./data/doc_backups)
 
 This script orchestrates the indexing process across multiple subdirectories:
 - Scans for subdirectories in the specified root path
 - EXCLUDES service directories (doc_backups, logs, etc.) from processing
 - Processes each subdirectory independently using the enhanced indexer
 - Integrates with enhanced PDF processing and backup systems
+- FIXED: Sets backup directory at root level for all subdirectories
 - Manages safe Ollama restarts optimized with new batch restart system
 - Maintains organized logs with comprehensive directory analysis
 - Provides enhanced progress tracking and error handling with new features
@@ -21,6 +23,7 @@ Configuration:
     Set MASTER_DOCUMENTS_DIR in .env file or modify the default path below
     The script will process all subdirectories found in the specified path
     EXCEPT service directories which contain backup/system files
+    Backup directory will be set to parent/doc_backups for all subdirectories
 """
 
 import os
@@ -161,24 +164,24 @@ def print_enhanced_features_status(features):
     log_master_message("ENHANCED FEATURES STATUS:")
     
     # PDF Processing
-    pdf_status = "? AVAILABLE" if features['pdf_processing']['available'] else "? LIMITED"
-    log_master_message(f"  ?? Enhanced PDF Processing: {pdf_status}")
+    pdf_status = "‚úÖ AVAILABLE" if features['pdf_processing']['available'] else "‚ùå LIMITED"
+    log_master_message(f"  Ì†ΩÌ≥Ñ Enhanced PDF Processing: {pdf_status}")
     if features['pdf_processing']['libraries']:
         log_master_message(f"     Available: {', '.join(features['pdf_processing']['libraries'])}")
     if features['pdf_processing']['missing']:
         log_master_message(f"     Missing: {', '.join(features['pdf_processing']['missing'])}")
     
     # OCR Processing
-    ocr_status = "? AVAILABLE" if features['ocr_processing']['available'] else "? DISABLED"
-    log_master_message(f"  ?? OCR Processing: {ocr_status}")
+    ocr_status = "‚úÖ AVAILABLE" if features['ocr_processing']['available'] else "‚ùå DISABLED"
+    log_master_message(f"  Ì†ΩÌ¥ç OCR Processing: {ocr_status}")
     if features['ocr_processing']['libraries']:
         log_master_message(f"     Available: {', '.join(features['ocr_processing']['libraries'])}")
     if features['ocr_processing']['missing']:
         log_master_message(f"     Missing: {', '.join(features['ocr_processing']['missing'])}")
     
     # Document Conversion
-    conv_status = "? AVAILABLE" if features['doc_conversion']['available'] else "? LIMITED"
-    log_master_message(f"  ?? Document Conversion: {conv_status}")
+    conv_status = "‚úÖ AVAILABLE" if features['doc_conversion']['available'] else "‚ùå LIMITED"
+    log_master_message(f"  Ì†ΩÌ¥Ñ Document Conversion: {conv_status}")
     if features['doc_conversion']['tools']:
         log_master_message(f"     Available: {', '.join(features['doc_conversion']['tools'])}")
     if features['doc_conversion']['missing']:
@@ -378,13 +381,13 @@ def smart_restart_ollama_service(directory_index, total_directories, last_restar
             import requests
             response = requests.get("http://localhost:11434/api/tags", timeout=5)
             if response.status_code == 200:
-                log_master_message("? Ollama service is responding correctly")
+                log_master_message("‚úÖ Ollama service is responding correctly")
                 return True, current_time
             else:
-                log_master_message(f"?? Ollama responded with status {response.status_code}")
+                log_master_message(f"‚ö†Ô∏è Ollama responded with status {response.status_code}")
                 return True, current_time  # Continue anyway
         except Exception as e:
-            log_master_message(f"?? Could not verify Ollama status: {e}")
+            log_master_message(f"‚ö†Ô∏è Could not verify Ollama status: {e}")
             return True, current_time  # Continue anyway
         
     except subprocess.TimeoutExpired:
@@ -451,7 +454,7 @@ def scan_subdirectories(root_path):
                             log_master_message(f"  Est. time: {analysis['estimated_processing_time']/60:.1f} minutes")
                         if analysis['potential_issues']:
                             for issue in analysis['potential_issues']:
-                                log_master_message(f"  ?? {issue}")
+                                log_master_message(f"  ‚ö†Ô∏è {issue}")
                     else:
                         excluded_subdirectories.append((str(item), "No files found"))
                         log_master_message(f"EXCLUDED: {item.name} - No files found")
@@ -530,6 +533,10 @@ def process_single_directory(directory_path, directory_index, total_directories,
             else:
                 log_master_message(f"  Estimated processing time: {est_time/60:.1f} minutes")
     
+    # FIXED: Log the backup directory that will be used
+    backup_dir = os.getenv('DOC_BACKUP_ABSOLUTE_PATH', 'Not set')
+    log_master_message(f"  Fixed backup directory: {backup_dir}")
+    
     log_master_message(f"{'='*80}")
     
     # Create a temporary .env override for this directory
@@ -545,6 +552,7 @@ def process_single_directory(directory_path, directory_index, total_directories,
             f.write(f"ENHANCED PROCESSING DIRECTORY: {directory_path}\n")
             f.write(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Directory {directory_index} of {total_directories}\n")
+            f.write(f"Fixed backup directory: {backup_dir}\n")
             if directory_analysis:
                 f.write(f"Files: {directory_analysis.get('total_files', 0)} total\n")
                 if directory_analysis.get('doc_files', 0) > 0:
@@ -563,7 +571,8 @@ def process_single_directory(directory_path, directory_index, total_directories,
         'success': False,
         'processing_time': 0,
         'analysis': directory_analysis,
-        'features_used': []
+        'features_used': [],
+        'backup_directory': backup_dir
     }
     
     try:
@@ -584,14 +593,14 @@ def process_single_directory(directory_path, directory_index, total_directories,
         processing_stats['processing_time'] = processing_time
         
         if result.returncode == 0:
-            log_master_message(f"? SUCCESS: Directory {directory_name} processed successfully in {processing_time:.1f}s")
+            log_master_message(f"‚úÖ SUCCESS: Directory {directory_name} processed successfully in {processing_time:.1f}s")
             
             # Enhanced success logging
             if directory_analysis:
                 files_processed = directory_analysis.get('total_files', 0)
                 if files_processed > 0:
                     rate = files_processed / processing_time if processing_time > 0 else 0
-                    log_master_message(f"?? Processing rate: {rate:.1f} files/second")
+                    log_master_message(f"Ì†ΩÌ≥ä Processing rate: {rate:.1f} files/second")
                 
                 # Log which enhanced features were likely used
                 features_used = []
@@ -603,19 +612,19 @@ def process_single_directory(directory_path, directory_index, total_directories,
                     features_used.append('ocr_with_auto_rotation')
                 
                 if features_used:
-                    log_master_message(f"?? Enhanced features used: {', '.join(features_used)}")
+                    log_master_message(f"Ì†ΩÌ∫Ä Enhanced features used: {', '.join(features_used)}")
                     processing_stats['features_used'] = features_used
             
             processing_stats['success'] = True
             return True, processing_stats
         else:
-            log_master_message(f"? ERROR: Directory {directory_name} processing failed with return code {result.returncode}")
+            log_master_message(f"‚ùå ERROR: Directory {directory_name} processing failed with return code {result.returncode}")
             processing_stats['error_code'] = result.returncode
             return False, processing_stats
             
     except Exception as e:
         processing_time = time.time() - start_time if 'start_time' in locals() else 0
-        log_master_message(f"? EXCEPTION: Error processing {directory_name}: {e}")
+        log_master_message(f"‚ùå EXCEPTION: Error processing {directory_name}: {e}")
         processing_stats['processing_time'] = processing_time
         processing_stats['error'] = str(e)
         return False, processing_stats
@@ -648,7 +657,7 @@ def create_enhanced_final_summary(processed_directories, successful_directories,
     log_master_message(f"{'='*80}")
     
     # Basic statistics
-    log_master_message(f"?? Processing Statistics:")
+    log_master_message(f"Ì†ΩÌ≥ä Processing Statistics:")
     log_master_message(f"  Total directories found: {processed_directories + excluded_directories}")
     log_master_message(f"  Directories processed: {processed_directories}")
     log_master_message(f"  Directories excluded: {excluded_directories} (service directories)")
@@ -669,7 +678,7 @@ def create_enhanced_final_summary(processed_directories, successful_directories,
     # Enhanced feature usage analysis
     if processing_stats_list:
         log_master_message(f"")
-        log_master_message(f"?? Enhanced Features Usage Analysis:")
+        log_master_message(f"Ì†ΩÌ∫Ä Enhanced Features Usage Analysis:")
         
         # Aggregate feature usage
         feature_usage = {}
@@ -693,7 +702,7 @@ def create_enhanced_final_summary(processed_directories, successful_directories,
         
         # Report file type processing
         if total_files_by_type['total_files'] > 0:
-            log_master_message(f"  ?? Files Processed by Type:")
+            log_master_message(f"  Ì†ΩÌ≥Å Files Processed by Type:")
             log_master_message(f"    Total files: {total_files_by_type['total_files']:,}")
             if total_files_by_type['doc_files'] > 0:
                 log_master_message(f"    .doc files: {total_files_by_type['doc_files']:,} (converted + backed up + deleted)")
@@ -704,7 +713,7 @@ def create_enhanced_final_summary(processed_directories, successful_directories,
         
         # Report feature usage
         if feature_usage:
-            log_master_message(f"  ?? Enhanced Features Used:")
+            log_master_message(f"  Ì†ΩÌ¥ß Enhanced Features Used:")
             for feature, count in feature_usage.items():
                 feature_display = feature.replace('_', ' ').title()
                 log_master_message(f"    {feature_display}: {count} directories")
@@ -717,7 +726,7 @@ def create_enhanced_final_summary(processed_directories, successful_directories,
             slowest_time = max(processing_times)
             avg_time = sum(processing_times) / len(processing_times)
             
-            log_master_message(f"  ? Performance Insights:")
+            log_master_message(f"  ‚ö° Performance Insights:")
             log_master_message(f"    Fastest directory: {fastest_time:.1f}s")
             log_master_message(f"    Slowest directory: {slowest_time:.1f}s")
             log_master_message(f"    Average time: {avg_time:.1f}s")
@@ -730,46 +739,54 @@ def create_enhanced_final_summary(processed_directories, successful_directories,
     
     # Enhanced features availability summary
     log_master_message(f"")
-    log_master_message(f"?? Enhanced Features Status:")
+    log_master_message(f"Ì†ΩÌ¥ß Enhanced Features Status:")
     if features_status['pdf_processing']['available']:
-        log_master_message(f"  ? Enhanced PDF Processing: Available")
+        log_master_message(f"  ‚úÖ Enhanced PDF Processing: Available")
         log_master_message(f"     Libraries: {', '.join(features_status['pdf_processing']['libraries'])}")
     else:
-        log_master_message(f"  ? Enhanced PDF Processing: Limited")
+        log_master_message(f"  ‚ùå Enhanced PDF Processing: Limited")
         log_master_message(f"     Missing: {', '.join(features_status['pdf_processing']['missing'])}")
     
     if features_status['ocr_processing']['available']:
-        log_master_message(f"  ? OCR with Auto-rotation: Available")
+        log_master_message(f"  ‚úÖ OCR with Auto-rotation: Available")
         log_master_message(f"     Libraries: {', '.join(features_status['ocr_processing']['libraries'])}")
     else:
-        log_master_message(f"  ? OCR Processing: Disabled")
+        log_master_message(f"  ‚ùå OCR Processing: Disabled")
         log_master_message(f"     Missing: {', '.join(features_status['ocr_processing']['missing'])}")
     
     if features_status['doc_conversion']['available']:
-        log_master_message(f"  ? Document Conversion with Backup: Available")
+        log_master_message(f"  ‚úÖ Document Conversion with Backup: Available")
         log_master_message(f"     Tools: {', '.join(features_status['doc_conversion']['tools'])}")
-        log_master_message(f"     Process: .doc ? .docx + backup + delete original")
+        log_master_message(f"     Process: .doc ‚Üí .docx + backup + delete original")
     else:
-        log_master_message(f"  ? Document Conversion: Limited")
+        log_master_message(f"  ‚ùå Document Conversion: Limited")
         log_master_message(f"     Missing: {', '.join(features_status['doc_conversion']['missing'])}")
+    
+    # FIXED: Enhanced backup system information
+    backup_dir = os.getenv('DOC_BACKUP_ABSOLUTE_PATH', 'Not configured')
+    log_master_message(f"")
+    log_master_message(f"Ì†ΩÌ≥Ç Fixed Backup System:")
+    log_master_message(f"  ‚úÖ Backup directory: {backup_dir}")
+    log_master_message(f"  ‚úÖ All subdirectories use the same backup location")
+    log_master_message(f"  ‚úÖ Preserves original directory structure")
+    log_master_message(f"  ‚úÖ Original .doc files deleted after successful backup")
     
     # Service directories information
     log_master_message(f"")
-    log_master_message(f"?? Service Directories Management:")
+    log_master_message(f"Ì†ΩÌ≥Ç Service Directories Management:")
     if excluded_directories > 0:
-        log_master_message(f"  ? Excluded {excluded_directories} service directories:")
-        log_master_message(f"     • doc_backups (backup files from .doc conversion)")
-        log_master_message(f"     • logs (processing and error logs)")
-        log_master_message(f"     • temp, cache, .git, __pycache__, etc.")
-        log_master_message(f"  ? This prevents processing backup/system files")
-        log_master_message(f"  ? Original .doc files deleted after backup and conversion")
+        log_master_message(f"  ‚úÖ Excluded {excluded_directories} service directories:")
+        log_master_message(f"     ‚Ä¢ doc_backups (backup files from .doc conversion)")
+        log_master_message(f"     ‚Ä¢ logs (processing and error logs)")
+        log_master_message(f"     ‚Ä¢ temp, cache, .git, __pycache__, etc.")
+        log_master_message(f"  ‚úÖ This prevents processing backup/system files")
     else:
-        log_master_message(f"  ?? No service directories found to exclude")
+        log_master_message(f"  ‚ÑπÔ∏è No service directories found to exclude")
     
     # Error analysis
     if failed_directories > 0:
         log_master_message(f"")
-        log_master_message(f"?? Error Analysis:")
+        log_master_message(f"‚ö†Ô∏è Error Analysis:")
         log_master_message(f"  Failed directories: {failed_directories}")
         
         failed_stats = [s for s in processing_stats_list if not s.get('success')]
@@ -778,49 +795,50 @@ def create_enhanced_final_summary(processed_directories, successful_directories,
             for stats in failed_stats:
                 dir_name = os.path.basename(stats.get('directory_path', 'Unknown'))
                 error_info = stats.get('error', stats.get('error_code', 'Unknown error'))
-                log_master_message(f"    • {dir_name}: {error_info}")
+                log_master_message(f"    ‚Ä¢ {dir_name}: {error_info}")
         
         log_master_message(f"  Check master log and individual directory logs for details")
         log_master_message(f"  Detailed failed files: ./logs/failed_files_details.log")
     else:
         log_master_message(f"")
-        log_master_message(f"?? SUCCESS: All valid directories processed successfully!")
-        log_master_message(f"? Enhanced backup system preserved all original .doc files")
-        log_master_message(f"? PDF processing extracted maximum text content")
-        log_master_message(f"? OCR auto-rotation optimized image text extraction")
+        log_master_message(f"Ì†ºÌæâ SUCCESS: All valid directories processed successfully!")
+        log_master_message(f"‚úÖ Enhanced backup system preserved all original .doc files")
+        log_master_message(f"‚úÖ PDF processing extracted maximum text content")
+        log_master_message(f"‚úÖ OCR auto-rotation optimized image text extraction")
     
     # System integration notes
     log_master_message(f"")
-    log_master_message(f"?? System Integration Notes:")
-    log_master_message(f"  • Safe Ollama restarts: Coordinated with batch-level restart system")
-    log_master_message(f"  • Backup system: Preserves directory structure in doc_backups/")
-    log_master_message(f"  • Original cleanup: .doc files deleted after successful backup")
-    log_master_message(f"  • PDF processing: Auto method selection for optimal extraction")
-    log_master_message(f"  • OCR enhancement: Auto-rotation for improved text quality")
-    log_master_message(f"  • Blacklist filtering: Automatic exclusion of service directories")
+    log_master_message(f"Ì†ΩÌ¥ß System Integration Notes:")
+    log_master_message(f"  ‚Ä¢ Safe Ollama restarts: Coordinated with batch-level restart system")
+    log_master_message(f"  ‚Ä¢ Fixed backup system: {backup_dir}")
+    log_master_message(f"  ‚Ä¢ Original cleanup: .doc files deleted after successful backup")
+    log_master_message(f"  ‚Ä¢ PDF processing: Auto method selection for optimal extraction")
+    log_master_message(f"  ‚Ä¢ OCR enhancement: Auto-rotation for improved text quality")
+    log_master_message(f"  ‚Ä¢ Blacklist filtering: Automatic exclusion of service directories")
     
     log_master_message(f"")
-    log_master_message(f"?? Logs and Reports:")
+    log_master_message(f"Ì†ΩÌ≥ã Logs and Reports:")
     log_master_message(f"  Master processing log: ./logs/master_indexer.log")
     log_master_message(f"  Detailed failed files: ./logs/failed_files_details.log")
     log_master_message(f"  Individual directory logs: ./logs/ (per-directory)")
-    log_master_message(f"  Backup location: ../doc_backups/ (preserves structure)")
+    log_master_message(f"  Fixed backup location: {backup_dir}")
     log_master_message(f"{'='*80}")
 
 
 def main():
     """
-    Enhanced main function with full integration of new features
+    Enhanced main function with full integration of new features and FIXED backup directory
     """
     print("Enhanced Master RAG Document Indexer Controller")
     print("=" * 60)
-    print("?? ENHANCED FEATURES:")
-    print("  • Advanced PDF processing with auto method selection")
-    print("  • Document conversion with structured backup + original deletion")
-    print("  • OCR processing with auto-rotation optimization")
-    print("  • Smart Ollama restart coordination with batch system")
-    print("  • Automatic service directory exclusion")
-    print("  • Comprehensive content analysis and progress tracking")
+    print("Ì†ΩÌ∫Ä ENHANCED FEATURES:")
+    print("  ‚Ä¢ Advanced PDF processing with auto method selection")
+    print("  ‚Ä¢ Document conversion with structured backup + original deletion")
+    print("  ‚Ä¢ OCR processing with auto-rotation optimization")
+    print("  ‚Ä¢ Smart Ollama restart coordination with batch system")
+    print("  ‚Ä¢ Automatic service directory exclusion")
+    print("  ‚Ä¢ FIXED: Backup directory set at root level for all subdirectories")
+    print("  ‚Ä¢ Comprehensive content analysis and progress tracking")
     print("=" * 60)
     
     # Load environment variables
@@ -829,8 +847,17 @@ def main():
     # Get root directory from environment or use default
     root_directory = os.getenv("MASTER_DOCUMENTS_DIR", "./data/634/2025")
     
+    # FIXED: Set fixed backup directory for all subdirectories
+    if not os.getenv("DOC_BACKUP_ABSOLUTE_PATH"):
+        master_backup_dir = os.path.join(os.path.dirname(root_directory), "doc_backups")
+        os.environ['DOC_BACKUP_ABSOLUTE_PATH'] = master_backup_dir
+        print(f"Ì†ΩÌ≥Ç Fixed backup directory: {master_backup_dir}")
+    else:
+        print(f"Ì†ΩÌ≥Ç Using configured backup directory: {os.getenv('DOC_BACKUP_ABSOLUTE_PATH')}")
+    
     log_master_message(f"Enhanced Master Indexer started")
     log_master_message(f"Root directory: {root_directory}")
+    log_master_message(f"Fixed backup directory: {os.getenv('DOC_BACKUP_ABSOLUTE_PATH', 'Not set')}")
     log_master_message(f"Service directories excluded: {', '.join(EXCLUDED_DIRECTORIES)}")
     
     # Check enhanced features availability
@@ -885,15 +912,15 @@ def main():
             
             if success:
                 successful_directories += 1
-                log_master_message(f"? Directory {directory_name} completed successfully")
+                log_master_message(f"‚úÖ Directory {directory_name} completed successfully")
                 
                 # Enhanced success logging with feature usage
                 if processing_stats.get('features_used'):
                     features_used = ', '.join(processing_stats['features_used'])
-                    log_master_message(f"?? Enhanced features used: {features_used}")
+                    log_master_message(f"Ì†ΩÌ∫Ä Enhanced features used: {features_used}")
             else:
                 failed_directories += 1
-                log_master_message(f"? Directory {directory_name} failed")
+                log_master_message(f"‚ùå Directory {directory_name} failed")
             
             # Smart Ollama restart coordination (works with batch restart system)
             if index < total_valid_directories:
@@ -904,9 +931,9 @@ def main():
                 )
                 
                 if restart_performed:
-                    log_master_message(f"? Smart Ollama restart completed")
+                    log_master_message(f"‚úÖ Smart Ollama restart completed")
                 else:
-                    log_master_message(f"?? Batch restart system will handle memory management")
+                    log_master_message(f"‚ÑπÔ∏è Batch restart system will handle memory management")
                 
                 log_master_message(f"Ready to process next directory")
             
@@ -934,7 +961,8 @@ def main():
                 'success': False,
                 'error': str(e),
                 'processing_time': 0,
-                'analysis': directory_analysis
+                'analysis': directory_analysis,
+                'backup_directory': os.getenv('DOC_BACKUP_ABSOLUTE_PATH', 'Not set')
             }
             processing_stats_list.append(error_stats)
     
@@ -948,8 +976,8 @@ def main():
     )
     
     # Enhanced console summary
-    print(f"\n?? Enhanced Master Indexer Completed!")
-    print(f"?? Statistics:")
+    print(f"\nÌ†ºÌæØ Enhanced Master Indexer Completed!")
+    print(f"Ì†ΩÌ≥ä Statistics:")
     print(f"  Total directories found: {total_valid_directories + excluded_count}")
     print(f"  Valid directories processed: {total_valid_directories}")
     print(f"  Service directories excluded: {excluded_count}")
@@ -958,7 +986,7 @@ def main():
     print(f"  Total time: {total_time/60:.1f} minutes")
     
     # Enhanced features summary
-    print(f"?? Enhanced Features Used:")
+    print(f"Ì†ΩÌ∫Ä Enhanced Features Used:")
     total_features_used = set()
     for stats in processing_stats_list:
         if stats.get('success') and stats.get('features_used'):
@@ -967,19 +995,23 @@ def main():
     if total_features_used:
         for feature in total_features_used:
             feature_display = feature.replace('_', ' ').title()
-            print(f"  ? {feature_display}")
+            print(f"  ‚úÖ {feature_display}")
     else:
-        print(f"  ?? Standard processing used (no enhanced features needed)")
+        print(f"  ‚ÑπÔ∏è Standard processing used (no enhanced features needed)")
     
-    print(f"?? Logs: ./logs/master_indexer.log")
-    print(f"?? Backups: ../doc_backups/ (if .doc files were processed)")
+    # FIXED: Show backup directory information
+    backup_dir = os.getenv('DOC_BACKUP_ABSOLUTE_PATH', 'Not configured')
+    print(f"Ì†ΩÌ≥Ç Backup System:")
+    print(f"  Fixed backup directory: {backup_dir}")
+    print(f"  All .doc files backed up to same location")
+    print(f"Ì†ΩÌ≥ã Logs: ./logs/master_indexer.log")
     
     # Exit with appropriate code
     if failed_directories > 0:
-        print(f"?? {failed_directories} directories failed - check logs for details")
+        print(f"‚ö†Ô∏è {failed_directories} directories failed - check logs for details")
         sys.exit(1)
     else:
-        print(f"?? All directories processed successfully!")
+        print(f"Ì†ºÌæâ All directories processed successfully!")
         sys.exit(0)
 
 

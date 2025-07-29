@@ -217,12 +217,10 @@ class Config:
             print("WARNING: No directories in blacklist - all directories will be scanned")
     
     def get_backup_directory(self):
-        """
-        Get the backup directory path based on DOCUMENTS_DIR
-        
-        Returns:
-            str: Path to backup directory
-        """
+        absolute_backup = os.getenv("DOC_BACKUP_ABSOLUTE_PATH")
+        if absolute_backup:
+          return absolute_backup
+    
         from pathlib import Path
         documents_path = Path(self.DOCUMENTS_DIR)
         backup_path = documents_path.parent / self.DOC_BACKUP_BASE_NAME
