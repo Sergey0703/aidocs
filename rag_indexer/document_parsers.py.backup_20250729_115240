@@ -209,7 +209,7 @@ class AdvancedDocxParser:
                 
                 # Check if paragraph is a list item
                 elif paragraph.style.name.startswith('List'):
-                    structured_content.append(f"‚Ä¢ {paragraph.text.strip()}")
+                    structured_content.append(f"• {paragraph.text.strip()}")
                     metadata_info['list_count'] += 1
                 
                 # Regular paragraph
@@ -420,7 +420,7 @@ class HybridDocumentProcessor:
         if self.advanced_parsing_enabled and ENHANCED_PDF_AVAILABLE:
             try:
                 self.pdf_processor = create_enhanced_pdf_processor(config)
-                print(f"   Ì†ΩÌ≥Ñ Enhanced PDF processor initialized")
+                print(f"   ������ Enhanced PDF processor initialized")
             except Exception as e:
                 print(f"   WARNING: Enhanced PDF processor initialization failed: {e}")
                 print(f"   INFO: PDF files will be skipped or use basic fallback")
@@ -443,7 +443,7 @@ class HybridDocumentProcessor:
         # Also set for PDF processor if available
         if self.pdf_processor:
             self.pdf_processor.set_ocr_processor(ocr_processor)
-            print(f"   Ì†ΩÌ¥ó OCR processor integrated with PDF processor")
+            print(f"   ������ OCR processor integrated with PDF processor")
     
     def process_pdf_file(self, file_path):
         """
@@ -663,28 +663,28 @@ class HybridDocumentProcessor:
         """Print summary of processing capabilities"""
         capabilities = self.get_processing_capabilities()
         
-        print(f"\nÌ†ΩÌ≥Ñ Hybrid Document Processor Capabilities:")
-        print(f"   Ì†ΩÌ≥ã Advanced parsing: {'‚úÖ' if capabilities['advanced_parsing_enabled'] else '‚ùå'}")
-        print(f"   Ì†ΩÌ≥Ñ DOCX parser: {'‚úÖ' if capabilities['docx_parser_available'] else '‚ùå'}")
-        print(f"   Ì†ΩÌ≥Ñ DOC converter: {'‚úÖ' if capabilities['doc_converter_available'] else '‚ùå'}")
-        print(f"   Ì†ΩÌ≥Ñ Enhanced PDF processor: {'‚úÖ' if capabilities['pdf_processor_available'] else '‚ùå'}")
-        print(f"   Ì†ΩÌ¥ó OCR processor: {'‚úÖ' if capabilities['ocr_processor_available'] else '‚ùå'}")
+        print(f"\n������ Hybrid Document Processor Capabilities:")
+        print(f"   ������ Advanced parsing: {'✅' if capabilities['advanced_parsing_enabled'] else '❌'}")
+        print(f"   ������ DOCX parser: {'✅' if capabilities['docx_parser_available'] else '❌'}")
+        print(f"   ������ DOC converter: {'✅' if capabilities['doc_converter_available'] else '❌'}")
+        print(f"   ������ Enhanced PDF processor: {'✅' if capabilities['pdf_processor_available'] else '❌'}")
+        print(f"   ������ OCR processor: {'✅' if capabilities['ocr_processor_available'] else '❌'}")
         
-        print(f"\nÌ†ΩÌ≥ö Library Availability:")
+        print(f"\n������ Library Availability:")
         libs = capabilities['library_availability']
         for lib, available in libs.items():
-            status = "‚úÖ" if available else "‚ùå"
+            status = "✅" if available else "❌"
             print(f"   {status} {lib}")
         
         features = capabilities['features']
-        print(f"\n‚öôÔ∏è Feature Settings:")
+        print(f"\n⚙️ Feature Settings:")
         for feature, enabled in features.items():
-            status = "‚úÖ" if enabled else "‚ùå"
+            status = "✅" if enabled else "❌"
             feature_name = feature.replace('_', ' ').title()
             print(f"   {status} {feature_name}")
         
         if not capabilities['enhanced_pdf_available']:
-            print(f"\n‚ö†Ô∏è Enhanced PDF processing not available:")
+            print(f"\n⚠️ Enhanced PDF processing not available:")
             print(f"   Install enhanced_pdf_processor.py module for full PDF support")
 
 
@@ -777,19 +777,19 @@ def print_document_processing_status():
     """Print comprehensive document processing status"""
     capabilities = check_document_processing_capabilities()
     
-    print("Ì†ΩÌ≥Ñ Document Processing Capabilities:")
-    print(f"   DOCX parsing: {'‚úÖ' if capabilities['docx_available'] else '‚ùå'}")
-    print(f"   DOC conversion: {'‚úÖ' if capabilities['pandoc_available'] else '‚ùå'}")
-    print(f"   Image processing: {'‚úÖ' if capabilities['pil_available'] else '‚ùå'}")
-    print(f"   Enhanced PDF: {'‚úÖ' if capabilities['enhanced_pdf_available'] else '‚ùå'}")
+    print("������ Document Processing Capabilities:")
+    print(f"   DOCX parsing: {'✅' if capabilities['docx_available'] else '❌'}")
+    print(f"   DOC conversion: {'✅' if capabilities['pandoc_available'] else '❌'}")
+    print(f"   Image processing: {'✅' if capabilities['pil_available'] else '❌'}")
+    print(f"   Enhanced PDF: {'✅' if capabilities['enhanced_pdf_available'] else '❌'}")
     
-    print(f"\nÌ†ΩÌ¥ß Available Features:")
+    print(f"\n������ Available Features:")
     for feature, available in capabilities['features'].items():
-        status = "‚úÖ" if available else "‚ùå"
+        status = "✅" if available else "❌"
         feature_name = feature.replace('_', ' ').title()
         print(f"   {status} {feature_name}")
     
-    print(f"\nÌ†ΩÌ≥ä Overall Status: {capabilities['overall_status'].upper()}")
+    print(f"\n������ Overall Status: {capabilities['overall_status'].upper()}")
     
     # Recommendations
     recommendations = []
@@ -803,27 +803,27 @@ def print_document_processing_status():
         recommendations.append("Install enhanced_pdf_processor.py module for PDF support")
     
     if recommendations:
-        print(f"\nÌ†ΩÌ≤° Recommendations:")
+        print(f"\n������ Recommendations:")
         for rec in recommendations:
-            print(f"   ‚Ä¢ {rec}")
+            print(f"   • {rec}")
     
     return capabilities
 
 
 if __name__ == "__main__":
     # Test document processing capabilities when run directly
-    print("Ì†ΩÌ¥ß Document Parsers - Capability Test")
+    print("������ Document Parsers - Capability Test")
     print("=" * 60)
     
     capabilities = print_document_processing_status()
     
     # Test hybrid processor creation
-    print(f"\nÌ†æÌ∑™ Testing Hybrid Processor Creation...")
+    print(f"\n������ Testing Hybrid Processor Creation...")
     try:
         processor = create_hybrid_document_processor()
         processor.print_capabilities_summary()
-        print(f"‚úÖ Hybrid processor created successfully")
+        print(f"✅ Hybrid processor created successfully")
     except Exception as e:
-        print(f"‚ùå Hybrid processor creation failed: {e}")
+        print(f"❌ Hybrid processor creation failed: {e}")
     
     print("=" * 60)

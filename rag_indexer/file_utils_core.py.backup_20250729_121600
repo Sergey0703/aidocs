@@ -688,7 +688,7 @@ def should_skip_directory(directory_path, blacklist_directories=None, verbose=Fa
     # Check blacklist
     if blacklist_directories and is_blacklisted_directory(directory_path, blacklist_directories):
         if verbose:
-            print(f"   ÃŒâ€ Î©ÃŒâˆ«Â´ Skipping blacklisted directory: {path_obj.name}")
+            print(f"   í ½íº« Skipping blacklisted directory: {path_obj.name}")
         return True, f"Directory '{path_obj.name}' is blacklisted"
     
     return False, None
@@ -712,9 +712,9 @@ def scan_files_in_directory(directory, recursive=True, blacklist_directories=Non
     
     try:
         if verbose:
-            print(f"ÃŒâ€ Î©ÃŒâ‰¥Ã… Scanning directory: {directory}")
+            print(f"í ½í³ Scanning directory: {directory}")
             if blacklist_directories:
-                print(f"ÃŒâ€ Î©ÃŒâˆ«Â´ Blacklisted directories: {', '.join(blacklist_directories)}")
+                print(f"í ½íº« Blacklisted directories: {', '.join(blacklist_directories)}")
         
         if recursive:
             # Use os.walk for better control over directory traversal
@@ -745,17 +745,17 @@ def scan_files_in_directory(directory, recursive=True, blacklist_directories=Non
                     file_list.append(str(item))
         
         if verbose and skipped_dirs:
-            print(f"ÃŒâ€ Î©ÃŒâˆ«Â´ Skipped {len(skipped_dirs)} blacklisted directories:")
+            print(f"í ½íº« Skipped {len(skipped_dirs)} blacklisted directories:")
             for skipped_dir, reason in skipped_dirs[:5]:  # Show first 5
                 print(f"   - {Path(skipped_dir).name}: {reason}")
             if len(skipped_dirs) > 5:
                 print(f"   ... and {len(skipped_dirs) - 5} more")
         
         if verbose:
-            print(f"ÃŒâ€ Î©ÃŒâ‰¥Ã‘ Found {len(file_list)} files total")
+            print(f"í ½í³„ Found {len(file_list)} files total")
     
     except Exception as e:
-        print(f"â€šÃ¹Ã¥ ERROR: Failed to scan directory {directory}: {e}")
+        print(f"âŒ ERROR: Failed to scan directory {directory}: {e}")
     
     return file_list
 
@@ -803,7 +803,7 @@ def scan_directory_with_stats(directory, recursive=True, blacklist_directories=N
     
     try:
         if verbose:
-            print(f"ÃŒâ€ Î©ÃŒâ‰¥Ã¤ Analyzing directory: {directory}")
+            print(f"í ½í³Š Analyzing directory: {directory}")
         
         # Get all files with blacklist filtering
         all_files = scan_files_in_directory(directory, recursive, blacklist_directories, verbose=False)
@@ -906,7 +906,7 @@ def scan_directory_with_stats(directory, recursive=True, blacklist_directories=N
         )
         
         if verbose:
-            print(f"ÃŒâ€ Î©ÃŒâ‰¥Ã¤ Scan complete:")
+            print(f"í ½í³Š Scan complete:")
             print(f"   Files found: {stats['total_files']}")
             print(f"   Directories scanned: {stats['directories_scanned']}")
             print(f"   Directories skipped: {stats['directories_skipped']}")
@@ -930,18 +930,18 @@ def print_directory_scan_summary(stats, show_blacklist_info=True):
         stats: Directory scan statistics
         show_blacklist_info: Whether to show blacklist details
     """
-    print(f"\nÃŒâ€ Î©ÃŒâ‰¥Ã¤ RESILIENT DIRECTORY SCAN SUMMARY:")
-    print(f"ÃŒâ€ Î©ÃŒâ‰¥Ã‘ Total files found: {stats['total_files']:,}")
-    print(f"ÃŒâ€ Î©ÃŒâ‰¥Ã… Directories scanned: {stats['directories_scanned']:,}")
+    print(f"\ní ½í³Š RESILIENT DIRECTORY SCAN SUMMARY:")
+    print(f"í ½í³„ Total files found: {stats['total_files']:,}")
+    print(f"í ½í³ Directories scanned: {stats['directories_scanned']:,}")
     
     if show_blacklist_info and stats['directories_skipped'] > 0:
-        print(f"ÃŒâ€ Î©ÃŒâˆ«Â´ Directories skipped (blacklisted): {stats['directories_skipped']:,}")
+        print(f"í ½íº« Directories skipped (blacklisted): {stats['directories_skipped']:,}")
         if stats['blacklisted_directories']:
             print(f"   Blacklisted dirs found: {', '.join(stats['blacklisted_directories'][:5])}")
             if len(stats['blacklisted_directories']) > 5:
                 print(f"   ... and {len(stats['blacklisted_directories']) - 5} more")
     
-    print(f"\nÃŒâ€ Î©ÃŒâ‰¥Ã£ File Types:")
+    print(f"\ní ½í³‹ File Types:")
     print(f"   Text files: {stats['text_files']:,}")
     print(f"   Document files: {stats['document_files']:,}")
     print(f"     - Word documents: {stats['word_documents']:,} (.docx: {stats['docx_files']}, .doc: {stats['doc_files']})")
@@ -951,7 +951,7 @@ def print_directory_scan_summary(stats, show_blacklist_info=True):
     print(f"   Image files: {stats['image_files']:,}")
     print(f"   Other files: {stats['other_files']:,}")
     
-    print(f"\nÃŒâ€ Î©ÃŒÂ¥ÃŸ Processing Requirements:")
+    print(f"\ní ½í´§ Processing Requirements:")
     print(f"   Advanced parsing candidates: {stats['advanced_parsing_candidates']:,}")
     print(f"   Special handling required: {stats['special_handling_files']:,}")
     print(f"   Files needing libraries: {stats['files_needing_libraries']:,} ({stats['library_dependency_ratio']:.1f}%)")
@@ -961,18 +961,18 @@ def print_directory_scan_summary(stats, show_blacklist_info=True):
         print(f"   Large files (>10MB): {len(stats['large_files'])}")
     
     if stats['problematic_files']:
-        print(f"   â€šÃ¶â€ Ã”âˆÃ¨ Problematic files: {len(stats['problematic_files'])}")
+        print(f"   âš ï¸ Problematic files: {len(stats['problematic_files'])}")
     
     if stats['scan_errors']:
-        print(f"   â€šÃ¹Ã¥ Scan errors: {len(stats['scan_errors'])}")
+        print(f"   âŒ Scan errors: {len(stats['scan_errors'])}")
     
     # NEW: Show library requirements
     if stats['library_requirements']:
-        print(f"\nÃŒâ€ Î©ÃŒâ‰¥Ã¶ Library Requirements:")
+        print(f"\ní ½í³š Library Requirements:")
         for library, count in stats['library_requirements'].items():
-            print(f"   ÃŒâ€ Î©ÃŒâ‰¥Â¶ {library}: {count} files")
+            print(f"   í ½í³¦ {library}: {count} files")
         
-        print(f"\nâ€šÃ¶â€ Ã”âˆÃ¨ Resilient Processing Note:")
+        print(f"\nâš ï¸ Resilient Processing Note:")
         print(f"   Files will be SKIPPED if required libraries are missing")
         print(f"   No binary extraction fallbacks - only proper library processing")
     
@@ -1108,38 +1108,38 @@ def get_missing_dependencies_report():
 
 def print_resilient_processing_status():
     """Print the status of resilient processing capabilities"""
-    print("\nÃŒâ€ Î©ÃŒÂªÂ°Ã”âˆÃ¨ RESILIENT PROCESSING STATUS:")
+    print("\ní ½í»¡ï¸ RESILIENT PROCESSING STATUS:")
     print("=" * 60)
     
     report = get_missing_dependencies_report()
     
     if report['available']:
-        print("â€šÃºÃ– Available Dependencies:")
+        print("âœ… Available Dependencies:")
         for module_name, description in report['available']:
-            print(f"   â€šÃºÃ– {module_name}: {description}")
+            print(f"   âœ… {module_name}: {description}")
     
     if report['missing']:
-        print(f"\nâ€šÃ¶â€ Ã”âˆÃ¨ Missing Optional Dependencies:")
+        print(f"\nâš ï¸ Missing Optional Dependencies:")
         for module_name, description, error in report['missing']:
-            print(f"   â€šÃ¹Ã¥ {module_name}: {description}")
+            print(f"   âŒ {module_name}: {description}")
         
-        print(f"\nÃŒâ€ Î©ÃŒâ‰¥Ã£ Files Affected by Missing Libraries:")
+        print(f"\ní ½í³‹ Files Affected by Missing Libraries:")
         for lib, file_types in report['files_affected'].items():
-            print(f"   ÃŒâ€ Î©ÃŒâ‰¥Â¶ {lib}: {', '.join(file_types)} files will be SKIPPED")
+            print(f"   í ½í³¦ {lib}: {', '.join(file_types)} files will be SKIPPED")
         
-        print(f"\nÃŒâ€ Î©ÃŒâ‰¤Â° Installation Commands:")
+        print(f"\ní ½í²¡ Installation Commands:")
         for command in report['installation_commands']:
             print(f"   {command}")
         
-        print(f"\nÃŒâ€ Î©ÃŒÂªÂ°Ã”âˆÃ¨ Resilient Processing Guarantees:")
-        print(f"   â€šÃ„Â¢ Files will be SKIPPED if proper libraries missing")
-        print(f"   â€šÃ„Â¢ NO binary extraction attempts")
-        print(f"   â€šÃ„Â¢ NO system crashes due to missing dependencies")
-        print(f"   â€šÃ„Â¢ Clear error messages and recommendations")
-        print(f"   â€šÃ„Â¢ Graceful degradation of functionality")
+        print(f"\ní ½í»¡ï¸ Resilient Processing Guarantees:")
+        print(f"   â€¢ Files will be SKIPPED if proper libraries missing")
+        print(f"   â€¢ NO binary extraction attempts")
+        print(f"   â€¢ NO system crashes due to missing dependencies")
+        print(f"   â€¢ Clear error messages and recommendations")
+        print(f"   â€¢ Graceful degradation of functionality")
     else:
-        print("â€šÃºÃ– All optional dependencies are available!")
-        print("ÃŒâ€ Î©ÃŒâˆ«Ã„ Full resilient processing capabilities enabled")
+        print("âœ… All optional dependencies are available!")
+        print("í ½íº€ Full resilient processing capabilities enabled")
     
     print("=" * 60)
 
@@ -1192,7 +1192,7 @@ def check_file_processing_capability(file_path):
 
 if __name__ == "__main__":
     # Test resilient processing capabilities when run directly
-    print("ÃŒâ€ Î©ÃŒÂªÂ°Ã”âˆÃ¨ Resilient File Processing - Capability Test")
+    print("í ½í»¡ï¸ Resilient File Processing - Capability Test")
     print("=" * 60)
     
     print_resilient_processing_status()
@@ -1200,12 +1200,12 @@ if __name__ == "__main__":
     # Test file capability checking
     test_files = ['test.xlsx', 'test.doc', 'test.pdf', 'test.txt', 'test.unknown']
     
-    print(f"\nÃŒâ€ Ã¦ÃŒâˆ‘â„¢ Testing File Capability Assessment:")
+    print(f"\ní ¾í·ª Testing File Capability Assessment:")
     for test_file in test_files:
         assessment = check_file_processing_capability(test_file)
-        status = "â€šÃºÃ– WILL PROCESS" if assessment['will_be_processed'] else "â€šÃ¶â€ Ã”âˆÃ¨ WILL SKIP"
+        status = "âœ… WILL PROCESS" if assessment['will_be_processed'] else "âš ï¸ WILL SKIP"
         print(f"   {test_file}: {status} - {assessment['reason']}")
         if assessment['recommendation']:
-            print(f"      ÃŒâ€ Î©ÃŒâ‰¤Â° {assessment['recommendation']}")
+            print(f"      í ½í²¡ {assessment['recommendation']}")
     
     print("=" * 60)
