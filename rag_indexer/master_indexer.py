@@ -611,7 +611,7 @@ def process_single_directory(directory_path, directory_index, total_directories)
             env=env,
             capture_output=True,  # Capture output for logging
             text=True,
-            timeout=3600  # 1 hour timeout per directory
+            timeout=7200  # 1 hour timeout per directory
         )
         
         processing_time = time.time() - start_time
