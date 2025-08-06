@@ -197,10 +197,7 @@ def quick_fix_main_files():
     print("?? Quick Fix for Main Project Files")
     
     main_files = [
-        "main_app.py",
-        "utils/excel_export.py",
-        "retrieval/multi_retriever.py",
-        "config/settings.py"
+        "main_app.py"
     ]
     
     for file_path in main_files:

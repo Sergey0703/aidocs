@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Intelligent RAG Test - Fixed UTF-8 Encoding
-Testing dynamic top_k and content filter WITHOUT Streamlit
+Test2.py - Hybrid Search Theory Test
+Testing if combining vector + direct database search finds all 20 Breeda Daly documents
 """
 
 import os
 import time
 import logging
 import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 from llama_index.core import VectorStoreIndex, StorageContext
 from llama_index.vector_stores.supabase import SupabaseVectorStore
@@ -29,32 +30,21 @@ logger = logging.getLogger(__name__)
 # Configuration
 CONFIG = {
     "connection_string": os.getenv("SUPABASE_CONNECTION_STRING"),
-    "embed_model": "nomic-embed-text",  # ???????? ? mxbai-embed-large
-    "embed_dim": 768,                   # ???????? ? 1024 ?? 768 ??? nomic-embed-text
+    "embed_model": "nomic-embed-text",
+    "embed_dim": 768,
     "ollama_url": "http://localhost:11434",
-    "threshold": 0.35,     # Slightly higher threshold
-    "max_top_k": 1000      # Safety limit for top_k
+    "vector_threshold": 0.30,  # Lowered from 0.35
+    "max_top_k": 1000
 }
 
-def get_optimal_top_k():
-    """Get optimal top_k based on total documents in database"""
-    try:
-        conn = psycopg2.connect(CONFIG["connection_string"])
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM vecs.documents")
-        total_docs = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        
-        # Add buffer for safety and limit to max_top_k
-        optimal_top_k = min(total_docs + 50, CONFIG["max_top_k"])
-        logger.info(f"?? Database has {total_docs} documents, using top_k={optimal_top_k}")
-        
-        return optimal_top_k, total_docs
-    except Exception as e:
-        logger.error(f"? Error getting document count: {e}")
-        # Fallback to reasonable default
-        return 500, 450
+class HybridResult:
+    """Simple class to hold search results"""
+    def __init__(self, filename, content, similarity_score, source_method, metadata=None):
+        self.filename = filename
+        self.content = content
+        self.similarity_score = similarity_score
+        self.source_method = source_method
+        self.metadata = metadata or {}
 
 def get_vector_components():
     """Initialize vector components"""
@@ -80,260 +70,294 @@ def get_vector_components():
             embed_model=embed_model
         )
         
-        logger.info(f"? Vector components initialized successfully (model: {CONFIG['embed_model']})")
+        logger.info(f"? Vector components initialized")
         return index, embed_model
         
     except Exception as e:
         logger.error(f"? Error initializing vector components: {e}")
         return None, None
 
-def vector_search_with_filters(query, threshold=None):
-    """Vector search with dynamic top_k + similarity filter + content filter"""
+def vector_search(query, threshold=None):
+    """Original vector search method"""
+    threshold = threshold or CONFIG["vector_threshold"]
     
-    logger.info(f"?? Vector search with filters for: '{query}'")
-    start_time = time.time()
+    logger.info(f"?? Vector search: '{query}' (threshold: {threshold})")
     
     try:
-        # Initialize components
         index, embed_model = get_vector_components()
         if not index or not embed_model:
-            return None
+            return []
         
-        # Use custom threshold if provided, otherwise use config
-        threshold = threshold if threshold is not None else CONFIG["threshold"]
-        
-        # Get optimal top_k based on database size
-        optimal_top_k, total_docs = get_optimal_top_k()
-        
-        # Create retriever with dynamic top_k
+        # Create retriever with max top_k
         retriever = VectorIndexRetriever(
             index=index,
-            similarity_top_k=optimal_top_k,
+            similarity_top_k=CONFIG["max_top_k"],
             embed_model=embed_model
         )
         
-        # Create similarity filter
+        # Apply similarity filter
         similarity_filter = SimilarityPostprocessor(similarity_cutoff=threshold)
         
         # Execute search
-        logger.info(f"   ?? Searching in {total_docs} documents with top_k={optimal_top_k}")
         nodes = retriever.retrieve(query)
-        logger.info(f"   Retrieved {len(nodes)} candidate nodes")
-        
-        # STEP 1: Apply similarity threshold filtering
         filtered_nodes = similarity_filter.postprocess_nodes(nodes)
-        logger.info(f"   After similarity filter (={threshold}): {len(filtered_nodes)} nodes")
         
-        # STEP 2: Apply content filter - only nodes that contain the search query
-        final_nodes = [
-            node for node in filtered_nodes
-            if query.lower() in node.get_content().lower()
-        ]
-        logger.info(f"   After content filter (contains '{query}'): {len(final_nodes)} nodes")
+        logger.info(f"   Vector: {len(nodes)} candidates ? {len(filtered_nodes)} after similarity filter")
         
-        # Analysis
-        total_time = time.time() - start_time
-        
-        # Calculate precision
-        precision = (len(final_nodes) / len(filtered_nodes) * 100) if filtered_nodes else 0
-        
-        # Show detailed results
-        logger.info(f"   ?? FILTERING RESULTS:")
-        logger.info(f"      Total candidates: {len(nodes)}")
-        logger.info(f"      After similarity: {len(filtered_nodes)}")
-        logger.info(f"      After content: {len(final_nodes)}")
-        logger.info(f"      Precision: {precision:.1f}%")
-        logger.info(f"      Time: {total_time:.3f}s")
-        
-        # Show top 5 results
-        if final_nodes:
-            logger.info(f"   ?? Top 5 results:")
-            for i, node in enumerate(final_nodes[:5], 1):
-                similarity = getattr(node, 'score', 0.0)
-                preview = node.get_content()[:80].replace('\n', ' ')
+        # Convert to our result format
+        results = []
+        for node in filtered_nodes:
+            try:
+                content = node.get_content()
                 
-                # Try to get file name
-                file_name = 'Unknown'
-                try:
-                    if hasattr(node, 'metadata') and isinstance(node.metadata, dict):
+                # Only include if contains the search term
+                if query.lower() in content.lower():
+                    # Extract metadata
+                    file_name = 'Unknown'
+                    if hasattr(node, 'node') and hasattr(node.node, 'metadata'):
+                        file_name = node.node.metadata.get('file_name', 'Unknown')
+                    elif hasattr(node, 'metadata'):
                         file_name = node.metadata.get('file_name', 'Unknown')
-                except:
-                    pass
-                
-                logger.info(f"      {i}. {similarity:.3f} | {file_name}")
-                logger.info(f"         Preview: {preview}...")
+                    
+                    similarity_score = getattr(node, 'score', 0.0)
+                    
+                    results.append(HybridResult(
+                        filename=file_name,
+                        content=content,
+                        similarity_score=similarity_score,
+                        source_method="vector_search",
+                        metadata={"original_node": node}
+                    ))
+                    
+            except Exception as e:
+                logger.warning(f"?? Error processing vector node: {e}")
+                continue
         
-        return {
-            'query': query,
-            'threshold': threshold,
-            'total_docs': total_docs,
-            'optimal_top_k': optimal_top_k,
-            'candidates': len(nodes),
-            'after_similarity': len(filtered_nodes),
-            'after_content': len(final_nodes),
-            'precision': precision,
-            'time': total_time,
-            'final_nodes': final_nodes
-        }
+        logger.info(f"   Vector: {len(results)} final results after content filter")
+        return results
         
     except Exception as e:
-        logger.error(f"? Error in vector search: {e}")
-        return None
+        logger.error(f"? Vector search failed: {e}")
+        return []
 
-def test_different_thresholds():
-    """Test different thresholds to find optimal values"""
+def direct_database_search(query):
+    """NEW: Direct database search for exact matches"""
+    logger.info(f"?? Direct DB search: '{query}'")
     
-    print("?? Testing Different Thresholds")
-    print("=" * 60)
+    try:
+        conn = psycopg2.connect(CONFIG["connection_string"])
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        # Search for exact matches in document content
+        search_sql = """
+        SELECT 
+            metadata->>'file_name' as file_name,
+            metadata->>'text' as text_content,
+            metadata->>'chunk_index' as chunk_index,
+            id
+        FROM vecs.documents
+        WHERE LOWER(metadata->>'text') LIKE LOWER(%s)
+        AND metadata->>'file_name' IS NOT NULL
+        ORDER BY metadata->>'file_name', (metadata->>'chunk_index')::int
+        """
+        
+        search_term = f"%{query}%"
+        cur.execute(search_sql, (search_term,))
+        rows = cur.fetchall()
+        
+        logger.info(f"   Database: Found {len(rows)} matching chunks")
+        
+        # Group by filename and take best chunk per file
+        file_results = {}
+        for row in rows:
+            file_name = row['file_name']
+            content = row['text_content'] or ""
+            
+            # Calculate a simple relevance score based on query frequency
+            query_count = content.lower().count(query.lower())
+            relevance_score = min(0.95, 0.5 + (query_count * 0.1))  # 0.5 base + 0.1 per occurrence
+            
+            if file_name not in file_results or relevance_score > file_results[file_name].similarity_score:
+                file_results[file_name] = HybridResult(
+                    filename=file_name,
+                    content=content,
+                    similarity_score=relevance_score,
+                    source_method="database_exact",
+                    metadata={
+                        "chunk_index": row['chunk_index'],
+                        "document_id": row['id'],
+                        "query_occurrences": query_count
+                    }
+                )
+        
+        results = list(file_results.values())
+        logger.info(f"   Database: {len(results)} unique files found")
+        
+        cur.close()
+        conn.close()
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"? Database search failed: {e}")
+        return []
+
+def hybrid_search(query):
+    """NEW: Hybrid search combining vector + database"""
+    logger.info(f"?? HYBRID SEARCH for: '{query}'")
+    start_time = time.time()
     
-    # Check environment
+    # Run both searches in parallel (conceptually)
+    vector_results = vector_search(query)
+    database_results = direct_database_search(query)
+    
+    logger.info(f"?? Search Results:")
+    logger.info(f"   Vector search: {len(vector_results)} results")
+    logger.info(f"   Database search: {len(database_results)} results")
+    
+    # Combine and deduplicate results
+    all_results = {}  # filename -> best result
+    
+    # Add vector results
+    for result in vector_results:
+        filename = result.filename
+        if filename not in all_results or result.similarity_score > all_results[filename].similarity_score:
+            all_results[filename] = result
+    
+    # Add database results (merge or replace)
+    for result in database_results:
+        filename = result.filename
+        if filename not in all_results:
+            # New file found by database search
+            all_results[filename] = result
+            result.metadata["found_by"] = "database_only"
+        else:
+            # File found by both methods - keep the better one but note both found it
+            existing = all_results[filename]
+            if result.similarity_score > existing.similarity_score:
+                all_results[filename] = result
+                result.metadata["found_by"] = "database_better"
+            else:
+                existing.metadata["found_by"] = "vector_better"
+            existing.metadata["found_by_both"] = True
+    
+    # Sort by similarity score
+    final_results = sorted(all_results.values(), key=lambda x: x.similarity_score, reverse=True)
+    
+    total_time = time.time() - start_time
+    
+    logger.info(f"? HYBRID RESULTS:")
+    logger.info(f"   Total unique files: {len(final_results)}")
+    logger.info(f"   Search time: {total_time:.3f}s")
+    
+    return final_results
+
+def compare_searches(query):
+    """Compare original vs hybrid search"""
+    print(f"\n" + "="*80)
+    print(f"?? COMPARISON TEST: '{query}'")
+    print("="*80)
+    
+    # Test original approach
+    print(f"\n1?? ORIGINAL VECTOR-ONLY SEARCH:")
+    original_results = vector_search(query, 0.35)  # Original threshold
+    print(f"   Found: {len(original_results)} documents")
+    
+    # Test hybrid approach  
+    print(f"\n2?? NEW HYBRID SEARCH:")
+    hybrid_results = hybrid_search(query)
+    print(f"   Found: {len(hybrid_results)} documents")
+    
+    # Show detailed comparison
+    original_files = set(r.filename for r in original_results)
+    hybrid_files = set(r.filename for r in hybrid_results)
+    
+    only_in_original = original_files - hybrid_files
+    only_in_hybrid = hybrid_files - original_files
+    in_both = original_files & hybrid_files
+    
+    print(f"\n?? COMPARISON SUMMARY:")
+    print(f"   In both methods: {len(in_both)} files")
+    print(f"   Only in original: {len(only_in_original)} files")
+    print(f"   Only in hybrid: {len(only_in_hybrid)} files")
+    print(f"   Improvement: +{len(only_in_hybrid)} files found")
+    
+    if only_in_hybrid:
+        print(f"\n?? NEW FILES FOUND BY HYBRID:")
+        for filename in only_in_hybrid:
+            # Find the result
+            result = next(r for r in hybrid_results if r.filename == filename)
+            found_by = result.metadata.get("found_by", "unknown")
+            print(f"   ?? {filename}")
+            print(f"      Score: {result.similarity_score:.4f} | Method: {result.source_method} | Found by: {found_by}")
+    
+    if only_in_original:
+        print(f"\n? FILES LOST IN HYBRID:")
+        for filename in only_in_original:
+            print(f"   ?? {filename}")
+    
+    # Show all results with details
+    print(f"\n?? ALL HYBRID RESULTS:")
+    print("-" * 80)
+    for i, result in enumerate(hybrid_results, 1):
+        found_by = result.metadata.get("found_by", "unknown")
+        found_by_both = result.metadata.get("found_by_both", False)
+        both_indicator = " ??" if found_by_both else ""
+        
+        print(f"{i:2d}. ?? {result.filename}")
+        print(f"    ?? Score: {result.similarity_score:.4f} | Method: {result.source_method} | Found by: {found_by}{both_indicator}")
+        if result.metadata.get("query_occurrences"):
+            print(f"    ?? Query occurrences: {result.metadata['query_occurrences']}")
+    
+    return len(hybrid_results)
+
+def test_theory():
+    """Main test function"""
+    print("?? HYBRID SEARCH THEORY TEST")
+    print("="*50)
+    
     if not CONFIG["connection_string"]:
         print("? SUPABASE_CONNECTION_STRING not found!")
         return
     
-    print(f"? Environment OK (using {CONFIG['embed_model']})")
+    print(f"? Environment OK (model: {CONFIG['embed_model']})")
     
-    test_entities = ["John Nolan", "Breeda Daly", "Bernie Loughnane"]
-    thresholds = [0.3, 0.35, 0.4, 0.45, 0.5]
+    # Test with Breeda Daly
+    entity = "Breeda Daly"
+    total_found = compare_searches(entity)
     
-    for entity in test_entities:
-        print(f"\n?? Testing entity: {entity}")
-        print("-" * 40)
-        
-        results = []
-        for threshold in thresholds:
-            print(f"\n?? Testing threshold: {threshold}")
-            result = vector_search_with_filters(entity, threshold)
-            if result:
-                results.append(result)
-        
-        # Summary for this entity
-        if results:
-            print(f"\n?? SUMMARY for {entity}:")
-            print("Threshold | Candidates | After Sim | After Content | Precision | Time")
-            print("-" * 70)
-            for r in results:
-                print(f"   {r['threshold']:.2f}   |    {r['candidates']:3d}     |    {r['after_similarity']:3d}    |      {r['after_content']:3d}      |   {r['precision']:5.1f}%  | {r['time']:.2f}s")
-            
-            # Find best threshold
-            best_result = max(results, key=lambda x: x['after_content'] if x['after_content'] > 0 else 0)
-            print(f"\n?? Best threshold for {entity}: {best_result['threshold']:.2f}")
-            print(f"   Found {best_result['after_content']} documents with 100% precision")
-        
-        print(f"\n" + "="*60)
-
-def compare_old_vs_new():
-    """Compare old approach (top_k=100) vs new approach (dynamic top_k + filters)"""
-    
-    print("?? Comparing Old vs New Approach")
-    print("=" * 60)
-    
-    test_entities = ["John Nolan", "Breeda Daly", "Bernie Loughnane"]
-    
-    for entity in test_entities:
-        print(f"\n?? Testing entity: {entity}")
-        print("-" * 40)
-        
-        # Old approach simulation (top_k=100, threshold=0.3, no content filter)
-        print(f"\n?? OLD APPROACH (top_k=100, threshold=0.3, no content filter):")
-        old_result = vector_search_old_style(entity)
-        
-        # New approach (dynamic top_k, threshold=0.35, content filter)
-        print(f"\n?? NEW APPROACH (dynamic top_k, threshold=0.35, content filter):")
-        new_result = vector_search_with_filters(entity, 0.35)
-        
-        # Comparison
-        if old_result and new_result:
-            print(f"\n?? COMPARISON for {entity}:")
-            print("Approach | Top K | Threshold | Total Results | With Name | Precision")
-            print("-" * 70)
-            print(f"Old      | 100   |    0.30   |      {old_result['total_results']:3d}      |    {old_result['with_name']:3d}    |   {old_result['precision']:5.1f}%")
-            print(f"New      | {new_result['optimal_top_k']:3d}   |    0.35   |      {new_result['after_content']:3d}      |    {new_result['after_content']:3d}    |   100.0%")
-            
-            improvement = new_result['after_content'] - old_result['with_name']
-            print(f"\n?? Improvement: {improvement:+d} documents, precision: {100 - old_result['precision']:+.1f}%")
-        
-        print(f"\n" + "="*60)
-
-def vector_search_old_style(query):
-    """Simulate old style vector search for comparison"""
-    
-    logger.info(f"?? [OLD STYLE] Vector search for: '{query}'")
-    start_time = time.time()
-    
+    # Get expected count from database
     try:
-        # Initialize components
-        index, embed_model = get_vector_components()
-        if not index or not embed_model:
-            return None
+        conn = psycopg2.connect(CONFIG["connection_string"])
+        cur = conn.cursor()
+        cur.execute("""
+        SELECT COUNT(DISTINCT metadata->>'file_name') 
+        FROM vecs.documents 
+        WHERE LOWER(metadata->>'text') LIKE '%breeda daly%'
+        AND metadata->>'file_name' IS NOT NULL
+        """)
+        expected_count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
         
-        # Old approach: fixed top_k=100, threshold=0.3
-        retriever = VectorIndexRetriever(
-            index=index,
-            similarity_top_k=100,
-            embed_model=embed_model
-        )
+        print(f"\n?? THEORY TEST RESULTS:")
+        print(f"   Expected (database): {expected_count} files")
+        print(f"   Found (hybrid): {total_found} files")
         
-        similarity_filter = SimilarityPostprocessor(similarity_cutoff=0.3)
-        
-        # Execute search
-        nodes = retriever.retrieve(query)
-        filtered_nodes = similarity_filter.postprocess_nodes(nodes)
-        
-        # Count nodes with query terms (but don't filter them out)
-        nodes_with_query = sum(1 for node in filtered_nodes if query.lower() in node.get_content().lower())
-        
-        total_time = time.time() - start_time
-        precision = (nodes_with_query / len(filtered_nodes) * 100) if filtered_nodes else 0
-        
-        logger.info(f"   ?? Old style results:")
-        logger.info(f"      Total results: {len(filtered_nodes)}")
-        logger.info(f"      With query terms: {nodes_with_query}")
-        logger.info(f"      Precision: {precision:.1f}%")
-        logger.info(f"      Time: {total_time:.3f}s")
-        
-        return {
-            'total_results': len(filtered_nodes),
-            'with_name': nodes_with_query,
-            'precision': precision,
-            'time': total_time
-        }
-        
+        if total_found >= expected_count:
+            print(f"   ? SUCCESS: Found all or more files!")
+            print(f"   ?? Theory confirmed - hybrid search works!")
+        else:
+            missing = expected_count - total_found
+            print(f"   ?? PARTIAL: Still missing {missing} files")
+            print(f"   ?? May need additional search strategies")
+            
     except Exception as e:
-        logger.error(f"? Error in old style search: {e}")
-        return None
-
-def main():
-    """Main function"""
-    
-    print("?? Intelligent RAG Test - Dynamic Top-K and Content Filter")
-    print(f"?? Using embedding model: {CONFIG['embed_model']} (dimension: {CONFIG['embed_dim']})")
-    print("=" * 70)
-    print("1. Test different thresholds")
-    print("2. Compare old vs new approach")
-    print("3. Quick test with default settings")
-    print("4. Exit")
-    
-    choice = input("\nSelect option (1-4): ").strip()
-    
-    if choice == "1":
-        test_different_thresholds()
-    elif choice == "2":
-        compare_old_vs_new()
-    elif choice == "3":
-        print("\n?? Quick test with default settings:")
-        for entity in ["John Nolan", "Breeda Daly", "Bernie Loughnane"]:
-            result = vector_search_with_filters(entity)
-            if result:
-                print(f"\n? {entity}: Found {result['after_content']} documents (100% precision)")
-    elif choice == "4":
-        print("?? Goodbye!")
-    else:
-        print("? Invalid option")
+        print(f"? Error getting expected count: {e}")
 
 if __name__ == "__main__":
     try:
-        main()
+        test_theory()
     except KeyboardInterrupt:
         print("\n?? Interrupted by user")
     except Exception as e:

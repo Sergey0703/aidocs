@@ -1,5 +1,5 @@
 # config/settings.py
-# Configuration settings for Production RAG System
+# Configuration settings for Production RAG System with Hybrid Search
 
 import os
 from dataclasses import dataclass
@@ -46,16 +46,30 @@ class LLMConfig:
 
 @dataclass
 class SearchConfig:
-    """Search and retrieval configuration"""
-    # Dynamic thresholds based on query type
-    default_similarity_threshold: float = 0.35
-    entity_similarity_threshold: float = 0.3
-    fallback_similarity_threshold: float = 0.25
+    """Search and retrieval configuration with Hybrid Search"""
     
-    # Dynamic top_k based on query complexity
+    # ?? HYBRID SEARCH SETTINGS
+    enable_hybrid_search: bool = True
+    enable_vector_search: bool = True
+    enable_database_search: bool = True
+    
+    # Vector search thresholds (lowered for better recall)
+    default_similarity_threshold: float = 0.30  # Lowered from 0.35
+    entity_similarity_threshold: float = 0.25   # Lowered from 0.30
+    fallback_similarity_threshold: float = 0.20 # Lowered from 0.25
+    
+    # Vector search top_k (respecting 1000 limit)
     default_top_k: int = 20
     entity_top_k: int = 50
     complex_query_top_k: int = 30
+    vector_max_top_k: int = 1000  # Supabase/vecs hard limit
+    
+    # ?? DATABASE SEARCH SETTINGS
+    database_search_enabled: bool = True
+    database_max_results: int = 100
+    database_exact_match_score: float = 0.95  # High score for exact matches
+    database_base_score: float = 0.60         # Base score for database results
+    database_score_per_occurrence: float = 0.05  # Bonus per query occurrence
     
     # Multi-query settings
     max_query_variants: int = 3
@@ -63,10 +77,21 @@ class SearchConfig:
     enable_entity_extraction: bool = True
     enable_multi_retrieval: bool = True
     
-    # Results fusion
+    # Results fusion with hybrid support
     min_results_for_fusion: int = 2
-    max_final_results: int = 15
-    fusion_method: str = "weighted_score"  # weighted_score, rank_fusion, hybrid
+    max_final_results: int = 20  # Increased from 15
+    fusion_method: str = "hybrid_weighted"  # Changed from "weighted_score"
+    
+    # ?? HYBRID FUSION WEIGHTS
+    vector_result_weight: float = 0.7
+    database_result_weight: float = 1.0      # Database gets higher weight
+    exact_match_boost: float = 1.3           # Boost for exact entity matches
+    person_name_boost: float = 1.2           # Boost for person name queries
+    
+    # ?? SEARCH STRATEGY SELECTION
+    person_query_strategy: str = "database_priority"  # Prioritize DB for person names
+    general_query_strategy: str = "vector_priority"   # Prioritize vector for general queries
+    hybrid_merge_strategy: str = "score_weighted"     # How to merge results
 
 @dataclass
 class EntityExtractionConfig:
@@ -75,7 +100,7 @@ class EntityExtractionConfig:
     fallback_enabled: bool = True
     validation_enabled: bool = True
     
-    # Known entities for special handling
+    # Known entities for special handling (updated for hybrid search)
     known_entities: Dict[str, Dict] = None
     
     # Extraction prompts
@@ -97,16 +122,28 @@ Name:"""
             self.extraction_methods = ["llm", "regex", "spacy"]
         
         if self.known_entities is None:
+            # Updated with hybrid search parameters
             self.known_entities = {
                 "john nolan": {
-                    "similarity_threshold": 0.3,
+                    "similarity_threshold": 0.25,  # Lowered for better recall
                     "top_k": 50,
-                    "expected_docs": 9
+                    "expected_docs": 9,
+                    "search_strategy": "hybrid",  # ??
+                    "database_priority": True     # ??
                 },
                 "breeda daly": {
-                    "similarity_threshold": 0.3,
-                    "top_k": 40,
-                    "expected_docs": 3
+                    "similarity_threshold": 0.25,
+                    "top_k": 50,
+                    "expected_docs": 20,          # Updated count!
+                    "search_strategy": "hybrid",  # ??
+                    "database_priority": True     # ??
+                },
+                "bernie loughnane": {
+                    "similarity_threshold": 0.25,
+                    "top_k": 50,
+                    "expected_docs": 5,
+                    "search_strategy": "hybrid",  # ??
+                    "database_priority": True     # ??
                 }
             }
 
@@ -116,6 +153,10 @@ class QueryRewriteConfig:
     enabled: bool = True
     max_rewrites: int = 3
     rewrite_strategies: List[str] = None
+    
+    # ?? HYBRID SEARCH AWARE REWRITING
+    hybrid_rewrite_enabled: bool = True
+    entity_query_simplification: bool = True  # Simplify person name queries
     
     # Rewrite prompts
     expand_query_prompt: str = """Generate {num_queries} different ways to search for information about this topic. Make each query more specific and focused.
@@ -130,9 +171,16 @@ Complex query: {query}
 
 Simplified query:"""
     
+    # ?? ENTITY-SPECIFIC REWRITING
+    person_query_simplification_prompt: str = """This appears to be a query about a person. Extract just the person's name for the most effective search.
+
+Original query: {query}
+
+Person name:"""
+    
     def __post_init__(self):
         if self.rewrite_strategies is None:
-            self.rewrite_strategies = ["expand", "simplify", "rephrase"]
+            self.rewrite_strategies = ["expand", "simplify", "rephrase", "entity_extract"]  # Added entity_extract
 
 @dataclass
 class UIConfig:
@@ -148,7 +196,13 @@ class UIConfig:
     show_performance_metrics: bool = True
     show_advanced_settings: bool = True
     
-    # Example queries
+    # ?? HYBRID SEARCH UI SETTINGS
+    show_search_strategy_info: bool = True
+    show_database_results: bool = True
+    show_vector_results: bool = True
+    show_hybrid_fusion_details: bool = True
+    
+    # Example queries (updated with expected counts)
     example_queries: List[str] = None
     
     def __post_init__(self):
@@ -157,14 +211,15 @@ class UIConfig:
                 "John Nolan",
                 "tell me about John Nolan",
                 "show me John Nolan certifications", 
-                "who is Breeda Daly",
-                "find Breeda Daly training",
+                "who is Breeda Daly",               # Now finds 20 docs!
+                "find Breeda Daly training",        # Now finds 20 docs!
                 "what certifications does John Nolan have?",
-                "give me information about Breeda Daly's courses"
+                "give me information about Breeda Daly's courses",
+                "Bernie Loughnane documents"
             ]
 
 class ProductionRAGConfig:
-    """Main configuration class for Production RAG System"""
+    """Main configuration class for Production RAG System with Hybrid Search"""
     
     def __init__(self):
         # Load environment variables
@@ -230,6 +285,12 @@ class ProductionRAGConfig:
             self.search.max_query_variants > 0
         )
         
+        # ?? Validate hybrid search settings
+        validation_results["hybrid_search_config"] = bool(
+            self.search.enable_hybrid_search and
+            (self.search.enable_vector_search or self.search.enable_database_search)
+        )
+        
         return validation_results
     
     def get_entity_config(self, entity_name: str) -> Dict:
@@ -239,15 +300,17 @@ class ProductionRAGConfig:
         if entity_lower in self.entity_extraction.known_entities:
             return self.entity_extraction.known_entities[entity_lower]
         
-        # Default configuration for unknown entities
+        # Default configuration for unknown entities (hybrid-aware)
         return {
             "similarity_threshold": self.search.default_similarity_threshold,
             "top_k": self.search.default_top_k,
-            "expected_docs": None
+            "expected_docs": None,
+            "search_strategy": "hybrid",      # ?? Default to hybrid
+            "database_priority": False       # ?? Default no DB priority
         }
     
     def get_dynamic_search_params(self, query: str, extracted_entity: str = None) -> Dict:
-        """Get dynamic search parameters based on query and entity"""
+        """Get dynamic search parameters based on query and entity with hybrid support"""
         query_lower = query.lower()
         
         # If we have extracted entity, use its configuration
@@ -255,25 +318,65 @@ class ProductionRAGConfig:
             entity_config = self.get_entity_config(extracted_entity)
             return {
                 "similarity_threshold": entity_config["similarity_threshold"],
-                "top_k": entity_config["top_k"]
+                "top_k": entity_config["top_k"],
+                "search_strategy": entity_config.get("search_strategy", "hybrid"),      # ??
+                "database_priority": entity_config.get("database_priority", True),    # ??
+                "enable_database_search": True                                          # ??
             }
         
         # Dynamic configuration based on query characteristics
         if len(query.split()) >= 4:  # Complex query
             return {
                 "similarity_threshold": self.search.fallback_similarity_threshold,
-                "top_k": self.search.complex_query_top_k
+                "top_k": self.search.complex_query_top_k,
+                "search_strategy": "vector_priority",     # ??
+                "database_priority": False,               # ??
+                "enable_database_search": True            # ??
             }
         elif any(word in query_lower for word in ['tell', 'show', 'find', 'give']):  # Question format
             return {
                 "similarity_threshold": self.search.entity_similarity_threshold,
-                "top_k": self.search.entity_top_k
+                "top_k": self.search.entity_top_k,
+                "search_strategy": "hybrid",              # ??
+                "database_priority": True,                # ??
+                "enable_database_search": True            # ??
             }
         else:  # Simple query
             return {
                 "similarity_threshold": self.search.default_similarity_threshold,
-                "top_k": self.search.default_top_k
+                "top_k": self.search.default_top_k,
+                "search_strategy": "hybrid",              # ??
+                "database_priority": False,               # ??
+                "enable_database_search": True            # ??
             }
+    
+    def get_search_strategy(self, query: str, extracted_entity: str = None) -> str:
+        """?? Determine optimal search strategy for given query"""
+        
+        # Person name queries -> database priority
+        if extracted_entity or any(word in query.lower() for word in ['who is', 'tell me about', 'show me']):
+            return self.search.person_query_strategy
+        
+        # Complex queries -> vector priority
+        if len(query.split()) >= 6:
+            return self.search.general_query_strategy
+        
+        # Default -> hybrid
+        return "hybrid"
+    
+    def is_person_query(self, query: str, extracted_entity: str = None) -> bool:
+        """?? Detect if query is about a person"""
+        if extracted_entity:
+            return True
+        
+        person_indicators = ['who is', 'tell me about', 'show me', 'find', 'about']
+        query_lower = query.lower()
+        
+        # Check for person indicators + capitalized words (likely names)
+        has_person_indicator = any(indicator in query_lower for indicator in person_indicators)
+        has_capitalized_words = bool([word for word in query.split() if word[0].isupper() and len(word) > 2])
+        
+        return has_person_indicator and has_capitalized_words
 
 # Global configuration instance
 config = ProductionRAGConfig()

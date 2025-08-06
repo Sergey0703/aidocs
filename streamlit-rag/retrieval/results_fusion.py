@@ -1,9 +1,9 @@
 # retrieval/results_fusion.py
-# Advanced results fusion and ranking for multi-strategy retrieval
-# ?????????? ????????: ?????? ????????? ??????? ??????????
+# Advanced results fusion and ranking for hybrid multi-strategy retrieval
 
 import logging
 import math
+import time
 from typing import List, Dict, Optional, Tuple, Any, Set
 from dataclasses import dataclass
 from collections import defaultdict, Counter
@@ -21,39 +21,64 @@ class FusionResult:
     fusion_metadata: Dict[str, Any]
     fusion_time: float
 
-class ResultsFusionEngine:
-    """Advanced results fusion with multiple strategies"""
+class HybridResultsFusionEngine:
+    """?? Advanced results fusion engine for hybrid retrieval with Vector + Database support"""
     
     def __init__(self, config):
         self.config = config
         
-        # Fusion weights for different sources/methods
+        # ?? Hybrid fusion weights for different sources
         self.method_weights = {
-            "llamaindex_vector": 1.0,
-            "llamaindex_vector_filtered": 1.2,
-            "database_direct": 0.7,
-            "database_direct_filtered": 0.9,
-            "spacy": 0.8,
-            "hybrid": 1.1
+            # Vector search methods
+            "llamaindex_vector": self.config.search.vector_result_weight,
+            "vector_search": self.config.search.vector_result_weight,
+            "vector_smart_threshold": self.config.search.vector_result_weight,
+            
+            # Database search methods (higher weights)
+            "database_hybrid": self.config.search.database_result_weight,
+            "database_exact": self.config.search.database_result_weight,
+            "database_direct": self.config.search.database_result_weight,
+            
+            # Legacy methods
+            "hybrid": 1.1,
+            "spacy": 0.8
         }
         
-        # Quality indicators for boosting
-        self.quality_indicators = {
-            "exact_match": 1.3,
-            "high_confidence": 1.2,
-            "content_filtered": 1.15,
-            "known_entity": 1.25,
-            "multiple_terms": 1.1
+        # ?? Strategy-specific boosts
+        self.strategy_boosts = {
+            "exact_phrase": 1.4,      # Exact phrase matches get highest boost
+            "person_name_match": 1.3,  # Person name matches get high boost
+            "exact_match": 1.2,       # General exact matches
+            "database_only": 1.1,     # Found only by database search
+            "vector_better": 1.0,     # Vector was better than database
+            "database_better": 1.2,   # Database was better than vector
+            "found_by_both": 1.15     # Found by both methods
         }
+        
+        # ?? Quality indicators for content analysis
+        self.quality_indicators = {
+            "person_name_exact": self.config.search.exact_match_boost,
+            "high_query_frequency": 1.3,  # Multiple query occurrences
+            "optimal_content_length": 1.1, # Good content length (100-2000 chars)
+            "recent_document": 1.05,       # Newer documents slight boost
+            "training_context": 1.1,       # Training/certification context
+            "signature_context": 0.9       # Just signature mention (lower priority)
+        }
+        
+        # ?? Person name detection patterns
+        self.person_patterns = [
+            r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b',  # First Last
+            r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\s+[A-Z][a-z]+\b',  # First Middle Last
+        ]
+        self.person_regex = [re.compile(pattern, re.IGNORECASE) for pattern in self.person_patterns]
     
     def fuse_results(self, 
                     all_results: List[Any], 
                     original_query: str,
                     extracted_entity: Optional[str] = None,
                     required_terms: List[str] = None) -> FusionResult:
-        """Main fusion method that selects best strategy"""
+        """?? Main hybrid fusion method with intelligent strategy selection"""
         
-        import time
         start_time = time.time()
         
         if not all_results:
@@ -68,195 +93,343 @@ class ResultsFusionEngine:
         
         original_count = len(all_results)
         
-        # Remove exact duplicates first
-        deduplicated = self._remove_exact_duplicates(all_results)
+        # ?? Analyze query characteristics for fusion strategy selection
+        is_person_query = self._is_person_query(original_query, extracted_entity)
+        query_complexity = self._analyze_query_complexity(original_query)
         
-        # ????????: ?????????? ????? ????????? ??? ???????????
-        # fusion_method = self._select_fusion_strategy(deduplicated, original_query)
-        fusion_method = "simple_weighted"  # ?????????? ??????? ?????????
+        logger.info(f"?? Hybrid fusion: {original_count} results | Person query: {is_person_query} | Complexity: {query_complexity}")
+        
+        # Remove exact duplicates first
+        deduplicated = self._hybrid_deduplication(all_results)
+        logger.info(f"   After deduplication: {len(deduplicated)} results")
+        
+        # ?? Select fusion strategy based on query analysis
+        fusion_method = self._select_hybrid_fusion_strategy(
+            deduplicated, original_query, is_person_query, query_complexity
+        )
         
         # Apply selected fusion method
-        if fusion_method == "weighted_score":
-            fused_results = self._weighted_score_fusion(
+        if fusion_method == "hybrid_person_priority":
+            fused_results = self._hybrid_person_priority_fusion(
                 deduplicated, original_query, extracted_entity, required_terms
             )
-        elif fusion_method == "rank_fusion":
+        elif fusion_method == "hybrid_weighted_fusion":
+            fused_results = self._hybrid_weighted_fusion(
+                deduplicated, original_query, extracted_entity, required_terms
+            )
+        elif fusion_method == "database_priority":
+            fused_results = self._database_priority_fusion(
+                deduplicated, original_query, extracted_entity, required_terms
+            )
+        elif fusion_method == "vector_priority":
+            fused_results = self._vector_priority_fusion(
+                deduplicated, original_query, extracted_entity, required_terms
+            )
+        elif fusion_method == "reciprocal_rank_fusion":
             fused_results = self._reciprocal_rank_fusion(deduplicated, original_query)
-        elif fusion_method == "semantic_fusion":
-            fused_results = self._semantic_clustering_fusion(deduplicated, original_query)
-        elif fusion_method == "hybrid_fusion":
-            fused_results = self._hybrid_fusion(
-                deduplicated, original_query, extracted_entity, required_terms
-            )
-        elif fusion_method == "simple_weighted":
-            # ?????: ?????????? weighted ?????????
-            fused_results = self._simple_weighted_fusion(
-                deduplicated, original_query, extracted_entity, required_terms
-            )
         else:
-            # Default: simple similarity sorting
-            fused_results = sorted(deduplicated, key=lambda x: x.similarity_score, reverse=True)
+            # Default: hybrid weighted fusion
+            fused_results = self._hybrid_weighted_fusion(
+                deduplicated, original_query, extracted_entity, required_terms
+            )
         
-        # Apply final filtering and limiting
-        final_results = self._apply_final_filters(
-            fused_results, original_query, extracted_entity, required_terms
+        # Apply final filters and quality checks
+        final_results = self._apply_hybrid_final_filters(
+            fused_results, original_query, extracted_entity, required_terms, is_person_query
         )
         
         fusion_time = time.time() - start_time
         
-        logger.info(f"?? Fusion completed: {fusion_method} | {original_count}?{len(final_results)} results in {fusion_time:.3f}s")
+        logger.info(f"? Hybrid fusion completed: {fusion_method} | {original_count}?{len(final_results)} results in {fusion_time:.3f}s")
         
         return FusionResult(
             fused_results=final_results,
             fusion_method=fusion_method,
             original_count=original_count,
             final_count=len(final_results),
-            fusion_metadata=self._generate_fusion_metadata(
-                all_results, final_results, fusion_method
+            fusion_metadata=self._generate_hybrid_fusion_metadata(
+                all_results, final_results, fusion_method, is_person_query
             ),
             fusion_time=fusion_time
         )
     
-    # ???????? ????????????????: ??????? ??????????? ?????????
-    # def _select_fusion_strategy(self, results: List[Any], query: str) -> str:
-    #     """Intelligently select fusion strategy based on data"""
-    #     if len(results) <= 1:
-    #         return "simple"
-    #     
-    #     # Analyze result characteristics
-    #     methods_count = len(set(r.source_method for r in results))
-    #     has_high_confidence = any(r.similarity_score > 0.8 for r in results)
-    #     score_variance = self._calculate_score_variance(results)
-    #     
-    #     # Decision logic
-    #     if methods_count >= 3 and score_variance > 0.1:
-    #         return "hybrid_fusion"
-    #     elif methods_count >= 2 and has_high_confidence:
-    #         return "rank_fusion"
-    #     elif len(results) >= 10 and score_variance < 0.05:
-    #         return "semantic_fusion"
-    #     else:
-    #         return "weighted_score"
+    def _select_hybrid_fusion_strategy(self, 
+                                     results: List[Any], 
+                                     query: str,
+                                     is_person_query: bool,
+                                     complexity: str) -> str:
+        """?? Intelligently select fusion strategy based on query and results analysis"""
+        
+        if len(results) <= 1:
+            return "single_result"
+        
+        # Analyze result sources
+        source_methods = [r.source_method for r in results]
+        has_database_results = any("database" in method for method in source_methods)
+        has_vector_results = any("vector" in method or "llamaindex" in method for method in source_methods)
+        
+        # ?? Person queries with database results ? person priority
+        if is_person_query and has_database_results:
+            return "hybrid_person_priority"
+        
+        # ?? Mixed sources ? hybrid weighted fusion
+        if has_database_results and has_vector_results:
+            return "hybrid_weighted_fusion"
+        
+        # ?? Only database results ? database priority
+        if has_database_results and not has_vector_results:
+            return "database_priority"
+        
+        # ?? Only vector results ? vector priority  
+        if has_vector_results and not has_database_results:
+            return "vector_priority"
+        
+        # ?? Complex queries ? reciprocal rank fusion
+        if complexity == "complex" and len(set(source_methods)) >= 2:
+            return "reciprocal_rank_fusion"
+        
+        # Default: hybrid weighted
+        return "hybrid_weighted_fusion"
     
-    def _simple_weighted_fusion(self, 
-                               results: List[Any], 
-                               query: str,
-                               extracted_entity: Optional[str] = None,
-                               required_terms: List[str] = None) -> List[Any]:
-        """?????: ?????????? weighted fusion ??? ??????????? ??????????"""
+    def _hybrid_person_priority_fusion(self, 
+                                     results: List[Any], 
+                                     query: str,
+                                     extracted_entity: Optional[str] = None,
+                                     required_terms: List[str] = None) -> List[Any]:
+        """?? Person-priority fusion: Database exact matches first, then vector semantic matches"""
         
-        query_lower = query.lower()
-        entity_lower = extracted_entity.lower() if extracted_entity else ""
+        logger.info(f"?? Person priority fusion for entity: '{extracted_entity or query}'")
         
+        database_results = []
+        vector_results = []
+        other_results = []
+        
+        # Categorize results by source
         for result in results:
-            # Base weight from method
-            method_weight = self.method_weights.get(result.source_method, 1.0)
-            
-            # Content analysis
-            content_lower = f"{result.content} {result.full_content} {result.filename}".lower()
-            
-            # Simple quality boost
-            quality_multiplier = 1.0
-            
-            # Exact query match boost
-            if query_lower in content_lower:
-                quality_multiplier *= 1.3
-            
-            # Entity match boost
-            if entity_lower and entity_lower in content_lower:
-                quality_multiplier *= 1.2
-            
-            # High confidence boost
-            if result.similarity_score > 0.6:  # ??????? ? 0.8
-                quality_multiplier *= 1.1
-            
-            # Calculate final weighted score
-            weighted_score = result.similarity_score * method_weight * quality_multiplier
-            
-            # Store in metadata
+            if "database" in result.source_method:
+                database_results.append(result)
+            elif "vector" in result.source_method or "llamaindex" in result.source_method:
+                vector_results.append(result)
+            else:
+                other_results.append(result)
+        
+        logger.info(f"   Categorized: {len(database_results)} database, {len(vector_results)} vector, {len(other_results)} other")
+        
+        # ?? Priority 1: Database results with person name scoring
+        scored_database = []
+        for result in database_results:
+            person_score = self._calculate_person_priority_score(result, query, extracted_entity)
             result.metadata.update({
-                "weighted_score": weighted_score,
-                "method_weight": method_weight,
-                "quality_multiplier": quality_multiplier,
-                "fusion_method": "simple_weighted"
+                "person_priority_score": person_score,
+                "fusion_priority": "database_person",
+                "fusion_method": "hybrid_person_priority"
+            })
+            scored_database.append(result)
+        
+        # Sort database results by person priority score
+        scored_database.sort(key=lambda x: x.metadata["person_priority_score"], reverse=True)
+        
+        # ?? Priority 2: Vector results with semantic scoring
+        scored_vector = []
+        for result in vector_results:
+            semantic_score = self._calculate_semantic_priority_score(result, query, extracted_entity)
+            result.metadata.update({
+                "semantic_priority_score": semantic_score,
+                "fusion_priority": "vector_semantic",
+                "fusion_method": "hybrid_person_priority"
+            })
+            scored_vector.append(result)
+        
+        # Sort vector results by semantic priority
+        scored_vector.sort(key=lambda x: x.metadata["semantic_priority_score"], reverse=True)
+        
+        # ?? Priority 3: Other results
+        for result in other_results:
+            result.metadata.update({
+                "fusion_priority": "other",
+                "fusion_method": "hybrid_person_priority"
             })
         
-        # Sort by weighted score
-        return sorted(results, key=lambda x: x.metadata.get("weighted_score", x.similarity_score), reverse=True)
+        # Combine with person priority: Database first, then vector, then others
+        fused_results = scored_database + scored_vector + other_results
+        
+        logger.info(f"?? Person priority: {len(scored_database)} DB + {len(scored_vector)} vector + {len(other_results)} other")
+        
+        return fused_results
     
-    def _weighted_score_fusion(self, 
+    def _hybrid_weighted_fusion(self, 
                               results: List[Any], 
                               query: str,
                               extracted_entity: Optional[str] = None,
                               required_terms: List[str] = None) -> List[Any]:
-        """Advanced weighted score fusion with multiple factors"""
+        """?? Advanced hybrid weighted fusion with source-aware scoring"""
+        
+        logger.info(f"?? Hybrid weighted fusion with {len(results)} results")
         
         query_lower = query.lower()
         entity_lower = extracted_entity.lower() if extracted_entity else ""
         required_terms_lower = [term.lower() for term in (required_terms or [])]
+        is_person_query = self._is_person_query(query, extracted_entity)
         
         for result in results:
-            # Base weight from method
+            # ?? Base weight from source method
             method_weight = self.method_weights.get(result.source_method, 1.0)
             
-            # Content analysis
+            # ?? Content analysis
             content_lower = f"{result.content} {result.full_content} {result.filename}".lower()
             
-            # Quality indicators
+            # ?? Start with base similarity score
+            base_score = result.similarity_score
+            
+            # ?? Quality multiplier calculation
             quality_multiplier = 1.0
             
-            # Exact query match boost
+            # ?? Database strategy boost
+            if hasattr(result, 'metadata') and result.metadata.get('database_strategy'):
+                strategy = result.metadata['database_strategy']
+                quality_multiplier *= self.strategy_boosts.get(strategy, 1.0)
+            
+            # ?? Match type boost
+            if hasattr(result, 'metadata') and result.metadata.get('match_type'):
+                match_type = result.metadata['match_type']
+                quality_multiplier *= self.strategy_boosts.get(match_type, 1.0)
+            
+            # ?? Exact query match boost
             if query_lower in content_lower:
-                quality_multiplier *= self.quality_indicators["exact_match"]
+                quality_multiplier *= self.quality_indicators["person_name_exact" if is_person_query else "exact_match"]
             
-            # Entity match boost
+            # ?? Entity match boost (for person queries)
             if entity_lower and entity_lower in content_lower:
-                quality_multiplier *= self.quality_indicators["known_entity"]
+                if is_person_query:
+                    quality_multiplier *= self.quality_indicators["person_name_exact"]
+                else:
+                    quality_multiplier *= 1.2
             
-            # Required terms coverage
+            # ?? Required terms coverage
             if required_terms_lower:
                 found_terms = sum(1 for term in required_terms_lower if term in content_lower)
                 term_coverage = found_terms / len(required_terms_lower)
                 if term_coverage > 0.5:
                     quality_multiplier *= (1.0 + term_coverage * 0.3)
             
-            # High confidence boost
-            if result.similarity_score > 0.8:
-                quality_multiplier *= self.quality_indicators["high_confidence"]
+            # ?? Query frequency boost
+            if hasattr(result, 'metadata') and result.metadata.get('query_occurrences', 0) > 1:
+                occurrences = result.metadata['query_occurrences']
+                quality_multiplier *= min(self.quality_indicators["high_query_frequency"], 1.0 + occurrences * 0.1)
             
-            # Content filtering boost
-            if result.metadata.get("content_filtered"):
-                quality_multiplier *= self.quality_indicators["content_filtered"]
-            
-            # Length penalty for very short results
+            # ?? Content length quality
             content_length = len(result.full_content)
-            if content_length < 50:
-                quality_multiplier *= 0.8
-            elif content_length > 1000:
-                quality_multiplier *= 1.1
+            if 100 <= content_length <= 2000:
+                quality_multiplier *= self.quality_indicators["optimal_content_length"]
+            elif content_length < 50:
+                quality_multiplier *= 0.8  # Penalty for very short content
             
-            # Calculate final weighted score
-            weighted_score = result.similarity_score * method_weight * quality_multiplier
+            # ?? Context quality analysis
+            context_quality = self._analyze_content_context(content_lower, entity_lower, is_person_query)
+            quality_multiplier *= context_quality
             
-            # Store in metadata for debugging
+            # ?? Calculate final weighted score
+            weighted_score = base_score * method_weight * quality_multiplier
+            
+            # ?? Store fusion metadata for debugging
             result.metadata.update({
-                "weighted_score": weighted_score,
+                "hybrid_weighted_score": weighted_score,
                 "method_weight": method_weight,
                 "quality_multiplier": quality_multiplier,
+                "base_score": base_score,
+                "context_quality": context_quality,
+                "fusion_method": "hybrid_weighted",
+                "is_person_query": is_person_query,
                 "fusion_factors": {
-                    "exact_match": query_lower in content_lower,
+                    "exact_query_match": query_lower in content_lower,
                     "entity_match": entity_lower in content_lower if entity_lower else False,
                     "term_coverage": found_terms / len(required_terms_lower) if required_terms_lower else 0,
-                    "high_confidence": result.similarity_score > 0.8,
-                    "content_filtered": result.metadata.get("content_filtered", False)
+                    "query_occurrences": result.metadata.get('query_occurrences', 0),
+                    "content_length_optimal": 100 <= content_length <= 2000,
+                    "database_strategy": result.metadata.get('database_strategy'),
+                    "match_type": result.metadata.get('match_type')
                 }
             })
         
         # Sort by weighted score
-        return sorted(results, key=lambda x: x.metadata.get("weighted_score", x.similarity_score), reverse=True)
+        sorted_results = sorted(results, key=lambda x: x.metadata.get("hybrid_weighted_score", x.similarity_score), reverse=True)
+        
+        logger.info(f"?? Hybrid weighted fusion completed: scores range {sorted_results[0].metadata.get('hybrid_weighted_score', 0):.3f} to {sorted_results[-1].metadata.get('hybrid_weighted_score', 0):.3f}")
+        
+        return sorted_results
+    
+    def _database_priority_fusion(self, 
+                                results: List[Any], 
+                                query: str,
+                                extracted_entity: Optional[str] = None,
+                                required_terms: List[str] = None) -> List[Any]:
+        """?? Database priority fusion: Prioritize exact database matches"""
+        
+        logger.info(f"??? Database priority fusion")
+        
+        database_results = [r for r in results if "database" in r.source_method]
+        other_results = [r for r in results if "database" not in r.source_method]
+        
+        # Score database results highly
+        for result in database_results:
+            result.metadata.update({
+                "database_priority_score": result.similarity_score * 1.3,  # 30% boost
+                "fusion_method": "database_priority"
+            })
+        
+        # Keep other results as-is
+        for result in other_results:
+            result.metadata.update({
+                "database_priority_score": result.similarity_score,
+                "fusion_method": "database_priority"
+            })
+        
+        # Sort by database priority score
+        all_scored = database_results + other_results
+        all_scored.sort(key=lambda x: x.metadata.get("database_priority_score", x.similarity_score), reverse=True)
+        
+        logger.info(f"??? Database priority: {len(database_results)} DB results prioritized over {len(other_results)} others")
+        
+        return all_scored
+    
+    def _vector_priority_fusion(self, 
+                              results: List[Any], 
+                              query: str,
+                              extracted_entity: Optional[str] = None,
+                              required_terms: List[str] = None) -> List[Any]:
+        """?? Vector priority fusion: Prioritize semantic vector matches"""
+        
+        logger.info(f"?? Vector priority fusion")
+        
+        vector_results = [r for r in results if ("vector" in r.source_method or "llamaindex" in r.source_method)]
+        other_results = [r for r in results if not ("vector" in r.source_method or "llamaindex" in r.source_method)]
+        
+        # Score vector results highly
+        for result in vector_results:
+            result.metadata.update({
+                "vector_priority_score": result.similarity_score * 1.2,  # 20% boost
+                "fusion_method": "vector_priority"
+            })
+        
+        # Keep other results as-is
+        for result in other_results:
+            result.metadata.update({
+                "vector_priority_score": result.similarity_score,
+                "fusion_method": "vector_priority"
+            })
+        
+        # Sort by vector priority score
+        all_scored = vector_results + other_results
+        all_scored.sort(key=lambda x: x.metadata.get("vector_priority_score", x.similarity_score), reverse=True)
+        
+        logger.info(f"?? Vector priority: {len(vector_results)} vector results prioritized over {len(other_results)} others")
+        
+        return all_scored
     
     def _reciprocal_rank_fusion(self, results: List[Any], query: str) -> List[Any]:
-        """Reciprocal Rank Fusion (RRF) for combining different ranking methods"""
+        """?? Enhanced reciprocal rank fusion for hybrid results"""
+        
+        logger.info(f"?? Reciprocal rank fusion with hybrid awareness")
         
         # Group results by method
         method_groups = defaultdict(list)
@@ -267,11 +440,10 @@ class ResultsFusionEngine:
         for method in method_groups:
             method_groups[method].sort(key=lambda x: x.similarity_score, reverse=True)
         
-        # Calculate RRF scores
+        # Calculate RRF scores with hybrid weights
         rrf_scores = {}
         k = 60  # RRF constant
         
-        # Create unique identifier for each result
         for result in results:
             result_id = self._create_result_id(result)
             
@@ -280,7 +452,8 @@ class ResultsFusionEngine:
                     "result": result,
                     "rrf_score": 0,
                     "ranks": {},
-                    "methods": set()
+                    "methods": set(),
+                    "hybrid_boost": self.method_weights.get(result.source_method, 1.0)
                 }
             
             # Find rank in its method group
@@ -289,18 +462,31 @@ class ResultsFusionEngine:
                 rank = next(i for i, r in enumerate(method_list) if self._create_result_id(r) == result_id) + 1
                 rrf_contribution = 1.0 / (k + rank)
                 
-                rrf_scores[result_id]["rrf_score"] += rrf_contribution
+                # Apply hybrid weight
+                hybrid_weight = rrf_scores[result_id]["hybrid_boost"]
+                weighted_rrf = rrf_contribution * hybrid_weight
+                
+                rrf_scores[result_id]["rrf_score"] += weighted_rrf
                 rrf_scores[result_id]["ranks"][result.source_method] = rank
                 rrf_scores[result_id]["methods"].add(result.source_method)
                 
             except (StopIteration, ValueError):
                 logger.warning(f"Could not find rank for result in RRF")
         
-        # Boost results that appear in multiple methods
+        # Boost results that appear in multiple methods (especially database + vector)
         for result_id in rrf_scores:
-            method_count = len(rrf_scores[result_id]["methods"])
+            methods = rrf_scores[result_id]["methods"]
+            method_count = len(methods)
+            
             if method_count > 1:
-                rrf_scores[result_id]["rrf_score"] *= (1.0 + (method_count - 1) * 0.2)
+                # Extra boost for database + vector combination
+                has_database = any("database" in method for method in methods)
+                has_vector = any("vector" in method or "llamaindex" in method for method in methods)
+                
+                if has_database and has_vector:
+                    rrf_scores[result_id]["rrf_score"] *= 1.4  # Strong boost for hybrid matches
+                else:
+                    rrf_scores[result_id]["rrf_score"] *= (1.0 + (method_count - 1) * 0.2)
         
         # Sort by RRF score
         sorted_items = sorted(
@@ -314,271 +500,340 @@ class ResultsFusionEngine:
         for item in sorted_items:
             result = item["result"]
             result.metadata.update({
-                "rrf_score": item["rrf_score"],
+                "hybrid_rrf_score": item["rrf_score"],
                 "method_ranks": item["ranks"],
                 "methods_count": len(item["methods"]),
-                "fusion_method": "rrf"
+                "hybrid_boost_applied": item["hybrid_boost"],
+                "fusion_method": "hybrid_rrf"
             })
             fused_results.append(result)
         
+        logger.info(f"?? RRF fusion: Top score {fused_results[0].metadata['hybrid_rrf_score']:.4f}")
+        
         return fused_results
     
-    def _semantic_clustering_fusion(self, results: List[Any], query: str) -> List[Any]:
-        """Group semantically similar results and pick best from each cluster"""
+    def _hybrid_deduplication(self, results: List[Any]) -> List[Any]:
+        """?? Hybrid-aware deduplication with intelligent result merging"""
         
-        # ????????: ??????? semantic clustering ??? ??????????? - ?? ??????? ??????????
-        logger.info("?? DIAGNOSTIC: Skipping semantic clustering - returning sorted results")
-        return sorted(results, key=lambda x: x.similarity_score, reverse=True)
+        if len(results) <= 1:
+            return results
         
-        # ????????????????: ???????????? ?????? clustering
-        # if len(results) < 5:
-        #     return sorted(results, key=lambda x: x.similarity_score, reverse=True)
-        # 
-        # # Simple clustering based on content similarity
-        # clusters = []
-        # used_indices = set()
-        # 
-        # for i, result in enumerate(results):
-        #     if i in used_indices:
-        #         continue
-        #     
-        #     # Start new cluster
-        #     cluster = [result]
-        #     used_indices.add(i)
-        #     
-        #     # Find similar results
-        #     for j, other_result in enumerate(results[i+1:], i+1):
-        #         if j in used_indices:
-        #             continue
-        #         
-        #         if self._are_semantically_similar(result, other_result):
-        #             cluster.append(other_result)
-        #             used_indices.add(j)
-        #     
-        #     clusters.append(cluster)
-        # 
-        # # Pick best result from each cluster
-        # cluster_representatives = []
-        # for cluster in clusters:
-        #     # Sort cluster by combined score
-        #     cluster.sort(key=lambda x: (
-        #         x.similarity_score * self.method_weights.get(x.source_method, 1.0)
-        #     ), reverse=True)
-        #     
-        #     best_result = cluster[0]
-        #     best_result.metadata.update({
-        #         "cluster_size": len(cluster),
-        #         "cluster_variants": len(set(r.filename for r in cluster)),
-        #         "fusion_method": "semantic_clustering"
-        #     })
-        #     
-        #     cluster_representatives.append(best_result)
-        # 
-        # # Sort clusters by their best representative's score
-        # return sorted(cluster_representatives, key=lambda x: x.similarity_score, reverse=True)
-    
-    def _hybrid_fusion(self, 
-                      results: List[Any], 
-                      query: str,
-                      extracted_entity: Optional[str] = None,
-                      required_terms: List[str] = None) -> List[Any]:
-        """Hybrid fusion combining multiple strategies"""
-        
-        # Apply weighted scoring
-        weighted_results = self._weighted_score_fusion(
-            results[:], query, extracted_entity, required_terms
-        )
-        
-        # Apply RRF 
-        rrf_results = self._reciprocal_rank_fusion(results[:], query)
-        
-        # Create hybrid score combining both approaches
-        result_scores = {}
-        
-        for i, result in enumerate(weighted_results):
-            result_id = self._create_result_id(result)
-            weighted_rank = i + 1
-            weighted_score = result.metadata.get("weighted_score", result.similarity_score)
-            
-            result_scores[result_id] = {
-                "result": result,
-                "weighted_rank": weighted_rank,
-                "weighted_score": weighted_score,
-                "rrf_score": 0,
-                "rrf_rank": len(rrf_results) + 1
-            }
-        
-        for i, result in enumerate(rrf_results):
-            result_id = self._create_result_id(result)
-            if result_id in result_scores:
-                result_scores[result_id]["rrf_score"] = result.metadata.get("rrf_score", 0)
-                result_scores[result_id]["rrf_rank"] = i + 1
-        
-        # Calculate hybrid score
-        for result_id in result_scores:
-            item = result_scores[result_id]
-            
-            # Normalize ranks (lower is better)
-            weighted_rank_norm = 1.0 / item["weighted_rank"]
-            rrf_rank_norm = 1.0 / item["rrf_rank"]
-            
-            # Combine with weights (favor weighted approach slightly)
-            hybrid_score = (
-                0.6 * weighted_rank_norm +
-                0.4 * rrf_rank_norm +
-                0.1 * item["weighted_score"] +
-                0.1 * item["rrf_score"]
-            )
-            
-            item["hybrid_score"] = hybrid_score
-            item["result"].metadata.update({
-                "hybrid_score": hybrid_score,
-                "fusion_method": "hybrid",
-                "weighted_rank": item["weighted_rank"],
-                "rrf_rank": item["rrf_rank"]
-            })
-        
-        # Sort by hybrid score
-        sorted_items = sorted(
-            result_scores.values(),
-            key=lambda x: x["hybrid_score"],
-            reverse=True
-        )
-        
-        return [item["result"] for item in sorted_items]
-    
-    def _remove_exact_duplicates(self, results: List[Any]) -> List[Any]:
-        """Remove exact duplicates based on content hash"""
-        seen_hashes = set()
-        unique_results = []
+        # Group by filename + content hash for deduplication
+        unique_results = {}
         
         for result in results:
-            # Create hash from content and filename
-            content_hash = hash((result.full_content, result.filename))
+            # Create deduplication key
+            dedup_key = f"{result.filename}_{hash(result.full_content[:200])}"
             
-            if content_hash not in seen_hashes:
-                seen_hashes.add(content_hash)
-                unique_results.append(result)
+            if dedup_key not in unique_results:
+                unique_results[dedup_key] = result
+                result.metadata["dedup_status"] = "original"
             else:
-                # Keep the one with better score/method
-                existing_idx = None
-                for i, existing in enumerate(unique_results):
-                    if hash((existing.full_content, existing.filename)) == content_hash:
-                        existing_idx = i
-                        break
+                existing = unique_results[dedup_key]
                 
-                if existing_idx is not None:
-                    existing = unique_results[existing_idx]
-                    if (result.similarity_score > existing.similarity_score or
-                        self._is_better_method(result.source_method, existing.source_method)):
-                        unique_results[existing_idx] = result
+                # ?? Hybrid-aware conflict resolution
+                keep_new = self._should_keep_new_result(existing, result)
+                
+                if keep_new:
+                    # Keep new result, mark why
+                    result.metadata["dedup_status"] = "replaced_existing"
+                    result.metadata["replacement_reason"] = self._get_replacement_reason(existing, result)
+                    unique_results[dedup_key] = result
+                else:
+                    # Keep existing, mark why
+                    existing.metadata["dedup_status"] = "kept_original"
+                    existing.metadata["duplicate_found"] = True
         
-        logger.info(f"?? Deduplication: {len(results)} ? {len(unique_results)} unique results")
-        return unique_results
+        deduplicated = list(unique_results.values())
+        
+        logger.info(f"?? Hybrid deduplication: {len(results)} ? {len(deduplicated)} unique results")
+        
+        return deduplicated
     
-    def _apply_final_filters(self, 
-                           results: List[Any], 
-                           query: str,
-                           extracted_entity: Optional[str] = None,
-                           required_terms: List[str] = None) -> List[Any]:
-        """??????????: ????????? ?????? ?????????? ??? ???????????"""
+    def _should_keep_new_result(self, existing: Any, new: Any) -> bool:
+        """?? Decide whether to keep new result over existing one"""
+        
+        # ?? Priority 1: Database beats vector for person queries (if we can detect)
+        existing_is_db = "database" in existing.source_method
+        new_is_db = "database" in new.source_method
+        
+        if new_is_db and not existing_is_db:
+            return True  # Database result replaces vector result
+        if existing_is_db and not new_is_db:
+            return False  # Keep existing database result
+        
+        # ?? Priority 2: Higher similarity score
+        if new.similarity_score > existing.similarity_score:
+            return True
+        
+        # ?? Priority 3: Better method weight
+        existing_weight = self.method_weights.get(existing.source_method, 1.0)
+        new_weight = self.method_weights.get(new.source_method, 1.0)
+        
+        if new_weight > existing_weight:
+            return True
+        
+        # ?? Priority 4: More metadata/context
+        existing_metadata_count = len(existing.metadata)
+        new_metadata_count = len(new.metadata)
+        
+        if new_metadata_count > existing_metadata_count:
+            return True
+        
+        # Default: keep existing
+        return False
+    
+    def _get_replacement_reason(self, existing: Any, new: Any) -> str:
+        """?? Get human-readable reason for result replacement"""
+        
+        if "database" in new.source_method and "database" not in existing.source_method:
+            return "database_over_vector"
+        elif new.similarity_score > existing.similarity_score:
+            return "higher_similarity"
+        elif self.method_weights.get(new.source_method, 1.0) > self.method_weights.get(existing.source_method, 1.0):
+            return "better_method_weight"
+        elif len(new.metadata) > len(existing.metadata):
+            return "richer_metadata"
+        else:
+            return "unknown"
+    
+    def _apply_hybrid_final_filters(self, 
+                                  results: List[Any], 
+                                  query: str,
+                                  extracted_entity: Optional[str] = None,
+                                  required_terms: List[str] = None,
+                                  is_person_query: bool = False) -> List[Any]:
+        """?? Apply final filters with hybrid-aware logic"""
         
         if not results:
             return results
         
-        # ??????????: ??????? ??????????? ?????????? ?? ????????  
-        # min_score = max(0.1, results[0].similarity_score * 0.3)  # ??????: ??????? ??????
-        min_score = 0.1  # ?????: ????? ?????? ?????
-        filtered_results = [r for r in results if r.similarity_score >= min_score]
+        # ?? Minimum score threshold (more permissive for hybrid)
+        min_score = max(0.1, results[0].similarity_score * 0.2)  # Very permissive
         
-        # ??????????: ??????????? ????? ???????????
-        # max_results = self.config.search.max_final_results  # ??????: ????? ???? ??????? ????  
-        max_results = 15  # ?????: ?????????? ?????? ???????????
+        # ?? For person queries with database results, be even more permissive
+        if is_person_query:
+            has_database_results = any("database" in r.source_method for r in results)
+            if has_database_results:
+                min_score = 0.05  # Very low threshold for person queries with database results
+        
+        filtered_results = []
+        for result in results:
+            # Check minimum score
+            final_score = result.metadata.get("hybrid_weighted_score") or result.similarity_score
+            
+            if final_score >= min_score:
+                filtered_results.append(result)
+            else:
+                logger.debug(f"   Filtered out: {result.filename} (score: {final_score:.3f} < {min_score:.3f})")
+        
+        # ?? Maximum results limit
+        max_results = self.config.search.max_final_results
         final_results = filtered_results[:max_results]
         
-        logger.info(f"?? Final filtering (RELAXED): {len(results)} ? {len(final_results)} results")
-        logger.info(f"   Min score threshold: {min_score}, Max results: {max_results}")
+        logger.info(f"?? Hybrid final filtering: {len(results)} ? {len(final_results)} results (min_score: {min_score:.3f})")
         
         return final_results
     
-    def _calculate_score_variance(self, results: List[Any]) -> float:
-        """Calculate variance in similarity scores"""
-        if len(results) <= 1:
-            return 0.0
+    def _analyze_content_context(self, content_lower: str, entity_lower: str, is_person_query: bool) -> float:
+        """?? Analyze content context for quality scoring"""
         
-        scores = [r.similarity_score for r in results]
-        mean_score = sum(scores) / len(scores)
-        variance = sum((s - mean_score) ** 2 for s in scores) / len(scores)
+        base_quality = 1.0
         
-        return math.sqrt(variance)  # Return standard deviation
+        if not is_person_query:
+            return base_quality
+        
+        if not entity_lower:
+            return base_quality
+        
+        # Look for training/certification context (positive)
+        training_keywords = ['training', 'certificate', 'certification', 'course', 'completed', 'achieved']
+        training_context = sum(1 for keyword in training_keywords if keyword in content_lower)
+        if training_context > 0:
+            base_quality *= self.quality_indicators["training_context"]
+        
+        # Look for signature-only context (negative)
+        signature_keywords = ['signature', 'signed', 'form', 'date:', 'location:']
+        signature_context = sum(1 for keyword in signature_keywords if keyword in content_lower)
+        if signature_context >= 2 and training_context == 0:
+            base_quality *= self.quality_indicators["signature_context"]
+        
+        return base_quality
+    
+    def _is_person_query(self, query: str, extracted_entity: str = None) -> bool:
+        """?? Detect if query is about a person"""
+        
+        if extracted_entity:
+            # Check if extracted entity looks like a person name
+            for pattern in self.person_regex:
+                if pattern.search(extracted_entity):
+                    return True
+        
+        # Check query for person indicators
+        person_indicators = ['who is', 'tell me about', 'show me', 'find', 'about']
+        query_lower = query.lower()
+        
+        has_person_indicator = any(indicator in query_lower for indicator in person_indicators)
+        has_capitalized_words = bool(re.search(r'\b[A-Z][a-z]+\b', query))
+        
+        return has_person_indicator and has_capitalized_words
+    
+    def _analyze_query_complexity(self, query: str) -> str:
+        """?? Analyze query complexity for fusion strategy selection"""
+        
+        word_count = len(query.split())
+        
+        if word_count <= 3:
+            return "simple"
+        elif word_count <= 6:
+            return "medium" 
+        else:
+            return "complex"
+    
+    def _calculate_person_priority_score(self, result: Any, query: str, extracted_entity: str = None) -> float:
+        """?? Calculate person priority score for database results"""
+        
+        base_score = result.similarity_score
+        content_lower = result.full_content.lower()
+        entity_lower = (extracted_entity or query).lower()
+        
+        # Start with base score
+        priority_score = base_score
+        
+        # Boost for exact entity matches
+        if entity_lower in content_lower:
+            priority_score *= 1.4
+        
+        # Boost for training context
+        training_keywords = ['training', 'certificate', 'certification', 'course', 'completed']
+        training_matches = sum(1 for keyword in training_keywords if keyword in content_lower)
+        if training_matches > 0:
+            priority_score *= (1.0 + training_matches * 0.1)
+        
+        # Boost for query occurrences
+        if hasattr(result, 'metadata') and result.metadata.get('query_occurrences', 0) > 1:
+            occurrences = result.metadata['query_occurrences']
+            priority_score *= min(1.3, 1.0 + occurrences * 0.1)
+        
+        return min(1.0, priority_score)
+    
+    def _calculate_semantic_priority_score(self, result: Any, query: str, extracted_entity: str = None) -> float:
+        """?? Calculate semantic priority score for vector results"""
+        
+        base_score = result.similarity_score
+        content_length = len(result.full_content)
+        
+        semantic_score = base_score
+        
+        # Content length quality
+        if 100 <= content_length <= 2000:
+            semantic_score *= 1.1
+        elif content_length < 50:
+            semantic_score *= 0.9
+        
+        # High similarity boost
+        if base_score > 0.7:
+            semantic_score *= 1.05
+        
+        return min(1.0, semantic_score)
     
     def _create_result_id(self, result: Any) -> str:
         """Create unique identifier for result"""
         return f"{result.filename}_{hash(result.full_content[:100])}"
     
-    def _are_semantically_similar(self, result1: Any, result2: Any, threshold: float = 0.7) -> bool:
-        """Check if two results are semantically similar (simple implementation)"""
-        # Simple similarity based on shared words
-        words1 = set(result1.full_content.lower().split())
-        words2 = set(result2.full_content.lower().split())
-        
-        if not words1 or not words2:
-            return False
-        
-        intersection = words1.intersection(words2)
-        union = words1.union(words2)
-        
-        jaccard_similarity = len(intersection) / len(union)
-        return jaccard_similarity > threshold
-    
-    def _is_better_method(self, method1: str, method2: str) -> bool:
-        """Compare which method is better"""
-        return self.method_weights.get(method1, 1.0) > self.method_weights.get(method2, 1.0)
-    
-    def _generate_fusion_metadata(self, 
-                                 original_results: List[Any],
-                                 final_results: List[Any],
-                                 fusion_method: str) -> Dict[str, Any]:
-        """Generate metadata about fusion process"""
+    def _generate_hybrid_fusion_metadata(self, 
+                                       original_results: List[Any],
+                                       final_results: List[Any],
+                                       fusion_method: str,
+                                       is_person_query: bool) -> Dict[str, Any]:
+        """?? Generate comprehensive metadata about hybrid fusion process"""
         
         original_methods = Counter(r.source_method for r in original_results)
         final_methods = Counter(r.source_method for r in final_results)
         
         if final_results:
-            avg_score = sum(r.similarity_score for r in final_results) / len(final_results)
-            score_range = (
-                min(r.similarity_score for r in final_results),
-                max(r.similarity_score for r in final_results)
-            )
+            scores = []
+            for r in final_results:
+                # Get the fusion score used for ranking
+                fusion_score = (r.metadata.get("hybrid_weighted_score") or 
+                              r.metadata.get("person_priority_score") or 
+                              r.metadata.get("database_priority_score") or 
+                              r.metadata.get("vector_priority_score") or 
+                              r.metadata.get("hybrid_rrf_score") or 
+                              r.similarity_score)
+                scores.append(fusion_score)
+            
+            avg_score = sum(scores) / len(scores)
+            score_range = (min(scores), max(scores))
         else:
             avg_score = 0.0
             score_range = (0.0, 0.0)
         
+        # Analyze fusion effectiveness
+        database_count = sum(1 for r in final_results if "database" in r.source_method)
+        vector_count = sum(1 for r in final_results if ("vector" in r.source_method or "llamaindex" in r.source_method))
+        
         return {
             "fusion_method": fusion_method,
+            "is_person_query": is_person_query,
             "original_methods": dict(original_methods),
             "final_methods": dict(final_methods),
             "deduplication_ratio": len(final_results) / len(original_results) if original_results else 0,
             "avg_final_score": avg_score,
             "score_range": score_range,
-            "quality_distribution": self._analyze_quality_distribution(final_results),
-            "diagnostic_mode": True  # ?????????: ????????? ??? ? ??????????????? ??????
+            "quality_distribution": self._analyze_hybrid_quality_distribution(final_results),
+            "source_distribution": {
+                "database_results": database_count,
+                "vector_results": vector_count,
+                "other_results": len(final_results) - database_count - vector_count
+            },
+            "hybrid_effectiveness": {
+                "mixed_sources": database_count > 0 and vector_count > 0,
+                "database_dominance": database_count > vector_count,
+                "vector_dominance": vector_count > database_count,
+                "balanced_results": abs(database_count - vector_count) <= 2
+            },
+            "fusion_quality_indicators": {
+                "exact_matches": sum(1 for r in final_results 
+                                   if r.metadata.get("match_type") == "exact_phrase"),
+                "person_matches": sum(1 for r in final_results 
+                                    if r.metadata.get("match_type") == "person_name_match"),
+                "semantic_matches": sum(1 for r in final_results 
+                                      if "vector" in r.source_method),
+                "high_quality_scores": sum(1 for r in final_results 
+                                         if r.similarity_score >= 0.7)
+            }
         }
     
-    def _analyze_quality_distribution(self, results: List[Any]) -> Dict[str, int]:
-        """Analyze quality distribution of final results"""
+    def _analyze_hybrid_quality_distribution(self, results: List[Any]) -> Dict[str, int]:
+        """?? Analyze quality distribution of hybrid fusion results"""
         if not results:
-            return {"high": 0, "medium": 0, "low": 0}
+            return {"excellent": 0, "good": 0, "moderate": 0, "low": 0}
         
-        distribution = {"high": 0, "medium": 0, "low": 0}
+        distribution = {"excellent": 0, "good": 0, "moderate": 0, "low": 0}
         
         for result in results:
-            score = result.similarity_score
-            if score >= 0.7:
-                distribution["high"] += 1
+            # Get the best available score
+            score = (result.metadata.get("hybrid_weighted_score") or 
+                    result.metadata.get("person_priority_score") or 
+                    result.similarity_score)
+            
+            if score >= 0.8:
+                distribution["excellent"] += 1
+            elif score >= 0.6:
+                distribution["good"] += 1
             elif score >= 0.4:
-                distribution["medium"] += 1
+                distribution["moderate"] += 1
             else:
                 distribution["low"] += 1
         
         return distribution
+
+
+# Legacy compatibility class
+class ResultsFusionEngine(HybridResultsFusionEngine):
+    """?? Legacy compatibility wrapper for the hybrid fusion engine"""
+    
+    def __init__(self, config):
+        super().__init__(config)
+        logger.info("?? Using legacy ResultsFusionEngine interface - redirecting to HybridResultsFusionEngine")
