@@ -4,6 +4,7 @@
 Enhanced Configuration module for RAG Document Indexer
 Handles environment variables, validation, and default settings
 Added support for advanced document parsing, OCR improvements, and ENHANCED PDF PROCESSING
+UPDATED: Migrated from Ollama to Gemini API with gemini-embedding-001
 """
 
 import os
@@ -11,7 +12,7 @@ from dotenv import load_dotenv
 
 
 class Config:
-    """Enhanced configuration class with advanced document processing settings including PDF support"""
+    """Enhanced configuration class with advanced document processing settings including PDF support and Gemini API"""
     
     def __init__(self):
         """Initialize configuration by loading environment variables"""
@@ -37,10 +38,10 @@ class Config:
         self.CONNECTION_STRING = os.getenv("SUPABASE_CONNECTION_STRING")
         self.TABLE_NAME = os.getenv("TABLE_NAME", "documents")
         
-        # --- EMBEDDING SETTINGS ---
-        self.EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
-        self.EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
-        self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        # --- GEMINI API SETTINGS (UPDATED FROM OLLAMA) ---
+        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        self.EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
+        self.EMBED_DIM = int(os.getenv("EMBED_DIM", "3072"))  # Updated default for Gemini
         
         # --- TEXT PROCESSING SETTINGS ---
         self.CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "512"))
@@ -113,15 +114,15 @@ class Config:
         self.PDF_ENABLE_CONTENT_VALIDATION = os.getenv("PDF_ENABLE_CONTENT_VALIDATION", "true").lower() == "true"
         
         # --- PERFORMANCE SETTINGS ---
-        self.OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
+        self.GEMINI_TIMEOUT = int(os.getenv("GEMINI_TIMEOUT", "300"))  # Updated from OLLAMA_TIMEOUT
         self.MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
         self.SKIP_VALIDATION = os.getenv("SKIP_VALIDATION", "false").lower() == "true"
         
-        # --- NEW: CPU OPTIMIZATION SETTINGS ---
-        self.OLLAMA_NUM_THREAD = int(os.getenv("OLLAMA_NUM_THREAD", "16"))
-        self.OLLAMA_NUMA = os.getenv("OLLAMA_NUMA", "false").lower() == "true"
-        self.OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "60s")
-        self.OLLAMA_MAX_LOADED_MODELS = int(os.getenv("OLLAMA_MAX_LOADED_MODELS", "1"))
+        # --- NEW: GEMINI API OPTIMIZATION SETTINGS (UPDATED FROM OLLAMA) ---
+        self.GEMINI_REQUEST_RATE_LIMIT = int(os.getenv("GEMINI_REQUEST_RATE_LIMIT", "10"))  # requests per second
+        self.GEMINI_RETRY_ATTEMPTS = int(os.getenv("GEMINI_RETRY_ATTEMPTS", "3"))
+        self.GEMINI_RETRY_DELAY = float(os.getenv("GEMINI_RETRY_DELAY", "1.0"))  # seconds
+        self.GEMINI_MAX_TOKENS_PER_REQUEST = int(os.getenv("GEMINI_MAX_TOKENS_PER_REQUEST", "2048"))
         
         # --- NEW: MONITORING AND LOGGING ---
         self.ENABLE_PROGRESS_LOGGING = os.getenv("ENABLE_PROGRESS_LOGGING", "true").lower() == "true"
@@ -129,14 +130,15 @@ class Config:
         self.LOG_OCR_ROTATION_ATTEMPTS = os.getenv("LOG_OCR_ROTATION_ATTEMPTS", "false").lower() == "true"
         self.LOG_TEXT_QUALITY_SCORES = os.getenv("LOG_TEXT_QUALITY_SCORES", "false").lower() == "true"
         self.LOG_PDF_PROCESSING_DETAILS = os.getenv("LOG_PDF_PROCESSING_DETAILS", "true").lower() == "true"
+        self.LOG_GEMINI_API_CALLS = os.getenv("LOG_GEMINI_API_CALLS", "false").lower() == "true"  # NEW
         
         # --- DOCUMENT CONVERSION SETTINGS ---
         self.AUTO_CONVERT_DOC = os.getenv("AUTO_CONVERT_DOC", "true").lower() == "true"
         self.BACKUP_ORIGINAL_DOC = os.getenv("BACKUP_ORIGINAL_DOC", "true").lower() == "true"
         self.DELETE_ORIGINAL_DOC = os.getenv("DELETE_ORIGINAL_DOC", "false").lower() == "true"
         
-        # --- BATCH RESTART SETTINGS ---
-        self.BATCH_RESTART_INTERVAL = int(os.getenv("BATCH_RESTART_INTERVAL", "5"))
+        # --- BATCH RESTART SETTINGS (KEPT FOR COMPATIBILITY, BUT NOT APPLICABLE TO GEMINI) ---
+        self.BATCH_RESTART_INTERVAL = int(os.getenv("BATCH_RESTART_INTERVAL", "0"))  # Disabled for Gemini
     
     def _validate_settings(self):
         """Validate configuration settings and raise errors for critical issues"""
@@ -144,6 +146,10 @@ class Config:
         # Critical validations
         if not self.CONNECTION_STRING:
             raise ValueError("SUPABASE_CONNECTION_STRING not found in .env file!")
+        
+        # Updated: Gemini API key validation instead of Ollama
+        if not self.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY not found in .env file!")
         
         if not os.path.exists(self.DOCUMENTS_DIR):
             raise ValueError(f"Documents directory does not exist: {self.DOCUMENTS_DIR}")
@@ -155,8 +161,10 @@ class Config:
         if self.CHUNK_OVERLAP >= self.CHUNK_SIZE:
             raise ValueError("CHUNK_OVERLAP must be less than CHUNK_SIZE")
         
-        if self.EMBED_DIM not in [384, 512, 768, 1024, 1536]:
-            print(f"WARNING: Unusual embedding dimension: {self.EMBED_DIM}")
+        # Updated: Validate Gemini embedding dimensions
+        if self.EMBED_DIM not in [768, 1536, 3072]:  # Common Gemini embedding dimensions
+            print(f"WARNING: Unusual embedding dimension for Gemini: {self.EMBED_DIM}")
+            print(f"Recommended dimensions: 768, 1536, or 3072")
         
         if self.PROCESSING_BATCH_SIZE < 1:
             raise ValueError("PROCESSING_BATCH_SIZE must be at least 1")
@@ -166,6 +174,16 @@ class Config:
         
         if self.DB_BATCH_SIZE < 1:
             raise ValueError("DB_BATCH_SIZE must be at least 1")
+        
+        # NEW: Validate Gemini API settings
+        if self.GEMINI_REQUEST_RATE_LIMIT < 1:
+            raise ValueError("GEMINI_REQUEST_RATE_LIMIT must be at least 1")
+        
+        if self.GEMINI_RETRY_ATTEMPTS < 0:
+            raise ValueError("GEMINI_RETRY_ATTEMPTS must be 0 or greater")
+        
+        if self.GEMINI_RETRY_DELAY < 0:
+            raise ValueError("GEMINI_RETRY_DELAY must be 0 or greater")
         
         # NEW: Validate OCR rotation settings
         if self.OCR_ROTATION_QUALITY_THRESHOLD < 0 or self.OCR_ROTATION_QUALITY_THRESHOLD > 1:
@@ -241,30 +259,30 @@ class Config:
     
     def print_config(self):
         """Print current configuration in a readable format"""
-        print("=== ENHANCED RAG INDEXER CONFIGURATION ===")
+        print("=== ENHANCED RAG INDEXER CONFIGURATION (GEMINI API) ===")
         print(f"Documents directory: {self.DOCUMENTS_DIR}")
         print(f"Backup directory: {self.get_backup_directory()}")
         print(f"Blacklisted directories: {', '.join(self.BLACKLIST_DIRECTORIES)}")
-        print(f"Embedding model: {self.EMBED_MODEL} (CPU-optimized)")
+        print(f"Embedding model: {self.EMBED_MODEL} (Gemini API)")
         print(f"Chunk size: {self.CHUNK_SIZE}, Overlap: {self.CHUNK_OVERLAP}")
         print(f"Vector dimension: {self.EMBED_DIM}")
         print(f"Batch processing: {self.PROCESSING_BATCH_SIZE} chunks per batch")
-        print(f"Batch restart interval: {self.BATCH_RESTART_INTERVAL} batches")
+        print(f"Gemini rate limit: {self.GEMINI_REQUEST_RATE_LIMIT} requests/sec")
         print(f"Enhanced features:")
-        print(f"  - Advanced document parsing: {'?' if self.ENABLE_ADVANCED_DOC_PARSING else '?'}")
-        print(f"  - Auto .doc conversion: {'?' if self.AUTO_CONVERT_DOC else '?'}")
-        print(f"  - OCR auto-rotation: {'?' if self.OCR_AUTO_ROTATION else '?'}")
-        print(f"  - Text quality analysis: {'?' if self.ENABLE_TEXT_QUALITY_ANALYSIS else '?'}")
-        print(f"  - Hybrid text+image processing: {'?' if self.HYBRID_TEXT_IMAGE_PROCESSING else '?'}")
-        print(f"  - Extract images from docs: {'?' if self.EXTRACT_IMAGES_FROM_DOCS else '?'}")
-        print(f"  - Structure preservation: {'?' if self.PRESERVE_DOC_STRUCTURE else '?'}")
-        print(f"  - Enhanced PDF processing: {'?' if self.ENABLE_ENHANCED_PDF_PROCESSING else '?'}")
+        print(f"  - Advanced document parsing: {'✓' if self.ENABLE_ADVANCED_DOC_PARSING else '✗'}")
+        print(f"  - Auto .doc conversion: {'✓' if self.AUTO_CONVERT_DOC else '✗'}")
+        print(f"  - OCR auto-rotation: {'✓' if self.OCR_AUTO_ROTATION else '✗'}")
+        print(f"  - Text quality analysis: {'✓' if self.ENABLE_TEXT_QUALITY_ANALYSIS else '✗'}")
+        print(f"  - Hybrid text+image processing: {'✓' if self.HYBRID_TEXT_IMAGE_PROCESSING else '✗'}")
+        print(f"  - Extract images from docs: {'✓' if self.EXTRACT_IMAGES_FROM_DOCS else '✗'}")
+        print(f"  - Structure preservation: {'✓' if self.PRESERVE_DOC_STRUCTURE else '✗'}")
+        print(f"  - Enhanced PDF processing: {'✓' if self.ENABLE_ENHANCED_PDF_PROCESSING else '✗'}")
         print(f"PDF processing settings:")
-        print(f"  - Auto method selection: {'?' if self.PDF_AUTO_METHOD_SELECTION else '?'}")
-        print(f"  - Table extraction: {'?' if self.PDF_ENABLE_TABLE_EXTRACTION else '?'}")
-        print(f"  - OCR fallback: {'?' if self.PDF_ENABLE_OCR_FALLBACK else '?'}")
+        print(f"  - Auto method selection: {'✓' if self.PDF_AUTO_METHOD_SELECTION else '✗'}")
+        print(f"  - Table extraction: {'✓' if self.PDF_ENABLE_TABLE_EXTRACTION else '✗'}")
+        print(f"  - OCR fallback: {'✓' if self.PDF_ENABLE_OCR_FALLBACK else '✗'}")
         print(f"  - Chunk size: {self.PDF_CHUNK_SIZE}")
-        print(f"CPU optimization: {self.OLLAMA_NUM_THREAD} threads, NUMA {'enabled' if self.OLLAMA_NUMA else 'disabled'}")
+        print(f"Gemini API optimization: Rate limit {self.GEMINI_REQUEST_RATE_LIMIT}/sec, {self.GEMINI_RETRY_ATTEMPTS} retries")
         print("=" * 60)
     
     def get_batch_settings(self):
@@ -285,15 +303,16 @@ class Config:
         }
     
     def get_embedding_settings(self):
-        """Return embedding settings as a dictionary"""
+        """Return Gemini embedding settings as a dictionary (UPDATED FROM OLLAMA)"""
         return {
             'model': self.EMBED_MODEL,
             'dimension': self.EMBED_DIM,
-            'base_url': self.OLLAMA_BASE_URL,
-            'timeout': self.OLLAMA_TIMEOUT,
-            'num_thread': self.OLLAMA_NUM_THREAD,
-            'numa': self.OLLAMA_NUMA,
-            'keep_alive': self.OLLAMA_KEEP_ALIVE
+            'api_key': self.GEMINI_API_KEY,
+            'timeout': self.GEMINI_TIMEOUT,
+            'rate_limit': self.GEMINI_REQUEST_RATE_LIMIT,
+            'retry_attempts': self.GEMINI_RETRY_ATTEMPTS,
+            'retry_delay': self.GEMINI_RETRY_DELAY,
+            'max_tokens_per_request': self.GEMINI_MAX_TOKENS_PER_REQUEST
         }
     
     def get_ocr_settings(self):
@@ -373,16 +392,16 @@ class Config:
         }
     
     def get_performance_settings(self):
-        """Return performance optimization settings as a dictionary"""
+        """Return performance optimization settings as a dictionary (UPDATED FOR GEMINI)"""
         return {
             'max_file_size': self.MAX_FILE_SIZE,
             'skip_validation': self.SKIP_VALIDATION,
-            'ollama_timeout': self.OLLAMA_TIMEOUT,
+            'gemini_timeout': self.GEMINI_TIMEOUT,
             'num_workers': self.NUM_WORKERS,
-            'cpu_threads': self.OLLAMA_NUM_THREAD,
-            'numa_enabled': self.OLLAMA_NUMA,
-            'keep_alive': self.OLLAMA_KEEP_ALIVE,
-            'max_loaded_models': self.OLLAMA_MAX_LOADED_MODELS
+            'gemini_rate_limit': self.GEMINI_REQUEST_RATE_LIMIT,
+            'gemini_retry_attempts': self.GEMINI_RETRY_ATTEMPTS,
+            'gemini_retry_delay': self.GEMINI_RETRY_DELAY,
+            'max_tokens_per_request': self.GEMINI_MAX_TOKENS_PER_REQUEST
         }
     
     def get_logging_settings(self):
@@ -392,7 +411,8 @@ class Config:
             'batch_timing': self.LOG_BATCH_TIMING,
             'ocr_rotation_attempts': self.LOG_OCR_ROTATION_ATTEMPTS,
             'text_quality_scores': self.LOG_TEXT_QUALITY_SCORES,
-            'pdf_processing_details': self.LOG_PDF_PROCESSING_DETAILS
+            'pdf_processing_details': self.LOG_PDF_PROCESSING_DETAILS,
+            'gemini_api_calls': self.LOG_GEMINI_API_CALLS  # NEW
         }
     
     def is_feature_enabled(self, feature_name):
@@ -418,7 +438,8 @@ class Config:
             'enhanced_pdf_processing': self.ENABLE_ENHANCED_PDF_PROCESSING,
             'pdf_auto_method_selection': self.PDF_AUTO_METHOD_SELECTION,
             'pdf_table_extraction': self.PDF_ENABLE_TABLE_EXTRACTION,
-            'pdf_ocr_fallback': self.PDF_ENABLE_OCR_FALLBACK
+            'pdf_ocr_fallback': self.PDF_ENABLE_OCR_FALLBACK,
+            'gemini_api_logging': self.LOG_GEMINI_API_CALLS  # NEW
         }
         
         return feature_map.get(feature_name, False)
@@ -441,10 +462,10 @@ def reload_config():
 
 
 def print_feature_status():
-    """Print status of all enhanced features including PDF processing"""
+    """Print status of all enhanced features including PDF processing and Gemini API"""
     config = get_config()
     
-    print("\n=== ENHANCED FEATURES STATUS ===")
+    print("\n=== ENHANCED FEATURES STATUS (GEMINI API) ===")
     features = [
         ("Advanced Document Parsing", config.is_feature_enabled('advanced_doc_parsing')),
         ("Auto .doc Conversion", config.is_feature_enabled('auto_convert_doc')),
@@ -459,29 +480,37 @@ def print_feature_status():
         ("PDF Table Extraction", config.is_feature_enabled('pdf_table_extraction')),
         ("PDF OCR Fallback", config.is_feature_enabled('pdf_ocr_fallback')),
         ("Progress Logging", config.is_feature_enabled('progress_logging')),
+        ("Gemini API Logging", config.is_feature_enabled('gemini_api_logging')),  # NEW
     ]
     
     for feature_name, enabled in features:
-        status = "? ENABLED" if enabled else "? DISABLED"
+        status = "✓ ENABLED" if enabled else "✗ DISABLED"
         print(f"  {feature_name:<35}: {status}")
     
-    print(f"\n??? Directory Settings:")
+    print(f"\n🔧 Directory Settings:")
     print(f"  Documents directory: {config.DOCUMENTS_DIR}")
     print(f"  Backup directory: {config.get_backup_directory()}")
     print(f"  Blacklisted directories: {', '.join(config.BLACKLIST_DIRECTORIES)}")
     
-    print(f"\n?? PDF Processing Settings:")
+    print(f"\n📊 Gemini API Settings:")
+    print(f"  Model: {config.EMBED_MODEL}")
+    print(f"  Embedding dimension: {config.EMBED_DIM}")
+    print(f"  Rate limit: {config.GEMINI_REQUEST_RATE_LIMIT} requests/sec")
+    print(f"  Retry attempts: {config.GEMINI_RETRY_ATTEMPTS}")
+    print(f"  Timeout: {config.GEMINI_TIMEOUT}s")
+    
+    print(f"\n🔄 PDF Processing Settings:")
     pdf_settings = config.get_pdf_processing_settings()
     if pdf_settings['enabled']:
         print(f"  Chunk size: {pdf_settings['chunk_size']}")
-        print(f"  Auto method selection: {'?' if pdf_settings['auto_method_selection'] else '?'}")
-        print(f"  Table extraction: {'?' if pdf_settings['enable_table_extraction'] else '?'}")
-        print(f"  OCR fallback: {'?' if pdf_settings['enable_ocr_fallback'] else '?'}")
-        print(f"  Structure preservation: {'?' if pdf_settings['preserve_structure'] else '?'}")
+        print(f"  Auto method selection: {'✓' if pdf_settings['auto_method_selection'] else '✗'}")
+        print(f"  Table extraction: {'✓' if pdf_settings['enable_table_extraction'] else '✗'}")
+        print(f"  OCR fallback: {'✓' if pdf_settings['enable_ocr_fallback'] else '✗'}")
+        print(f"  Structure preservation: {'✓' if pdf_settings['preserve_structure'] else '✗'}")
         print(f"  OCR DPI: {pdf_settings['ocr_dpi']}")
         print(f"  Min content length: {pdf_settings['min_content_length']} chars")
     else:
-        print(f"  PDF Processing: ? DISABLED")
+        print(f"  PDF Processing: ✗ DISABLED")
     
     print("=" * 50)
 
@@ -516,236 +545,202 @@ def print_pdf_configuration_summary():
     pdf_settings = config.get_pdf_processing_settings()
     
     print("\n" + "=" * 60)
-    print("?? ENHANCED PDF PROCESSING CONFIGURATION")
+    print("🔄 ENHANCED PDF PROCESSING CONFIGURATION")
     print("=" * 60)
     
     if not pdf_settings['enabled']:
-        print("? Enhanced PDF processing is DISABLED")
+        print("✗ Enhanced PDF processing is DISABLED")
         print("Enable with: ENABLE_ENHANCED_PDF_PROCESSING=true")
         return
     
-    print("? Enhanced PDF processing is ENABLED")
+    print("✓ Enhanced PDF processing is ENABLED")
     print()
     
-    print("?? Processing Strategy:")
-    print(f"  Auto method selection: {'?' if pdf_settings['auto_method_selection'] else '?'}")
-    print(f"  Prefer PyMuPDF: {'?' if pdf_settings['prefer_pymupdf'] else '?'}")
+    print("📊 Processing Strategy:")
+    print(f"  Auto method selection: {'✓' if pdf_settings['auto_method_selection'] else '✗'}")
+    print(f"  Prefer PyMuPDF: {'✓' if pdf_settings['prefer_pymupdf'] else '✗'}")
     print(f"  Scanned PDF threshold: {pdf_settings['scanned_threshold']}")
     print(f"  Table detection threshold: {pdf_settings['table_detection_threshold']}")
     
-    print("\n?? Content Processing:")
+    print("\n🔍 Content Processing:")
     print(f"  Chunk size: {pdf_settings['chunk_size']} characters")
     print(f"  Min section length: {pdf_settings['min_section_length']} characters")
     print(f"  Min content length: {pdf_settings['min_content_length']} characters")
-    print(f"  Preserve structure: {'?' if pdf_settings['preserve_structure'] else '?'}")
+    print(f"  Preserve structure: {'✓' if pdf_settings['preserve_structure'] else '✗'}")
     
-    print("\n?? Features:")
-    print(f"  Table extraction: {'?' if pdf_settings['enable_table_extraction'] else '?'}")
-    print(f"  Header detection: {'?' if pdf_settings['header_detection'] else '?'}")
-    print(f"  Footer cleanup: {'?' if pdf_settings['footer_cleanup'] else '?'}")
-    print(f"  Content validation: {'?' if pdf_settings['enable_content_validation'] else '?'}")
+    print("\n🎯 Features:")
+    print(f"  Table extraction: {'✓' if pdf_settings['enable_table_extraction'] else '✗'}")
+    print(f"  Header detection: {'✓' if pdf_settings['header_detection'] else '✗'}")
+    print(f"  Footer cleanup: {'✓' if pdf_settings['footer_cleanup'] else '✗'}")
+    print(f"  Content validation: {'✓' if pdf_settings['enable_content_validation'] else '✗'}")
     
-    print("\n?? OCR Fallback:")
+    print("\n🔍 OCR Fallback:")
     if pdf_settings['enable_ocr_fallback']:
-        print("  ? OCR fallback enabled for scanned PDFs")
+        print("  ✓ OCR fallback enabled for scanned PDFs")
         print(f"  OCR DPI: {pdf_settings['ocr_dpi']}")
         print(f"  Image format: {pdf_settings['ocr_image_format'].upper()}")
         print(f"  Min text length: {pdf_settings['ocr_min_text_length']} characters")
         print(f"  Timeout per page: {pdf_settings['ocr_timeout_per_page']} seconds")
     else:
-        print("  ? OCR fallback disabled")
+        print("  ✗ OCR fallback disabled")
     
-    print("\n? Performance:")
+    print("\n⚡ Performance:")
     print(f"  Max pages for quick analysis: {pdf_settings['max_pages_for_analysis']}")
-    print(f"  CPU threads: {config.OLLAMA_NUM_THREAD}")
     print(f"  Processing batch size: {config.PROCESSING_BATCH_SIZE}")
     
     print("=" * 60)
 
 
-def validate_pdf_processing_environment():
+def validate_gemini_environment():
     """
-    NEW: Validate that PDF processing environment is properly configured
+    NEW: Validate that Gemini API environment is properly configured
     
     Returns:
         dict: Validation results
     """
     config = get_config()
     validation = {
-        'pdf_enabled': config.ENABLE_ENHANCED_PDF_PROCESSING,
-        'missing_libraries': [],
+        'gemini_api_key_set': bool(config.GEMINI_API_KEY),
         'configuration_issues': [],
         'warnings': [],
         'ready': False
     }
     
-    if not config.ENABLE_ENHANCED_PDF_PROCESSING:
-        validation['configuration_issues'].append("Enhanced PDF processing is disabled")
-        return validation
+    # Check API key
+    if not config.GEMINI_API_KEY:
+        validation['configuration_issues'].append("GEMINI_API_KEY not set")
     
-    # Check for required libraries
-    try:
-        import fitz
-    except ImportError:
-        validation['missing_libraries'].append('PyMuPDF (pip install PyMuPDF)')
+    # Check embedding model
+    if config.EMBED_MODEL not in ['gemini-embedding-001', 'text-embedding-004']:
+        validation['warnings'].append(f"Unusual embedding model: {config.EMBED_MODEL}")
     
-    try:
-        import pdfplumber
-    except ImportError:
-        validation['missing_libraries'].append('pdfplumber (pip install pdfplumber)')
+    # Check embedding dimension
+    if config.EMBED_DIM not in [768, 1536, 3072]:
+        validation['warnings'].append(f"Unusual embedding dimension: {config.EMBED_DIM}")
     
-    if config.PDF_ENABLE_OCR_FALLBACK:
-        try:
-            from pdf2image import convert_from_path
-        except ImportError:
-            validation['missing_libraries'].append('pdf2image (pip install pdf2image)')
+    # Check rate limits
+    if config.GEMINI_REQUEST_RATE_LIMIT > 60:
+        validation['warnings'].append(f"High rate limit may exceed API quotas: {config.GEMINI_REQUEST_RATE_LIMIT}/sec")
     
-    # Check configuration values
-    if config.PDF_CHUNK_SIZE < 100:
-        validation['configuration_issues'].append(f"PDF_CHUNK_SIZE too small: {config.PDF_CHUNK_SIZE}")
-    
-    if config.PDF_MIN_CONTENT_LENGTH < 10:
-        validation['warnings'].append(f"PDF_MIN_CONTENT_LENGTH very low: {config.PDF_MIN_CONTENT_LENGTH}")
-    
-    if config.PDF_OCR_DPI < 200:
-        validation['warnings'].append(f"PDF_OCR_DPI may be too low for good OCR: {config.PDF_OCR_DPI}")
-    
-    # Check if OCR is available when OCR fallback is enabled
-    if config.PDF_ENABLE_OCR_FALLBACK and not config.ENABLE_OCR:
-        validation['warnings'].append("PDF OCR fallback enabled but main OCR is disabled")
+    # Check timeout settings
+    if config.GEMINI_TIMEOUT < 30:
+        validation['warnings'].append(f"Low timeout may cause failures: {config.GEMINI_TIMEOUT}s")
     
     # Determine readiness
-    validation['ready'] = (
-        len(validation['missing_libraries']) == 0 and
-        len(validation['configuration_issues']) == 0
-    )
+    validation['ready'] = len(validation['configuration_issues']) == 0
     
     return validation
 
 
-def print_pdf_environment_status():
+def print_gemini_environment_status():
     """
-    NEW: Print PDF processing environment status
+    NEW: Print Gemini API environment status
     """
-    validation = validate_pdf_processing_environment()
+    validation = validate_gemini_environment()
     
     print("\n" + "=" * 60)
-    print("?? PDF PROCESSING ENVIRONMENT STATUS")
+    print("🚀 GEMINI API ENVIRONMENT STATUS")
     print("=" * 60)
     
     if validation['ready']:
-        print("? PDF processing environment is READY")
+        print("✅ Gemini API environment is READY")
     else:
-        print("? PDF processing environment has ISSUES")
-    
-    if validation['missing_libraries']:
-        print("\n?? Missing Libraries:")
-        for lib in validation['missing_libraries']:
-            print(f"  ? {lib}")
-        print("\nInstall missing libraries to enable full PDF processing capabilities.")
+        print("❌ Gemini API environment has ISSUES")
     
     if validation['configuration_issues']:
-        print("\n?? Configuration Issues:")
+        print("\n⚠️ Configuration Issues:")
         for issue in validation['configuration_issues']:
-            print(f"  ? {issue}")
+            print(f"  ❌ {issue}")
     
     if validation['warnings']:
-        print("\n?? Warnings:")
+        print("\n⚠️ Warnings:")
         for warning in validation['warnings']:
-            print(f"  ?? {warning}")
+            print(f"  ⚠️ {warning}")
     
-    if not validation['missing_libraries'] and not validation['configuration_issues']:
-        print("\n? All PDF processing libraries are available")
-        print("? Configuration is valid")
+    if validation['ready']:
+        print("\n✅ Gemini API key is configured")
+        print("✅ Configuration is valid")
         if validation['warnings']:
-            print("?? Some warnings present but processing will work")
+            print("⚠️ Some warnings present but processing will work")
     
     print("=" * 60)
 
 
-def get_recommended_pdf_env_vars():
+def get_recommended_gemini_env_vars():
     """
-    NEW: Get recommended environment variables for PDF processing
+    NEW: Get recommended environment variables for Gemini API
     
     Returns:
         dict: Recommended .env settings
     """
     return {
-        # Core PDF settings
-        'ENABLE_ENHANCED_PDF_PROCESSING': 'true',
-        'PDF_CHUNK_SIZE': '2048',
-        'PDF_PRESERVE_STRUCTURE': 'true',
-        'PDF_MIN_SECTION_LENGTH': '200',
+        # Core Gemini settings
+        'GEMINI_API_KEY': 'your_gemini_api_key_here',
+        'EMBED_MODEL': 'gemini-embedding-001',
+        'EMBED_DIM': '3072',
         
-        # Processing strategy
-        'PDF_AUTO_METHOD_SELECTION': 'true',
-        'PDF_PREFER_PYMUPDF': 'true',
-        'PDF_ENABLE_TABLE_EXTRACTION': 'true',
-        'PDF_SCANNED_THRESHOLD': '0.1',
-        'PDF_TABLE_DETECTION_THRESHOLD': '0.3',
+        # Performance settings
+        'GEMINI_TIMEOUT': '300',
+        'GEMINI_REQUEST_RATE_LIMIT': '10',
+        'GEMINI_RETRY_ATTEMPTS': '3',
+        'GEMINI_RETRY_DELAY': '1.0',
+        'GEMINI_MAX_TOKENS_PER_REQUEST': '2048',
         
-        # OCR fallback
-        'PDF_ENABLE_OCR_FALLBACK': 'true',
-        'PDF_OCR_DPI': '300',
-        'PDF_OCR_IMAGE_FORMAT': 'jpeg',
-        'PDF_OCR_MIN_TEXT_LENGTH': '20',
-        'PDF_OCR_TIMEOUT_PER_PAGE': '30',
-        
-        # Quality and validation
-        'PDF_MIN_CONTENT_LENGTH': '20',
-        'PDF_MAX_PAGES_FOR_QUICK_ANALYSIS': '3',
-        'PDF_ENABLE_CONTENT_VALIDATION': 'true',
-        'PDF_HEADER_DETECTION': 'true',
-        'PDF_FOOTER_CLEANUP': 'true',
+        # Batch processing
+        'PROCESSING_BATCH_SIZE': '50',
+        'BATCH_SIZE': '5',
+        'DB_BATCH_SIZE': '200',
         
         # Logging
-        'LOG_PDF_PROCESSING_DETAILS': 'true'
+        'LOG_GEMINI_API_CALLS': 'false',
+        'ENABLE_PROGRESS_LOGGING': 'true',
+        
+        # Core features
+        'ENABLE_ENHANCED_PDF_PROCESSING': 'true',
+        'AUTO_CONVERT_DOC': 'true',
+        'ENABLE_OCR': 'true'
     }
 
 
-def print_pdf_env_recommendations():
+def print_gemini_env_recommendations():
     """
-    NEW: Print recommended environment variable settings for PDF processing
+    NEW: Print recommended environment variable settings for Gemini API
     """
-    recommended = get_recommended_pdf_env_vars()
+    recommended = get_recommended_gemini_env_vars()
     
     print("\n" + "=" * 60)
-    print("?? RECOMMENDED PDF PROCESSING .ENV SETTINGS")
+    print("🔧 RECOMMENDED GEMINI API .ENV SETTINGS")
     print("=" * 60)
-    print("Add these to your .env file for optimal PDF processing:")
+    print("Add these to your .env file for optimal Gemini API processing:")
     print()
     
     # Group settings by category
     categories = {
-        "Core PDF Settings": [
+        "Core Gemini Settings": [
+            'GEMINI_API_KEY',
+            'EMBED_MODEL',
+            'EMBED_DIM'
+        ],
+        "Performance Settings": [
+            'GEMINI_TIMEOUT',
+            'GEMINI_REQUEST_RATE_LIMIT',
+            'GEMINI_RETRY_ATTEMPTS',
+            'GEMINI_RETRY_DELAY',
+            'GEMINI_MAX_TOKENS_PER_REQUEST'
+        ],
+        "Batch Processing": [
+            'PROCESSING_BATCH_SIZE',
+            'BATCH_SIZE',
+            'DB_BATCH_SIZE'
+        ],
+        "Logging & Monitoring": [
+            'LOG_GEMINI_API_CALLS',
+            'ENABLE_PROGRESS_LOGGING'
+        ],
+        "Core Features": [
             'ENABLE_ENHANCED_PDF_PROCESSING',
-            'PDF_CHUNK_SIZE',
-            'PDF_PRESERVE_STRUCTURE',
-            'PDF_MIN_SECTION_LENGTH'
-        ],
-        "Processing Strategy": [
-            'PDF_AUTO_METHOD_SELECTION',
-            'PDF_PREFER_PYMUPDF',
-            'PDF_ENABLE_TABLE_EXTRACTION',
-            'PDF_SCANNED_THRESHOLD',
-            'PDF_TABLE_DETECTION_THRESHOLD'
-        ],
-        "OCR Fallback": [
-            'PDF_ENABLE_OCR_FALLBACK',
-            'PDF_OCR_DPI',
-            'PDF_OCR_IMAGE_FORMAT',
-            'PDF_OCR_MIN_TEXT_LENGTH',
-            'PDF_OCR_TIMEOUT_PER_PAGE'
-        ],
-        "Quality & Validation": [
-            'PDF_MIN_CONTENT_LENGTH',
-            'PDF_MAX_PAGES_FOR_QUICK_ANALYSIS',
-            'PDF_ENABLE_CONTENT_VALIDATION',
-            'PDF_HEADER_DETECTION',
-            'PDF_FOOTER_CLEANUP'
-        ],
-        "Logging": [
-            'LOG_PDF_PROCESSING_DETAILS'
+            'AUTO_CONVERT_DOC',
+            'ENABLE_OCR'
         ]
     }
     
@@ -757,18 +752,19 @@ def print_pdf_env_recommendations():
         print()
     
     print("=" * 60)
-    print("?? Tip: Copy these settings to your .env file and restart the application")
+    print("💡 Tip: Copy these settings to your .env file and restart the application")
+    print("🔑 Important: Replace 'your_gemini_api_key_here' with your actual Gemini API key")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     # Test configuration when run directly
-    print("?? Enhanced RAG Indexer Configuration Test")
+    print("🚀 Enhanced RAG Indexer Configuration Test (Gemini API)")
     print("=" * 60)
     
     try:
         config = get_config()
-        print("? Configuration loaded successfully")
+        print("✅ Configuration loaded successfully")
         
         # Print feature status
         print_feature_status()
@@ -776,12 +772,12 @@ if __name__ == "__main__":
         # Print PDF configuration
         print_pdf_configuration_summary()
         
-        # Check PDF environment
-        print_pdf_environment_status()
+        # Check Gemini environment
+        print_gemini_environment_status()
         
         # Show recommendations
-        print_pdf_env_recommendations()
+        print_gemini_env_recommendations()
         
     except Exception as e:
-        print(f"? Configuration error: {e}")
+        print(f"❌ Configuration error: {e}")
         print("Check your .env file and fix any issues")

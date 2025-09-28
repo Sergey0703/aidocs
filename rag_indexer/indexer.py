@@ -4,6 +4,7 @@
 Enhanced RAG Document Indexer - Complete Integration
 Enhanced version with advanced document parsing, auto-rotation OCR, and text quality analysis
 Optimized for English documents with comprehensive error handling and progress tracking
+UPDATED: Migrated from Ollama to Gemini API with gemini-embedding-001
 """
 
 import logging
@@ -14,7 +15,7 @@ from datetime import datetime
 # --- LLAMA INDEX IMPORTS ---
 from llama_index.core import VectorStoreIndex, StorageContext
 from llama_index.vector_stores.supabase import SupabaseVectorStore
-from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.embeddings.gemini import GeminiEmbedding  # UPDATED: Changed from Ollama to Gemini
 from llama_index.core.node_parser import SentenceSplitter
 
 # --- ENHANCED LOCAL MODULES ---
@@ -53,19 +54,19 @@ def print_advanced_parsing_info():
     """
     Print information about advanced parsing capabilities
     """
-    print("\n?? Advanced Document Processing Features:")
-    print("  ? Automatic .doc to .docx conversion")
-    print("  ? LibreOffice/Pandoc integration") 
-    print("  ? Safe file backup system")
-    print("  ? Enhanced text extraction")
-    print("  ? Robust error handling")
-    print("  ? Progress tracking")
+    print("\n🔧 Advanced Document Processing Features:")
+    print("  📄 Automatic .doc to .docx conversion")
+    print("  🔧 LibreOffice/Pandoc integration") 
+    print("  💾 Safe file backup system")
+    print("  📊 Enhanced text extraction")
+    print("  🛡️ Robust error handling")
+    print("  📈 Progress tracking")
     print("=" * 50)
 
 
 def initialize_components(config):
     """
-    Initialize all LlamaIndex components with enhanced settings
+    Initialize all LlamaIndex components with enhanced settings and Gemini API
     
     Args:
         config: Enhanced configuration object
@@ -73,7 +74,7 @@ def initialize_components(config):
     Returns:
         dict: Initialized components
     """
-    print("?? Initializing enhanced LlamaIndex components...")
+    print("🔧 Initializing enhanced LlamaIndex components with Gemini API...")
     
     # Vector store with optimized settings
     vector_store = SupabaseVectorStore(
@@ -85,12 +86,13 @@ def initialize_components(config):
     # Storage context
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     
-    # Embedding model with CPU optimizations
+    # UPDATED: Gemini embedding model with API key authentication
     embed_settings = config.get_embedding_settings()
-    embed_model = OllamaEmbedding(
-        model_name=embed_settings['model'], 
-        base_url=embed_settings['base_url'],
-        request_timeout=embed_settings['timeout']
+    embed_model = GeminiEmbedding(
+        model_name=embed_settings['model'],
+        api_key=embed_settings['api_key'],
+        # NOTE: Gemini API doesn't use timeout in the same way as Ollama
+        # Rate limiting is handled at the application level
     )
     
     # Enhanced node parser with optimized chunk sizes
@@ -104,7 +106,7 @@ def initialize_components(config):
         include_prev_next_rel=True
     )
     
-    print("? Enhanced components initialized successfully")
+    print("✅ Enhanced components initialized successfully with Gemini API")
     return {
         'vector_store': vector_store,
         'storage_context': storage_context,
@@ -114,7 +116,7 @@ def initialize_components(config):
 
 
 def main():
-    """Enhanced main function with comprehensive processing and analysis"""
+    """Enhanced main function with comprehensive processing and analysis using Gemini API"""
     
     # Setup
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -126,7 +128,7 @@ def main():
     # Initialize tracking
     progress_tracker = create_progress_tracker()
     performance_monitor = PerformanceMonitor()
-    status_reporter = StatusReporter("Enhanced RAG Document Indexing")
+    status_reporter = StatusReporter("Enhanced RAG Document Indexing (Gemini API)")
     
     # Setup logging
     log_dir = setup_logging_directory()
@@ -161,7 +163,7 @@ def main():
             # 1. ENHANCED CONFIGURATION LOADING
             # ===============================================================
             
-            print("?? Loading enhanced configuration...")
+            print("🔧 Loading enhanced configuration...")
             config = get_config()
             config.print_config()
             
@@ -176,20 +178,37 @@ def main():
             # Print system information
             print_system_info()
             
+            # UPDATED: Gemini API validation
+            print("🚀 Validating Gemini API configuration...")
+            from config import validate_gemini_environment, print_gemini_environment_status
+            
+            gemini_validation = validate_gemini_environment()
+            if not gemini_validation['ready']:
+                print("❌ Gemini API configuration issues detected:")
+                for issue in gemini_validation['configuration_issues']:
+                    print(f"   - {issue}")
+                print("\nPlease fix configuration issues before proceeding.")
+                sys.exit(1)
+            else:
+                print("✅ Gemini API configuration validated successfully")
+                print(f"   Model: {config.EMBED_MODEL}")
+                print(f"   Dimension: {config.EMBED_DIM}")
+                print(f"   Rate limit: {config.GEMINI_REQUEST_RATE_LIMIT} requests/sec")
+            
             # Enhanced OCR availability check
             if config.ENABLE_OCR:
                 try:
                     ocr_available, missing_libs = check_ocr_availability()
                     if ocr_available:
-                        print("??? OCR Status: ? All libraries available")
+                        print("🔍 OCR Status: ✅ All libraries available")
                         print(f"   Enhanced features: Auto-rotation, Quality analysis")
                     else:
-                        print(f"??? OCR Status: ? Missing: {', '.join(missing_libs)}")
+                        print(f"🔍 OCR Status: ❌ Missing: {', '.join(missing_libs)}")
                         print("   Install with: pip install pytesseract pillow opencv-python")
                 except Exception as e:
-                    print(f"??? OCR Status: ?? Error checking: {e}")
+                    print(f"🔍 OCR Status: ⚠️ Error checking: {e}")
             else:
-                print("??? OCR Status: ?? Disabled in configuration")
+                print("🔍 OCR Status: ⚠️ Disabled in configuration")
             
             # ===============================================================
             # 2. ENHANCED COMPONENT INITIALIZATION
@@ -205,8 +224,9 @@ def main():
                 components['vector_store']
             )
             
-            # Create batch processor with safe restart interval from config
-            batch_restart_interval = getattr(config, 'BATCH_RESTART_INTERVAL', 5)
+            # UPDATED: Create batch processor with Gemini-appropriate restart interval
+            # For Gemini API, we don't need Ollama restarts, so set interval to 0
+            batch_restart_interval = 0  # Gemini API doesn't need service restarts
             batch_processor = create_batch_processor(
                 embedding_processor, 
                 config.PROCESSING_BATCH_SIZE,
@@ -228,7 +248,7 @@ def main():
                 )
                 stats['processing_stages'].append('document_loading')
             except Exception as e:
-                print(f"? Enhanced document loading failed: {e}")
+                print(f"❌ Enhanced document loading failed: {e}")
                 raise
             
             # Combine documents
@@ -247,7 +267,7 @@ def main():
             print_enhanced_loading_summary(text_documents, image_documents, processing_summary, load_time)
             
             if not documents:
-                print("?? No documents found in the specified directory.")
+                print("⚠️ No documents found in the specified directory.")
                 return
             
             performance_monitor.checkpoint("Enhanced documents loaded", len(documents))
@@ -263,7 +283,7 @@ def main():
             # ===============================================================
             
             print(f"\n{'='*70}")
-            print("??? ENHANCED SAFE DELETION CHECK")
+            print("🗑️ ENHANCED SAFE DELETION CHECK")
             print(f"{'='*70}")
             
             # Get file identifiers
@@ -296,7 +316,7 @@ def main():
             print_document_validation_summary(documents_with_content, documents_without_content)
             
             if not documents_with_content:
-                print("? No documents with sufficient text content found. Exiting.")
+                print("❌ No documents with sufficient text content found. Exiting.")
                 return
             
             # Enhanced chunk creation and filtering using helper module
@@ -318,7 +338,7 @@ def main():
             stats['processing_stages'].append('chunk_processing')
             
             if not valid_nodes:
-                print("? No valid text chunks were generated. Exiting.")
+                print("❌ No valid text chunks were generated. Exiting.")
                 return
             
             performance_monitor.checkpoint("Enhanced chunks processed", len(valid_nodes))
@@ -329,19 +349,21 @@ def main():
                 return
             
             # ===============================================================
-            # 6. ENHANCED BATCH PROCESSING
+            # 6. ENHANCED BATCH PROCESSING WITH GEMINI API
             # ===============================================================
             
-            print(f"\n?? Starting enhanced batch processing...")
+            print(f"\n🚀 Starting enhanced batch processing with Gemini API...")
             batch_settings = config.get_batch_settings()
             
-            print(f"?? Enhanced Processing Configuration:")
+            print(f"🔧 Enhanced Processing Configuration (Gemini API):")
             print(f"   Processing batch size: {batch_settings['processing_batch_size']}")
             print(f"   Embedding batch size: {batch_settings['embedding_batch_size']}")
             print(f"   Database batch size: {batch_settings['db_batch_size']}")
-            print(f"   CPU threads: {config.OLLAMA_NUM_THREAD}")
             print(f"   Embedding model: {config.EMBED_MODEL} ({config.EMBED_DIM}D)")
-            print(f"   Safe Ollama restart interval: {batch_restart_interval} batches")
+            print(f"   Gemini rate limit: {config.GEMINI_REQUEST_RATE_LIMIT} requests/sec")
+            print(f"   Gemini retry attempts: {config.GEMINI_RETRY_ATTEMPTS}")
+            print(f"   Gemini timeout: {config.GEMINI_TIMEOUT}s")
+            print(f"   Service restarts: Not applicable for Gemini API")
             
             # Process all batches with enhanced monitoring
             batch_results = batch_processor.process_all_batches(
@@ -399,7 +421,7 @@ def main():
             
             summary_file = f"{log_dir}/enhanced_run_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             if safe_file_write(summary_file, enhanced_summary):
-                print(f"?? Enhanced run summary saved to: {summary_file}")
+                print(f"📊 Enhanced run summary saved to: {summary_file}")
             
             # Print enhanced performance summary
             performance_monitor.print_performance_summary()
@@ -416,15 +438,15 @@ def main():
             return success
     
     except KeyboardInterrupt:
-        print(f"\n\n?? WARNING: Enhanced indexing interrupted by user.")
+        print(f"\n\n⚠️ WARNING: Enhanced indexing interrupted by user.")
         if 'stats' in locals():
-            print(f"?? Partial results: {stats.get('records_saved', 0)} chunks saved")
-        print(f"? No data was corrupted - safe to restart.")
+            print(f"📊 Partial results: {stats.get('records_saved', 0)} chunks saved")
+        print(f"✅ No data was corrupted - safe to restart.")
         sys.exit(1)
     
     except Exception as e:
-        print(f"\n\n? ERROR: FATAL ERROR: {e}")
-        print(f"?? Check your configuration and try again.")
+        print(f"\n\n❌ ERROR: FATAL ERROR: {e}")
+        print(f"🔧 Check your configuration and try again.")
         
         # Try to save error information
         if 'log_dir' in locals():
@@ -436,17 +458,17 @@ def main():
 
 if __name__ == "__main__":
     try:
-        print("?? Enhanced RAG Document Indexer")
+        print("🚀 Enhanced RAG Document Indexer (Gemini API)")
         print("=" * 50)
-        print("? Advanced features: Auto .doc conversion, OCR auto-rotation, safe Ollama restarts")
-        print("?? Optimized for English documents with comprehensive error handling")
+        print("✨ Advanced features: Auto .doc conversion, OCR auto-rotation, Gemini API embeddings")
+        print("🎯 Optimized for English documents with comprehensive error handling")
         print("=" * 50)
         
         main()
     except KeyboardInterrupt:
-        print(f"\n\n?? Enhanced indexing interrupted by user.")
-        print(f"? Safe to restart - no data corruption.")
+        print(f"\n\n⚠️ Enhanced indexing interrupted by user.")
+        print(f"✅ Safe to restart - no data corruption.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n\n? FATAL ERROR: {e}")
+        print(f"\n\n❌ FATAL ERROR: {e}")
         sys.exit(1)

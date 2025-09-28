@@ -3,7 +3,7 @@
 """
 Safe Embedding processing module for RAG Document Indexer
 Handles embedding generation, node cleaning, and database saving
-REMOVED unsafe Ollama restarts during embedding generation - moved to batch level
+UPDATED: Migrated from Ollama to Gemini API - removed unsafe Ollama restarts, added Gemini API rate limiting
 """
 
 import time
@@ -27,7 +27,7 @@ def clean_json_recursive(obj):
 
 def clean_problematic_node(node):
     """
-    Clean problematic metadata and content from a node - ?????????? ???????!
+    Clean problematic metadata and content from a node - безопасная очистка!
     
     Args:
         node: Node object to clean
@@ -46,7 +46,7 @@ def clean_problematic_node(node):
         # Clean problematic characters from content
         content = cleaned_node.get_content()
         
-        # Remove null bytes (\u0000) and other problematic characters - ?????????? ???????!
+        # Remove null bytes (\u0000) and other problematic characters - безопасная очистка!
         content = content.replace('\u0000', '').replace('\x00', '').replace('\x01', '').replace('\x02', '')
         
         # Remove control characters (except newlines and tabs)
@@ -61,21 +61,21 @@ def clean_problematic_node(node):
         cleaned_node.text = cleaned_content
         cleaned_node.metadata['text'] = cleaned_content
         
-        # Clean metadata values recursively (??? ????????????!)
+        # Clean metadata values recursively (для совместимости!)
         cleaned_node.metadata = clean_json_recursive(cleaned_node.metadata)
         
-        # ????: ??????? ?????? ????? LlamaIndex ?? null bytes
+        # ВАЖНО: очистка других полей LlamaIndex от null bytes
         if hasattr(cleaned_node, 'id_') and cleaned_node.id_:
             cleaned_node.id_ = str(cleaned_node.id_).replace('\u0000', '').replace('\x00', '')
         
         if hasattr(cleaned_node, 'doc_id') and cleaned_node.doc_id:
             cleaned_node.doc_id = str(cleaned_node.doc_id).replace('\u0000', '').replace('\x00', '')
         
-        # ??????? ref_doc_id ???? ????
+        # Очистка ref_doc_id если есть
         if hasattr(cleaned_node, 'ref_doc_id') and cleaned_node.ref_doc_id:
             cleaned_node.ref_doc_id = str(cleaned_node.ref_doc_id).replace('\u0000', '').replace('\x00', '')
         
-        # ??????? source_node ???? ????
+        # Очистка source_node если есть
         if hasattr(cleaned_node, 'source_node') and cleaned_node.source_node:
             if hasattr(cleaned_node.source_node, 'node_id'):
                 cleaned_node.source_node.node_id = str(cleaned_node.source_node.node_id).replace('\u0000', '').replace('\x00', '')
@@ -94,7 +94,7 @@ def clean_problematic_node(node):
 
 def aggressive_clean_all_nodes(nodes):
     """
-    ??????????? ??????? ???? nodes ?? null bytes ????? ??????????? ? ??
+    Агрессивная очистка всех nodes от null bytes перед отправкой в БД
     
     Args:
         nodes: List of nodes to clean
@@ -106,10 +106,10 @@ def aggressive_clean_all_nodes(nodes):
     
     for node in nodes:
         try:
-            # ???????? ??????? ??????? ??????
+            # Основная очистка каждого чанка
             cleaned_node = clean_problematic_node(node)
             
-            # ?????????????? ??????? - ???????? ???? ????????? ?????????
+            # Дополнительная очистка - проверим все строковые атрибуты
             for attr_name in dir(cleaned_node):
                 if not attr_name.startswith('_'):  # Skip private attributes
                     try:
@@ -136,29 +136,70 @@ def aggressive_clean_all_nodes(nodes):
 
 
 class EmbeddingProcessor:
-    """Safe processor for generating embeddings and handling database operations"""
+    """Safe processor for generating embeddings and handling database operations with Gemini API rate limiting"""
     
-    def __init__(self, embed_model, vector_store):
+    def __init__(self, embed_model, vector_store, config=None):
         """
-        Initialize safe embedding processor
+        Initialize safe embedding processor with Gemini API support
         
         Args:
-            embed_model: Embedding model instance
+            embed_model: Embedding model instance (Gemini)
             vector_store: Vector store instance for database operations
+            config: Configuration object with Gemini API settings
         """
         self.embed_model = embed_model
         self.vector_store = vector_store
+        self.config = config
+        
+        # UPDATED: Gemini API rate limiting settings
+        if config:
+            embed_settings = config.get_embedding_settings()
+            self.rate_limit = embed_settings.get('rate_limit', 10)  # requests per second
+            self.retry_attempts = embed_settings.get('retry_attempts', 3)
+            self.retry_delay = embed_settings.get('retry_delay', 1.0)
+            self.timeout = embed_settings.get('timeout', 300)
+        else:
+            # Default Gemini API settings
+            self.rate_limit = 10
+            self.retry_attempts = 3
+            self.retry_delay = 1.0
+            self.timeout = 300
+        
+        # Rate limiting state
+        self.last_request_time = 0
+        self.request_interval = 1.0 / self.rate_limit if self.rate_limit > 0 else 0
+        
         self.stats = {
             'total_processed': 0,
             'successful_embeddings': 0,
             'failed_embeddings': 0,
             'successful_saves': 0,
-            'failed_saves': 0
+            'failed_saves': 0,
+            'gemini_api_calls': 0,  # NEW: Track Gemini API calls
+            'rate_limit_delays': 0,  # NEW: Track rate limit delays
+            'retry_attempts_used': 0  # NEW: Track retry attempts
         }
+    
+    def _apply_rate_limit(self):
+        """
+        Apply rate limiting for Gemini API calls
+        """
+        if self.request_interval <= 0:
+            return
+        
+        current_time = time.time()
+        time_since_last_request = current_time - self.last_request_time
+        
+        if time_since_last_request < self.request_interval:
+            sleep_time = self.request_interval - time_since_last_request
+            time.sleep(sleep_time)
+            self.stats['rate_limit_delays'] += 1
+        
+        self.last_request_time = time.time()
     
     def validate_content_for_embedding(self, content):
         """
-        Validate content before embedding generation - ?????????? ?????????
+        Validate content before embedding generation - расширенная проверка
         
         Args:
             content: Text content to validate
@@ -170,40 +211,40 @@ class EmbeddingProcessor:
         if len(content.strip()) < 10:
             return False, f"too_short ({len(content)} chars)"
         
-        # ????? ??????? ????????: ?????? ?????????? ????? ? ??????? ???????
-        # ??????? ????????? ???????? ?????? ??? ??????? ??????? ??? ????? ??????
-        sample = content[:1000]  # ???????? ?????? ?????? 1000 ????????
+        # Более умная проверка: разный подход проверки контента на основе критериев
+        # Сначала проверим процент букв в тексте по сравнению с общими символами
+        sample = content[:1000]  # Проверим только первую 1000 символов
         
-        # ?????????? "?????????" ??????? ? ??????
+        # Разрешим некоторые символы в качестве "нормальных"
         allowed_special = set('\n\t\r\f\v\x0b\x0c')
         
-        # ??????? "??????" ???????? (????????????) ????????
+        # Подсчет "плохих" символов (невозможных)
         truly_binary = 0
         for c in sample:
-            if ord(c) < 32:  # ??????????? ???????
-                if c not in '\n\t\r':  # ????? ??????????
+            if ord(c) < 32:  # Контрольные символы
+                if c not in '\n\t\r':  # Кроме допустимых
                     truly_binary += 1
-            elif ord(c) > 127:  # ??????? UTF-8
-                if c not in allowed_special:  # ????? ??????????? ??????????
-                    # ????????, ??? ??????? ????? ???? ???? ??? ???? ?????
+            elif ord(c) > 127:  # Символы UTF-8
+                if c not in allowed_special:  # Кроме специальных допустимых
+                    # Проверим, что символ может быть либо буквой либо цифрой
                     if not (c.isprintable() or c.isspace() or c.isalnum()):
                         truly_binary += 1
         
         binary_ratio = truly_binary / len(sample) if sample else 0
         
-        # ????? ?????? ???????????: ??????? ?????????? ????? 90%!
-        if binary_ratio > 0.9:  # ????? ??????? ????? ????? 90%
+        # Более мягкий критерий: плохих символов менее 90%!
+        if binary_ratio > 0.9:  # Более мягкие требования менее 90%
             return False, f"binary_data_detected ({binary_ratio:.1%})"
         
-        # ???????? ?? ??????? ???? - ????? ?????
+        # Проверка на наличие букв - более точно
         letters_digits = sum(1 for c in sample if c.isalnum())
         text_ratio = letters_digits / len(sample) if sample else 0
         
-        # ????? ?????? ???????????: ????/???? ????? 10%!
-        if text_ratio < 0.1:  # ????? ?????? ????? 10%
+        # Более мягкий критерий: букв/цифр менее 10%!
+        if text_ratio < 0.1:  # Менее строго менее 10%
             return False, f"low_text_quality ({text_ratio:.1%})"
         
-        # ?????????????? ????????: ???? ?? ???? ?? ????? ?????????? ?????
+        # Дополнительная проверка: есть ли хотя бы несколько нормальных слов
         words = content.split()
         if len(words) < 3:
             return False, f"too_few_words ({len(words)} words)"
@@ -212,11 +253,11 @@ class EmbeddingProcessor:
     
     def generate_embedding_for_node(self, node, chunk_index=0):
         """
-        SAFE: Generate embedding for a single node WITHOUT unsafe Ollama restarts
+        SAFE: Generate embedding for a single node using Gemini API with rate limiting and retries
         
         Args:
             node: Node object to process
-            chunk_index: Index of chunk for logging (no longer used for restart)
+            chunk_index: Index of chunk for logging
         
         Returns:
             tuple: (success, error_info)
@@ -229,30 +270,58 @@ class EmbeddingProcessor:
             if not is_valid:
                 return False, f"validation_failed: {reason}"
             
-            # SAFE: NO MORE UNSAFE OLLAMA RESTARTS DURING EMBEDDING GENERATION!
-            # Ollama restarts are now handled safely at batch level in batch_processor.py
-            
-            # Generate embedding safely
-            embedding = self.embed_model.get_text_embedding(content)
-            node.embedding = embedding
-            
-            self.stats['successful_embeddings'] += 1
-            return True, None
+            # UPDATED: Gemini API call with rate limiting and retries
+            for attempt in range(self.retry_attempts + 1):
+                try:
+                    # Apply rate limiting before API call
+                    self._apply_rate_limit()
+                    
+                    # Generate embedding using Gemini API
+                    embedding = self.embed_model.get_text_embedding(content)
+                    node.embedding = embedding
+                    
+                    self.stats['successful_embeddings'] += 1
+                    self.stats['gemini_api_calls'] += 1
+                    
+                    return True, None
+                    
+                except Exception as api_error:
+                    self.stats['retry_attempts_used'] += 1
+                    
+                    if attempt < self.retry_attempts:
+                        # Wait before retry with exponential backoff
+                        wait_time = self.retry_delay * (2 ** attempt)
+                        print(f"   WARNING: Gemini API error (attempt {attempt + 1}/{self.retry_attempts + 1}), retrying in {wait_time:.1f}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # All retries exhausted
+                        error_info = {
+                            'chunk_index': chunk_index,
+                            'file_name': node.metadata.get('file_name', 'Unknown'),
+                            'error': str(api_error),
+                            'content_preview': content[:100] + "..." if len(content) > 100 else content,
+                            'api_provider': 'gemini',
+                            'retry_attempts_used': self.retry_attempts
+                        }
+                        self.stats['failed_embeddings'] += 1
+                        return False, error_info
             
         except Exception as e:
             error_info = {
                 'chunk_index': chunk_index,
                 'file_name': node.metadata.get('file_name', 'Unknown'),
                 'error': str(e),
-                'content_preview': content[:100] + "..." if len(content) > 100 else content
+                'content_preview': content[:100] + "..." if len(content) > 100 else content,
+                'api_provider': 'gemini',
+                'general_error': True
             }
             self.stats['failed_embeddings'] += 1
             return False, error_info
     
     def robust_embedding_generation(self, batch_nodes, batch_num, embedding_batch_size=5):
         """
-        SAFE: Generate embeddings for a batch of nodes with robust error handling
-        NO MORE dangerous mid-batch Ollama restarts!
+        SAFE: Generate embeddings for a batch of nodes with robust error handling and Gemini API optimizations
         
         Args:
             batch_nodes: List of nodes to process
@@ -262,13 +331,13 @@ class EmbeddingProcessor:
         Returns:
             tuple: (nodes_with_embeddings, embedding_errors)
         """
-        print(f"Generating embeddings for {len(batch_nodes)} chunks...")
+        print(f"Generating embeddings for {len(batch_nodes)} chunks using Gemini API...")
         embedding_start_time = time.time()
         
         nodes_with_embeddings = []
         embedding_errors = []
         
-        # Process embeddings in smaller sub-batches
+        # Process embeddings in smaller sub-batches with Gemini API rate limiting
         for j in range(0, len(batch_nodes), embedding_batch_size):
             sub_batch = batch_nodes[j:j + embedding_batch_size]
             
@@ -277,7 +346,7 @@ class EmbeddingProcessor:
                 # Update total processed counter for statistics
                 self.stats['total_processed'] += 1
                 
-                # SAFE: Generate embedding without unsafe restarts
+                # SAFE: Generate embedding with Gemini API rate limiting
                 success, error_info = self.generate_embedding_for_node(node, chunk_index)
                 
                 if success:
@@ -287,19 +356,24 @@ class EmbeddingProcessor:
                         embedding_errors.append(error_info)
                         file_name = error_info.get('file_name', 'Unknown')
                         error_msg = error_info.get('error', str(error_info))
-                        print(f"   ERROR: Embedding error for chunk {chunk_index+1} from {file_name}: {error_msg[:50]}...")
+                        api_provider = error_info.get('api_provider', 'unknown')
+                        print(f"   ERROR: {api_provider.title()} API error for chunk {chunk_index+1} from {file_name}: {error_msg[:50]}...")
                     else:
                         print(f"   WARNING: Skipping chunk {chunk_index+1}: {error_info}")
             
-            # Safe progress update with detailed timestamps
+            # Safe progress update with detailed timestamps and Gemini API stats
             self._print_progress_update(j, batch_nodes, embedding_start_time, batch_num, embedding_batch_size, len(nodes_with_embeddings))
         
-        # Final statistics
+        # Final statistics with Gemini API metrics
         embedding_time = time.time() - embedding_start_time
         final_speed = len(nodes_with_embeddings) / embedding_time if embedding_time > 0 else 0
         
-        print(f"Safe embedding generation completed in {embedding_time:.2f} seconds")
+        print(f"Safe Gemini API embedding generation completed in {embedding_time:.2f} seconds")
         print(f"Average speed: {final_speed:.2f} chunks/second")
+        print(f"Gemini API calls: {self.stats['gemini_api_calls']}")
+        print(f"Rate limit delays: {self.stats['rate_limit_delays']}")
+        if self.stats['retry_attempts_used'] > 0:
+            print(f"Retry attempts used: {self.stats['retry_attempts_used']}")
         
         if embedding_errors:
             print(f"   WARNING: {len(embedding_errors)} embedding errors")
@@ -308,7 +382,7 @@ class EmbeddingProcessor:
         return nodes_with_embeddings, embedding_errors
     
     def _print_progress_update(self, j, batch_nodes, start_time, batch_num, embedding_batch_size, successful_count):
-        """Print detailed progress update"""
+        """Print detailed progress update with Gemini API metrics"""
         processed_in_batch = min(j + embedding_batch_size, len(batch_nodes))
         elapsed = time.time() - start_time
         chunks_per_second = successful_count / elapsed if elapsed > 0 else 0
@@ -328,7 +402,7 @@ class EmbeddingProcessor:
         current_time = datetime.now().strftime('%H:%M:%S')
         finish_time = (datetime.now() + timedelta(seconds=eta_seconds)).strftime('%H:%M')
         
-        print(f"   Safe progress: batch {batch_num} ({progress_pct:.1f}%) | "
+        print(f"   Gemini API progress: batch {batch_num} ({progress_pct:.1f}%) | "
               f"Processed: {processed_in_batch}/{len(batch_nodes)} chunks | "
               f"Speed: {chunks_per_second:.1f} chunks/sec | "
               f"Elapsed: {format_time(elapsed)} | "
@@ -336,22 +410,28 @@ class EmbeddingProcessor:
               f"Time: {current_time} | "
               f"Finish: {finish_time}")
         
-        # Show checkpoint every 20 sub-batches
+        # Show checkpoint every 20 sub-batches with API stats
         if (j // embedding_batch_size + 1) % 20 == 0:
             checkpoint_time = datetime.now().strftime('%H:%M:%S')
-            print(f"   SAFE CHECKPOINT at {checkpoint_time}: {processed_in_batch}/{len(batch_nodes)} chunks complete")
+            api_calls = self.stats['gemini_api_calls']
+            rate_delays = self.stats['rate_limit_delays']
+            print(f"   GEMINI API CHECKPOINT at {checkpoint_time}: {processed_in_batch}/{len(batch_nodes)} chunks complete")
+            print(f"   API calls: {api_calls}, Rate delays: {rate_delays}")
     
     def _log_embedding_errors(self, embedding_errors, batch_num):
-        """Log embedding errors to file"""
+        """Log embedding errors to file with Gemini API context"""
         try:
             with open('./logs/embedding_errors.log', 'a', encoding='utf-8') as f:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"\n--- Safe embedding errors in batch {batch_num} at {timestamp} ---\n")
+                f.write(f"\n--- Gemini API embedding errors in batch {batch_num} at {timestamp} ---\n")
                 for error in embedding_errors:
                     f.write(f"File: {error.get('file_name', 'Unknown')}\n")
                     f.write(f"Chunk: {error.get('chunk_index', 'Unknown')}\n")
+                    f.write(f"API Provider: {error.get('api_provider', 'unknown')}\n")
                     f.write(f"Error: {error.get('error', 'Unknown')}\n")
                     f.write(f"Preview: {error.get('content_preview', 'N/A')}\n")
+                    if error.get('retry_attempts_used'):
+                        f.write(f"Retry attempts: {error['retry_attempts_used']}\n")
                     f.write("-" * 40 + "\n")
         except Exception as e:
             print(f"   WARNING: Could not write to embedding_errors.log: {e}")
@@ -374,7 +454,7 @@ class EmbeddingProcessor:
         total_saved = 0
         failed_chunks = []
         
-        # ?????????? ???????: ??????????? ??????? ???? nodes ????? ???????????!
+        # Безопасная очистка: агрессивно очистим все nodes перед сохранением!
         print(f"   INFO: Safely cleaning all nodes from null bytes before database save...")
         cleaned_nodes = aggressive_clean_all_nodes(nodes_with_embeddings)
         print(f"   INFO: Safely cleaned {len(cleaned_nodes)} nodes (original: {len(nodes_with_embeddings)})")
@@ -451,10 +531,10 @@ class EmbeddingProcessor:
     
     def get_processing_stats(self):
         """
-        Get processing statistics
+        Get processing statistics with Gemini API metrics
         
         Returns:
-            dict: Processing statistics
+            dict: Processing statistics including Gemini API data
         """
         return {
             'total_processed': self.stats['total_processed'],
@@ -463,14 +543,19 @@ class EmbeddingProcessor:
             'successful_saves': self.stats['successful_saves'],
             'failed_saves': self.stats['failed_saves'],
             'embedding_success_rate': (self.stats['successful_embeddings'] / self.stats['total_processed'] * 100) if self.stats['total_processed'] > 0 else 0,
-            'save_success_rate': (self.stats['successful_saves'] / (self.stats['successful_saves'] + self.stats['failed_saves']) * 100) if (self.stats['successful_saves'] + self.stats['failed_saves']) > 0 else 0
+            'save_success_rate': (self.stats['successful_saves'] / (self.stats['successful_saves'] + self.stats['failed_saves']) * 100) if (self.stats['successful_saves'] + self.stats['failed_saves']) > 0 else 0,
+            # NEW: Gemini API specific metrics
+            'gemini_api_calls': self.stats['gemini_api_calls'],
+            'rate_limit_delays': self.stats['rate_limit_delays'],
+            'retry_attempts_used': self.stats['retry_attempts_used'],
+            'api_provider': 'gemini'
         }
     
     def print_processing_summary(self):
-        """Print processing statistics summary"""
+        """Print processing statistics summary with Gemini API metrics"""
         stats = self.get_processing_stats()
         
-        print(f"\nSafe Embedding Processing Summary:")
+        print(f"\nSafe Gemini API Embedding Processing Summary:")
         print(f"  Total chunks processed: {stats['total_processed']}")
         print(f"  Successful embeddings: {stats['successful_embeddings']}")
         print(f"  Failed embeddings: {stats['failed_embeddings']}")
@@ -478,7 +563,10 @@ class EmbeddingProcessor:
         print(f"  Successful saves: {stats['successful_saves']}")
         print(f"  Failed saves: {stats['failed_saves']}")
         print(f"  Save success rate: {stats['save_success_rate']:.1f}%")
-        print(f"  Safe processing: NO unsafe Ollama restarts during embedding generation")
+        print(f"  Gemini API calls: {stats['gemini_api_calls']}")
+        print(f"  Rate limit delays: {stats['rate_limit_delays']}")
+        print(f"  Retry attempts used: {stats['retry_attempts_used']}")
+        print(f"  Safe processing: Gemini API with rate limiting and retries")
     
     def reset_stats(self):
         """Reset processing statistics"""
@@ -487,7 +575,10 @@ class EmbeddingProcessor:
             'successful_embeddings': 0,
             'failed_embeddings': 0,
             'successful_saves': 0,
-            'failed_saves': 0
+            'failed_saves': 0,
+            'gemini_api_calls': 0,
+            'rate_limit_delays': 0,
+            'retry_attempts_used': 0
         }
 
 
@@ -556,7 +647,8 @@ class NodeProcessor:
             'content_length': len(content),
             'word_count': len(content.split()),
             'paragraph_count': len([p for p in content.split('\n\n') if p.strip()]),
-            'safe_processing': True  # Mark as safely processed
+            'safe_processing': True,  # Mark as safely processed
+            'api_provider': 'gemini'  # NEW: Mark API provider
         })
         
         return node
@@ -694,22 +786,24 @@ class NodeProcessor:
             'max_word_count': max(word_counts),
             'unique_files': len(files),
             'chunks_per_file': sum(files.values()) / len(files),
-            'safe_processing_enabled': True
+            'safe_processing_enabled': True,
+            'api_provider': 'gemini'  # NEW: Track API provider
         }
 
 
-def create_embedding_processor(embed_model, vector_store):
+def create_embedding_processor(embed_model, vector_store, config=None):
     """
-    Create a SAFE embedding processor instance
+    Create a SAFE embedding processor instance with Gemini API support
     
     Args:
-        embed_model: Embedding model instance
+        embed_model: Embedding model instance (Gemini)
         vector_store: Vector store instance
+        config: Configuration object with Gemini API settings
     
     Returns:
-        EmbeddingProcessor: Configured SAFE processor
+        EmbeddingProcessor: Configured SAFE processor with Gemini API
     """
-    return EmbeddingProcessor(embed_model, vector_store)
+    return EmbeddingProcessor(embed_model, vector_store, config)
 
 
 def create_node_processor(min_chunk_length=100):
