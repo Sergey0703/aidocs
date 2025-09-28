@@ -321,7 +321,6 @@ def create_config_summary(config):
     summary.append(f"   Embedding model: {config.EMBED_MODEL} ({config.EMBED_DIM}D)")
     summary.append(f"   Chunk size: {config.CHUNK_SIZE} (overlap: {config.CHUNK_OVERLAP})")
     summary.append(f"   Processing batch size: {config.PROCESSING_BATCH_SIZE}")
-    summary.append(f"   CPU threads: {config.OLLAMA_NUM_THREAD}")
     summary.append(f"   Features enabled:")
     summary.append(f"     - Auto .doc conversion: {'✅' if getattr(config, 'AUTO_CONVERT_DOC', False) else '❌'}")
     summary.append(f"     - OCR processing: {'✅' if config.ENABLE_OCR else '❌'}")
