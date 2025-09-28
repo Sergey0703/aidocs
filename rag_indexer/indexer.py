@@ -15,7 +15,7 @@ from datetime import datetime
 # --- LLAMA INDEX IMPORTS ---
 from llama_index.core import VectorStoreIndex, StorageContext
 from llama_index.vector_stores.supabase import SupabaseVectorStore
-from llama_index.embeddings.gemini import GeminiEmbedding  # UPDATED: Changed from Ollama to Gemini
+from llama_index.embeddings.google import GoogleGenerativeAIEmbedding # UPDATED: Changed from Ollama to Gemini
 from llama_index.core.node_parser import SentenceSplitter
 
 # --- ENHANCED LOCAL MODULES ---

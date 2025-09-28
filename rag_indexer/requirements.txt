@@ -5,11 +5,11 @@
 # Core LlamaIndex Components
 llama-index>=0.10.0
 llama-index-core>=0.10.0
-llama-index-embeddings-gemini>=0.1.0
+llama-index-embeddings-google>=0.2.0
 llama-index-vector-stores-supabase>=0.1.0
 
 # Google Gemini Integration
-google-generativeai>=0.8.0
+google-generativeai>=0.5.2,<0.6.0
 google-genai>=1.0.0
 
 # Database & Vector Store
