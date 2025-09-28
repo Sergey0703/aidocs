@@ -10,7 +10,7 @@ TABLE_NAME=documents
 GEMINI_API_KEY=
 
 # Embedding model settings - Google Gemini embeddings
-EMBED_MODEL=gemini-embedding-001
+EMBED_MODEL=text-embedding-004
 EMBED_DIM=768                  # gemini-embedding-001 supports 768, 1536, or 3072 dimensions
 
 # Text chunking settings - smaller chunks for faster processing

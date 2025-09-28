@@ -4,7 +4,7 @@
 Enhanced RAG Document Indexer - Complete Integration
 Enhanced version with advanced document parsing, auto-rotation OCR, and text quality analysis
 Optimized for English documents with comprehensive error handling and progress tracking
-UPDATED: Migrated from Ollama to Gemini API with gemini-embedding-001
+UPDATED: Migrated from Ollama to Gemini API with text-embedding-004
 """
 
 import logging
@@ -15,7 +15,7 @@ from datetime import datetime
 # --- LLAMA INDEX IMPORTS ---
 from llama_index.core import VectorStoreIndex, StorageContext
 from llama_index.vector_stores.supabase import SupabaseVectorStore
-from llama_index.embeddings.google import GoogleGenerativeAIEmbedding # UPDATED: Changed from Ollama to Gemini
+from llama_index.embeddings.google_genai import GoogleGenAIEmbedding # UPDATED: Changed from Ollama to Gemini
 from llama_index.core.node_parser import SentenceSplitter
 
 # --- ENHANCED LOCAL MODULES ---
@@ -88,7 +88,7 @@ def initialize_components(config):
     
     # UPDATED: Gemini embedding model with API key authentication
     embed_settings = config.get_embedding_settings()
-    embed_model = GeminiEmbedding(
+    embed_model = GoogleGenAIEmbedding(
         model_name=embed_settings['model'],
         api_key=embed_settings['api_key'],
         # NOTE: Gemini API doesn't use timeout in the same way as Ollama

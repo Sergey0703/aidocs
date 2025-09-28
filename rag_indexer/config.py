@@ -40,7 +40,7 @@ class Config:
         
         # --- GEMINI API SETTINGS (UPDATED FROM OLLAMA) ---
         self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-        self.EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
+        self.EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-004")
         self.EMBED_DIM = int(os.getenv("EMBED_DIM", "3072"))  # Updated default for Gemini
         
         # --- TEXT PROCESSING SETTINGS ---
