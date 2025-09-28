@@ -1,17 +1,51 @@
-# Streamlit ? ???????? ???????????
+# Streamlit и основные зависимости
 streamlit==1.28.2
 python-dotenv==1.0.0
 
-# LlamaIndex ?????????? (??????????? ??????)
+# LlamaIndex основные компоненты (сохранены)
 llama-index==0.10.57
 llama-index-llms-ollama==0.1.6
 llama-index-embeddings-ollama==0.1.6
 llama-index-vector-stores-supabase==0.1.6
 
-# ???? ??????
+# НОВЫЕ: Gemini API зависимости
+llama-index-llms-gemini>=0.1.0
+llama-index-embeddings-google-genai>=0.1.0
+google-generativeai>=0.5.2
+
+# База данных (сохранены)
 psycopg2-binary==2.9.9
 
-# ????????? ?????????? (???? ???????????)
+# Обработка документов (сохранены)
 pypdf==3.17.0
 python-docx==1.1.0
 openpyxl==3.1.2
+
+# Дополнительные зависимости для работы с файлами
+pandas>=2.0.0
+numpy>=1.24.0
+
+# HTTP запросы
+requests>=2.31.0
+
+# Обработка изображений (для OCR если используется)
+Pillow>=10.0.0
+
+# Обработка текста
+chardet>=5.2.0
+
+# Системные утилиты
+psutil>=5.9.0
+
+# Для Excel экспорта
+xlsxwriter>=3.1.0
+
+# Для работы с JSON и данными
+ujson>=5.8.0
+
+# Для асинхронных операций
+asyncio-throttle>=1.0.2
+
+# Optional: Advanced text processing
+spacy>=3.7.0
+nltk>=3.8.0
