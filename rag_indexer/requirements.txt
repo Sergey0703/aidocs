@@ -1,11 +1,16 @@
 # RAG Document Indexer Requirements
 # Enhanced version with advanced document parsing, OCR, and PDF processing
+# Updated to use Google Gemini instead of Ollama
 
 # Core LlamaIndex Components
 llama-index>=0.10.0
 llama-index-core>=0.10.0
-llama-index-embeddings-ollama>=0.1.0
+llama-index-embeddings-gemini>=0.1.0
 llama-index-vector-stores-supabase>=0.1.0
+
+# Google Gemini Integration
+google-generativeai>=0.8.0
+google-genai>=1.0.0
 
 # Database & Vector Store
 psycopg2-binary>=2.9.0
@@ -21,7 +26,7 @@ pypandoc>=1.13
 # Enhanced PDF Processing
 PyMuPDF>=1.23.0
 pdfplumber>=0.10.0
-pdf2image>=3.1.0
+pdf2image>=1.16.0
 
 # OCR Processing
 pytesseract>=0.3.10
