@@ -1,5 +1,6 @@
 # retrieval/multi_retriever.py
 # Multi-strategy retrieval system with HYBRID SEARCH (Vector + Database)
+# UPDATED: Migrated from Ollama to Gemini API
 
 import time
 import logging
@@ -178,7 +179,7 @@ class BaseRetriever(ABC):
         pass
 
 class LlamaIndexRetriever(BaseRetriever):
-    """LlamaIndex-based vector retriever with UNIVERSAL PERSON NAME SUPPORT"""
+    """LlamaIndex-based vector retriever with UNIVERSAL PERSON NAME SUPPORT - UPDATED for Gemini API"""
     
     def __init__(self, config):
         self.config = config
@@ -188,18 +189,18 @@ class LlamaIndexRetriever(BaseRetriever):
         self._initialize_components()
     
     def _initialize_components(self):
-        """Initialize LlamaIndex components"""
+        """Initialize LlamaIndex components - UPDATED for Gemini API"""
         try:
             from llama_index.core import VectorStoreIndex, StorageContext
             from llama_index.vector_stores.supabase import SupabaseVectorStore
-            from llama_index.embeddings.ollama import OllamaEmbedding
+            from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
             from llama_index.core.retrievers import VectorIndexRetriever
             from llama_index.core.postprocessor import SimilarityPostprocessor
             
-            # Initialize embedding model
-            self.embed_model = OllamaEmbedding(
+            # Initialize embedding model - UPDATED for Gemini API
+            self.embed_model = GoogleGenAIEmbedding(
                 model_name=self.config.embedding.model_name,
-                base_url=self.config.embedding.base_url
+                api_key=self.config.embedding.api_key
             )
             
             # Initialize vector store
@@ -219,10 +220,10 @@ class LlamaIndexRetriever(BaseRetriever):
                 embed_model=self.embed_model
             )
             
-            logger.info("? LlamaIndex Retriever initialized successfully")
+            logger.info("✅ LlamaIndex Retriever initialized successfully with Gemini API")
             
         except Exception as e:
-            logger.error(f"? Failed to initialize LlamaIndex Retriever: {e}")
+            logger.error(f"❌ Failed to initialize LlamaIndex Retriever with Gemini: {e}")
             self.index = None
             self.embed_model = None
     
@@ -259,7 +260,7 @@ class LlamaIndexRetriever(BaseRetriever):
     async def retrieve(self, query: str, top_k: int = 10, similarity_threshold: float = None, **kwargs) -> List[RetrievalResult]:
         """Retrieve using LlamaIndex with smart thresholding"""
         if not self.is_available():
-            logger.warning("?? LlamaIndex retriever not available")
+            logger.warning("⚠️ LlamaIndex retriever not available")
             return []
         
         # Get smart threshold if not provided
@@ -270,7 +271,7 @@ class LlamaIndexRetriever(BaseRetriever):
         # Respect vector max top_k limit
         actual_top_k = min(top_k, self.config.search.vector_max_top_k)
         
-        logger.info(f"?? Vector search: '{query}' (threshold: {similarity_threshold}, top_k: {actual_top_k})")
+        logger.info(f"🔍 Vector search: '{query}' (threshold: {similarity_threshold}, top_k: {actual_top_k})")
         
         try:
             from llama_index.core.retrievers import VectorIndexRetriever
@@ -357,11 +358,11 @@ class LlamaIndexRetriever(BaseRetriever):
                     logger.warning(f"Error processing vector node {i}: {e}")
                     continue
             
-            logger.info(f"? Vector search completed: {len(results)} results")
+            logger.info(f"✅ Vector search completed: {len(results)} results")
             return results
             
         except Exception as e:
-            logger.error(f"? Vector search failed: {e}")
+            logger.error(f"❌ Vector search failed: {e}")
             return []
     
     def _is_content_relevant(self, query: str, content: str, extracted_entity: str = None) -> bool:
@@ -389,7 +390,7 @@ class LlamaIndexRetriever(BaseRetriever):
         return found_words / len(query_words) >= 0.7
 
 class DatabaseRetriever(BaseRetriever):
-    """?? HYBRID DATABASE RETRIEVER - Direct database search for exact matches"""
+    """🔥 HYBRID DATABASE RETRIEVER - Direct database search for exact matches"""
     
     def __init__(self, config):
         self.config = config
@@ -403,8 +404,8 @@ class DatabaseRetriever(BaseRetriever):
         return "database_hybrid"
     
     async def retrieve(self, query: str, top_k: int = 10, **kwargs) -> List[RetrievalResult]:
-        """?? Hybrid database search with multiple strategies"""
-        logger.info(f"??? Database hybrid search for: '{query}'")
+        """🔥 Hybrid database search with multiple strategies"""
+        logger.info(f"🗄️ Database hybrid search for: '{query}'")
         
         try:
             conn = psycopg2.connect(self.config.database.connection_string)
@@ -441,11 +442,11 @@ class DatabaseRetriever(BaseRetriever):
             cur.close()
             conn.close()
             
-            logger.info(f"? Database search completed: {len(results)} total results")
+            logger.info(f"✅ Database search completed: {len(results)} total results")
             return results
             
         except Exception as e:
-            logger.error(f"? Database search failed: {e}")
+            logger.error(f"❌ Database search failed: {e}")
             return []
     
     async def _exact_phrase_search(self, cur, query: str, limit: int) -> List[RetrievalResult]:
@@ -708,7 +709,7 @@ class DatabaseRetriever(BaseRetriever):
         return min(self.config.search.database_base_score, base_score + coverage_score * 0.2 + occurrence_boost)
 
 class MultiStrategyRetriever:
-    """?? HYBRID Multi-strategy retriever with Vector + Database search"""
+    """🔥 HYBRID Multi-strategy retriever with Vector + Database search"""
     
     def __init__(self, config):
         self.config = config
@@ -718,7 +719,7 @@ class MultiStrategyRetriever:
     
     def _initialize_retrievers(self):
         """Initialize all available retrievers"""
-        # Vector retriever (if enabled)
+        # Vector retriever (if enabled) - UPDATED for Gemini
         if self.config.search.enable_vector_search:
             llamaindex_retriever = LlamaIndexRetriever(self.config)
             if llamaindex_retriever.is_available():
@@ -728,20 +729,20 @@ class MultiStrategyRetriever:
         if self.config.search.enable_database_search:
             self.retrievers["database"] = DatabaseRetriever(self.config)
         
-        logger.info(f"?? Initialized retrievers: {list(self.retrievers.keys())}")
+        logger.info(f"🔧 Initialized retrievers: {list(self.retrievers.keys())}")
     
     async def multi_retrieve(self, 
                            queries: List[str], 
                            extracted_entity: Optional[str] = None,
                            required_terms: List[str] = None) -> MultiRetrievalResult:
-        """?? HYBRID multi-strategy retrieval with intelligent strategy selection"""
+        """🔥 HYBRID multi-strategy retrieval with intelligent strategy selection"""
         start_time = time.time()
         all_results = []
         methods_used = []
         
         primary_query = queries[0] if queries else ""
         
-        logger.info(f"?? Hybrid multi-strategy retrieval")
+        logger.info(f"🔥 Hybrid multi-strategy retrieval")
         logger.info(f"   Primary query: '{primary_query}'")
         logger.info(f"   Entity: '{extracted_entity}'")
         logger.info(f"   Required terms: {required_terms}")
@@ -752,15 +753,15 @@ class MultiStrategyRetriever:
         
         # Get dynamic search parameters
         search_params = self.config.get_dynamic_search_params(primary_query, extracted_entity)
-        logger.info(f"?? Strategy: {search_strategy} | Person query: {is_person_query}")
-        logger.info(f"?? Search params: {search_params}")
+        logger.info(f"🔥 Strategy: {search_strategy} | Person query: {is_person_query}")
+        logger.info(f"🔥 Search params: {search_params}")
         
-        # ?? STRATEGY 1: Database Search (if enabled and appropriate)
+        # 🔥 STRATEGY 1: Database Search (if enabled and appropriate)
         if (self.config.search.enable_database_search and 
             "database" in self.retrievers and
             search_params.get("enable_database_search", True)):
             
-            logger.info(f"??? STRATEGY 1: Database search")
+            logger.info(f"🗄️ STRATEGY 1: Database search")
             
             # Use extracted entity for database search if available
             db_query = extracted_entity if extracted_entity and is_person_query else primary_query
@@ -775,13 +776,13 @@ class MultiStrategyRetriever:
             if database_results:
                 all_results.extend(database_results)
                 methods_used.append("database_hybrid")
-                logger.info(f"? Strategy 1: {len(database_results)} database results")
+                logger.info(f"✅ Strategy 1: {len(database_results)} database results")
                 
                 # Early return for high-priority person queries if we have enough exact matches
                 if (is_person_query and 
                     search_params.get("database_priority", False) and 
                     len(database_results) >= 10):
-                    logger.info("?? Database priority: sufficient exact matches found, skipping vector search")
+                    logger.info("🔥 Database priority: sufficient exact matches found, skipping vector search")
                     final_results = database_results[:search_params["top_k"]]
                     
                     return MultiRetrievalResult(
@@ -799,13 +800,13 @@ class MultiStrategyRetriever:
                         }
                     )
             else:
-                logger.info("?? Strategy 1: No database results found")
+                logger.info("⚠️ Strategy 1: No database results found")
         
-        # ?? STRATEGY 2: Vector Search (if enabled)
+        # 🔥 STRATEGY 2: Vector Search (if enabled)
         if (self.config.search.enable_vector_search and 
             "vector" in self.retrievers):
             
-            logger.info(f"?? STRATEGY 2: Vector search")
+            logger.info(f"🔍 STRATEGY 2: Vector search")
             
             if is_person_query and extracted_entity:
                 # For person queries, use both entity and original query
@@ -826,13 +827,13 @@ class MultiStrategyRetriever:
             if vector_results:
                 all_results.extend(vector_results)
                 methods_used.append("vector_smart_threshold")
-                logger.info(f"? Strategy 2: {len(vector_results)} vector results")
+                logger.info(f"✅ Strategy 2: {len(vector_results)} vector results")
             else:
-                logger.info("?? Strategy 2: No vector results found")
+                logger.info("⚠️ Strategy 2: No vector results found")
         
-        # ?? STRATEGY 3: Fallback Search (if primary strategies failed)
+        # 🔥 STRATEGY 3: Fallback Search (if primary strategies failed)
         if not all_results:
-            logger.info(f"?? STRATEGY 3: Fallback search")
+            logger.info(f"⚠️ STRATEGY 3: Fallback search")
             
             # Try with more relaxed parameters
             fallback_params = {
@@ -850,14 +851,14 @@ class MultiStrategyRetriever:
                 if fallback_results:
                     all_results.extend(fallback_results)
                     methods_used.append("database_fallback")
-                    logger.info(f"? Strategy 3: {len(fallback_results)} fallback results")
+                    logger.info(f"✅ Strategy 3: {len(fallback_results)} fallback results")
         
         # Hybrid deduplication and ranking
         final_results = self._hybrid_dedupe_and_rank(all_results, search_params["top_k"], primary_query, extracted_entity)
         
         retrieval_time = time.time() - start_time
         
-        logger.info(f"?? HYBRID RETRIEVAL COMPLETED:")
+        logger.info(f"🔥 HYBRID RETRIEVAL COMPLETED:")
         logger.info(f"   Query type: {'PERSON' if is_person_query else 'GENERAL'}")
         logger.info(f"   Strategy: {search_strategy}")
         logger.info(f"   Total candidates: {len(all_results)}")
@@ -896,7 +897,7 @@ class MultiStrategyRetriever:
         # Process variants sequentially for better control
         for i, query in enumerate(queries[:2]):  # Max 2 variants
             try:
-                logger.info(f"   ?? Vector variant {i+1}: '{query}'")
+                logger.info(f"   🔍 Vector variant {i+1}: '{query}'")
                 
                 results = await retriever.retrieve(
                     query, 
@@ -912,15 +913,15 @@ class MultiStrategyRetriever:
                         result.metadata["vector_query"] = query
                     
                     all_results.extend(results)
-                    logger.info(f"   ? Vector variant {i+1}: {len(results)} results")
+                    logger.info(f"   ✅ Vector variant {i+1}: {len(results)} results")
                 else:
-                    logger.info(f"   ?? Vector variant {i+1}: No results")
+                    logger.info(f"   ⚠️ Vector variant {i+1}: No results")
                     
             except Exception as e:
-                logger.warning(f"   ? Vector variant {i+1} failed: {e}")
+                logger.warning(f"   ❌ Vector variant {i+1} failed: {e}")
                 continue
         
-        logger.info(f"?? Vector variants summary: {len(all_results)} total results")
+        logger.info(f"🔍 Vector variants summary: {len(all_results)} total results")
         return all_results
     
     def _hybrid_dedupe_and_rank(self, 
@@ -928,7 +929,7 @@ class MultiStrategyRetriever:
                                max_results: int,
                                primary_query: str,
                                extracted_entity: str = None) -> List[RetrievalResult]:
-        """?? Hybrid deduplication and ranking with source-aware scoring"""
+        """🔥 Hybrid deduplication and ranking with source-aware scoring"""
         
         if not all_results:
             return []
@@ -971,7 +972,7 @@ class MultiStrategyRetriever:
         # Sort by hybrid score
         scored_results.sort(key=lambda x: x.metadata.get("hybrid_score", x.similarity_score), reverse=True)
         
-        logger.info(f"?? Hybrid deduplication: {len(all_results)} ? {len(scored_results)} unique ? {min(len(scored_results), max_results)} final")
+        logger.info(f"🔥 Hybrid deduplication: {len(all_results)} → {len(scored_results)} unique → {min(len(scored_results), max_results)} final")
         
         return scored_results[:max_results]
     
@@ -979,7 +980,7 @@ class MultiStrategyRetriever:
                                result: RetrievalResult, 
                                query: str, 
                                extracted_entity: str = None) -> float:
-        """?? Calculate hybrid score considering source method and query type"""
+        """🔥 Calculate hybrid score considering source method and query type"""
         
         base_score = result.similarity_score
         
@@ -1016,7 +1017,7 @@ class MultiStrategyRetriever:
                 for name, retriever in self.retrievers.items()}
     
     async def health_check(self) -> Dict[str, Any]:
-        """?? Comprehensive health check for hybrid retrieval system"""
+        """🔥 Comprehensive health check for hybrid retrieval system"""
         health_status = {
             "overall_healthy": True,
             "retrievers": {},

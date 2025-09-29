@@ -1,6 +1,7 @@
 # main_app.py
 # Production RAG System - Main Streamlit Application with Hybrid Search
 # Final Version with Bug Fixes
+# UPDATED: Migrated from Ollama to Gemini API
 
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -137,9 +138,9 @@ def on_query_change():
 
 @st.cache_resource
 def initialize_production_system():
-    """Initialize the production RAG system with hybrid search"""
+    """Initialize the production RAG system with hybrid search - UPDATED for Gemini API"""
     try:
-        logger.info("Initializing Production RAG System...")
+        logger.info("Initializing Production RAG System with Gemini API...")
         
         # Validate configuration
         validation_results = config.validate_config()
@@ -168,7 +169,7 @@ def initialize_production_system():
         if failed_components:
             logger.warning(f"Some components failed to initialize: {failed_components}")
         
-        logger.info("Production RAG System initialized successfully")
+        logger.info("Production RAG System initialized successfully with Gemini API")
         
         return {
             "entity_extractor": entity_extractor,
@@ -199,7 +200,7 @@ async def run_production_search(system_components: Dict, question: str):
     
     try:
         # STAGE 1: Entity Extraction
-        status_text.text("🧠 Smart entity extraction...")
+        status_text.text("Smart entity extraction...")
         progress_bar.progress(15)
         
         extraction_start = time.time()
@@ -209,7 +210,7 @@ async def run_production_search(system_components: Dict, question: str):
         logger.info(f"Entity extraction: '{entity_result.entity}' via {entity_result.method} (confidence: {entity_result.confidence:.2f})")
         
         # STAGE 2: Query Rewriting  
-        status_text.text("✏️ Query transformation...")
+        status_text.text("Query transformation...")
         progress_bar.progress(30)
         
         rewrite_start = time.time()
@@ -220,8 +221,8 @@ async def run_production_search(system_components: Dict, question: str):
         
         logger.info(f"Query rewriting: {len(rewrite_result.rewrites)} variants via {rewrite_result.method}")
         
-        # STAGE 3: 🆕 Hybrid Multi-Strategy Retrieval
-        status_text.text("🔍 Hybrid multi-strategy retrieval...")
+        # STAGE 3: Hybrid Multi-Strategy Retrieval
+        status_text.text("Hybrid multi-strategy retrieval...")
         progress_bar.progress(50)
         
         retrieval_start = time.time()
@@ -243,8 +244,8 @@ async def run_production_search(system_components: Dict, question: str):
         
         logger.info(f"Multi-retrieval: {len(multi_retrieval_result.results)} results via {', '.join(multi_retrieval_result.methods_used)}")
         
-        # STAGE 4: 🆕 Hybrid Results Fusion
-        status_text.text("⚖️ Advanced hybrid fusion...")
+        # STAGE 4: Hybrid Results Fusion
+        status_text.text("Advanced hybrid fusion...")
         progress_bar.progress(75)
         
         fusion_start = time.time()
@@ -259,7 +260,7 @@ async def run_production_search(system_components: Dict, question: str):
         logger.info(f"Results fusion: {fusion_result.final_count} final results via {fusion_result.fusion_method}")
         
         # STAGE 5: Answer Generation
-        status_text.text("📝 Generating intelligent answer...")
+        status_text.text("Generating intelligent answer...")
         progress_bar.progress(90)
         
         answer_start = time.time()
@@ -272,7 +273,7 @@ async def run_production_search(system_components: Dict, question: str):
         total_time = time.time() - pipeline_start
         
         progress_bar.progress(100)
-        status_text.text("✅ Hybrid search completed!")
+        status_text.text("Hybrid search completed!")
         
         # Clear progress after delay
         await asyncio.sleep(1)
@@ -317,13 +318,13 @@ async def generate_production_answer(question: str, results: List[Any], entity_r
     if not results:
         return f"""No relevant information found for your query: "{question}"
 
-🔍 Search Summary:
+Search Summary:
 - Entity extracted: "{entity_result.entity}" (confidence: {entity_result.confidence:.1%})
 - Query variants tried: {len(rewrite_result.rewrites)}
 - Method used: {entity_result.method}
 - Search strategy: Hybrid (Vector + Database)
 
-💡 Suggestions:
+Suggestions:
 - Try rephrasing your query
 - Use more specific terms
 - Check if the information exists in the knowledge base"""
@@ -339,35 +340,35 @@ async def generate_production_answer(question: str, results: List[Any], entity_r
     answer_parts = []
     
     # Header with hybrid search success
-    answer_parts.append(f"🎯 Found **{len(results)} relevant documents** for **{entity_result.entity}**:")
+    answer_parts.append(f"Found **{len(results)} relevant documents** for **{entity_result.entity}**:")
     
     # Show source distribution
     if database_results and vector_results:
-        answer_parts.append(f"📊 **Hybrid Search**: {len(database_results)} exact matches + {len(vector_results)} semantic matches")
+        answer_parts.append(f"**Hybrid Search**: {len(database_results)} exact matches + {len(vector_results)} semantic matches")
     elif database_results:
-        answer_parts.append(f"🗄️ **Database Search**: {len(database_results)} exact matches found")
+        answer_parts.append(f"**Database Search**: {len(database_results)} exact matches found")
     elif vector_results:
-        answer_parts.append(f"🔍 **Vector Search**: {len(vector_results)} semantic matches found")
+        answer_parts.append(f"**Vector Search**: {len(vector_results)} semantic matches found")
     
     # High quality results summary
     if high_quality:
-        answer_parts.append(f"\n**📋 Primary Information** ({len(high_quality)} high-confidence documents):")
+        answer_parts.append(f"\n**Primary Information** ({len(high_quality)} high-confidence documents):")
         for i, result in enumerate(high_quality[:3], 1):
             preview = result.content[:200] + "..." if len(result.content) > 200 else result.content
-            source_indicator = "🗄️" if "database" in result.source_method else "🔍"
+            source_indicator = "" if "database" in result.source_method else ""
             answer_parts.append(f"{i}. {source_indicator} **{result.filename}** ({result.similarity_score:.3f}): {preview}")
     
     # Medium quality results summary  
     if medium_quality and len(high_quality) < 3:
         needed = 3 - len(high_quality)
-        answer_parts.append(f"\n**📄 Additional Information** ({len(medium_quality)} medium-confidence documents):")
+        answer_parts.append(f"\n**Additional Information** ({len(medium_quality)} medium-confidence documents):")
         for i, result in enumerate(medium_quality[:needed], len(high_quality) + 1):
             preview = result.content[:150] + "..." if len(result.content) > 150 else result.content
-            source_indicator = "🗄️" if "database" in result.source_method else "🔍"
+            source_indicator = "" if "database" in result.source_method else ""
             answer_parts.append(f"{i}. {source_indicator} **{result.filename}** ({result.similarity_score:.3f}): {preview}")
     
     # Hybrid search intelligence summary
-    answer_parts.append(f"\n**🧠 Search Intelligence:**")
+    answer_parts.append(f"\n**Search Intelligence:**")
     answer_parts.append(f"- Entity analysis: {entity_result.method} extraction")
     answer_parts.append(f"- Query variants: {len(rewrite_result.rewrites)} strategies tried")
     answer_parts.append(f"- Search approach: Hybrid (Database + Vector)")
@@ -377,7 +378,7 @@ async def generate_production_answer(question: str, results: List[Any], entity_r
 
 @st.cache_data(ttl=300)
 def get_system_status():
-    """Get cached system status with hybrid search info"""
+    """Get cached system status with hybrid search info - UPDATED for Gemini API"""
     try:
         system = initialize_production_system()
         
@@ -401,12 +402,12 @@ def get_system_status():
         except Exception as e:
             database_status = {"available": False, "error": str(e)}
         
-        # Check embedding model
+        # Check embedding model - UPDATED for Gemini API
         try:
-            from llama_index.embeddings.ollama import OllamaEmbedding
-            embed_model = OllamaEmbedding(
+            from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+            embed_model = GoogleGenAIEmbedding(
                 model_name=config.embedding.model_name,
-                base_url=config.embedding.base_url
+                api_key=config.embedding.api_key
             )
             test_embedding = embed_model.get_text_embedding("test")
             embedding_status = {
@@ -435,7 +436,7 @@ def get_system_status():
 def render_sidebar():
     """Render enhanced sidebar with hybrid search status"""
     with st.sidebar:
-        st.header("🔍 System Status")
+        st.header("System Status")
         
         status = get_system_status()
         
@@ -445,53 +446,53 @@ def render_sidebar():
         
         # Hybrid search indicator
         if status.get("hybrid_enabled", True):
-            st.success("🚀 Hybrid Search Enabled")
+            st.success("Hybrid Search Enabled")
         else:
-            st.warning("⚠️ Vector-Only Mode")
+            st.warning("Vector-Only Mode")
         
         # Database status
         if status["database"]["available"]:
-            st.success("🗄️ Database Connected")
+            st.success("Database Connected")
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Documents", status["database"]["total_documents"])
             with col2:
                 st.metric("Files", status["database"]["unique_files"])
         else:
-            st.error("❌ Database Error")
+            st.error("Database Error")
         
-        # Embedding status
+        # Embedding status - UPDATED for Gemini
         if status["embedding"]["available"]:
-            st.success("🔍 Embeddings Ready")
+            st.success("Embeddings Ready")
             st.info(f"Model: {status['embedding']['model']}")
             st.info(f"Dimension: {status['embedding']['dimension']}")
         else:
-            st.error("❌ Embedding Error")
+            st.error("Embedding Error")
         
         st.markdown("---")
         
         # Component status
-        st.header("🔧 Components")
+        st.header("Components")
         
         components = status.get("components", {})
         
         if components.get("entity_extractors"):
             available_count = len([k for k, v in components['entity_extractors'].items() if v])
-            st.success(f"🧠 Entity Extractors ({available_count})")
+            st.success(f"Entity Extractors ({available_count})")
             for name, available in components["entity_extractors"].items():
                 st.text(f"  {name}: {'✅' if available else '❌'}")
         
         if components.get("query_rewriters"):
             available_count = len([k for k, v in components['query_rewriters'].items() if v])
-            st.success(f"✏️ Query Rewriters ({available_count})")
+            st.success(f"Query Rewriters ({available_count})")
             for name, available in components["query_rewriters"].items():
                 st.text(f"  {name}: {'✅' if available else '❌'}")
         
         if components.get("retrievers"):
             available_count = len([k for k, v in components['retrievers'].items() if v])
-            st.success(f"🔄 Retrievers ({available_count})")
+            st.success(f"Retrievers ({available_count})")
             for name, available in components["retrievers"].items():
-                retriever_type = "🗄️" if "database" in name else "🔍"
+                retriever_type = "" if "database" in name else ""
                 st.text(f"  {retriever_type} {name}: {'✅' if available else '❌'}")
         
         return status
@@ -500,8 +501,8 @@ def render_main_interface():
     """Render main interface with hybrid search branding"""
     
     # Header
-    st.markdown('<h1 class="main-header">🔍 Production RAG System</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">🚀 Hybrid Search • 🧠 Multi-Strategy Intelligence • ⚖️ Advanced Fusion • 📊 Excel Export Ready</p>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">Production RAG System</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Hybrid Search • Multi-Strategy Intelligence • Advanced Fusion • Excel Export Ready</p>', unsafe_allow_html=True)
     
     # Search interface
     col1, col2 = st.columns([4, 1])
@@ -529,7 +530,7 @@ def render_main_interface():
         
         # Create button with hybrid search indicator
         search_button = st.button(
-            "🚀 Hybrid Search", 
+            "Hybrid Search", 
             type="primary", 
             use_container_width=True,
             disabled=search_disabled,
@@ -547,7 +548,7 @@ def render_search_results(result: Dict):
     entity_result = result["entity_result"]
     st.markdown(f"""
     <div class="entity-box">
-        <h4>🧠 Smart Entity Extraction</h4>
+        <h4>Smart Entity Extraction</h4>
         <p><strong>Original:</strong> "{result['original_question']}"</p>
         <p><strong>Extracted:</strong> <span style="font-size: 1.2em; color: #007bff;"><strong>"{entity_result.entity}"</strong></span></p>
         <p><strong>Method:</strong> {entity_result.method} (confidence: {entity_result.confidence:.1%})</p>
@@ -557,78 +558,78 @@ def render_search_results(result: Dict):
     
     # Query rewriting results
     rewrite_result = result["rewrite_result"]
-    with st.expander("✏️ Query Transformations", expanded=False):
+    with st.expander("Query Transformations", expanded=False):
         st.write(f"**Method:** {rewrite_result.method} (confidence: {rewrite_result.confidence:.1%})")
         st.write(f"**Generated {len(rewrite_result.rewrites)} variants:**")
         for i, variant in enumerate(rewrite_result.rewrites, 1):
             st.write(f"{i}. {variant}")
     
     # Main answer
-    st.header("📋 Answer")
+    st.header("Answer")
     st.markdown(f'<div class="success-box">{result["answer"]}</div>', unsafe_allow_html=True)
     
     # Performance metrics
     metrics = result["performance_metrics"]
-    st.header("📊 Performance Analytics")
+    st.header("Performance Analytics")
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("⏱️ Total Time", f"{metrics['total_time']:.2f}s")
+        st.metric("Total Time", f"{metrics['total_time']:.2f}s")
     with col2:
-        st.metric("📄 Results Found", result["fusion_result"].final_count)
+        st.metric("Results Found", result["fusion_result"].final_count)
     with col3:
-        st.metric("🔧 Methods Used", len(result["retrieval_result"].methods_used))
+        st.metric("Methods Used", len(result["retrieval_result"].methods_used))
     with col4:
-        st.metric("⚖️ Fusion Method", result["fusion_result"].fusion_method.replace("_", " ").title())
+        st.metric("Fusion Method", result["fusion_result"].fusion_method.replace("_", " ").title())
     
     # Detailed metrics
-    with st.expander("🔍 Pipeline Breakdown", expanded=False):
+    with st.expander("Pipeline Breakdown", expanded=False):
         efficiency = metrics["pipeline_efficiency"]
         st.write("**Time Distribution:**")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric("🧠 Entity Extraction", f"{metrics['extraction_time']:.3f}s", f"{efficiency['extraction_pct']:.1f}%")
-            st.metric("✏️ Query Rewriting", f"{metrics['rewrite_time']:.3f}s", f"{efficiency['rewrite_pct']:.1f}%")
+            st.metric("Entity Extraction", f"{metrics['extraction_time']:.3f}s", f"{efficiency['extraction_pct']:.1f}%")
+            st.metric("Query Rewriting", f"{metrics['rewrite_time']:.3f}s", f"{efficiency['rewrite_pct']:.1f}%")
         
         with col2:
-            st.metric("🔄 Multi-Retrieval", f"{metrics['retrieval_time']:.3f}s", f"{efficiency['retrieval_pct']:.1f}%")
-            st.metric("⚖️ Results Fusion", f"{metrics['fusion_time']:.3f}s", f"{efficiency['fusion_pct']:.1f}%")
+            st.metric("Multi-Retrieval", f"{metrics['retrieval_time']:.3f}s", f"{efficiency['retrieval_pct']:.1f}%")
+            st.metric("Results Fusion", f"{metrics['fusion_time']:.3f}s", f"{efficiency['fusion_pct']:.1f}%")
         
         with col3:
-            st.metric("📝 Answer Generation", f"{metrics['answer_time']:.3f}s", f"{efficiency['answer_pct']:.1f}%")
-            st.metric("🚀 Pipeline Efficiency", f"{(1/metrics['total_time']):.2f} q/s")
+            st.metric("Answer Generation", f"{metrics['answer_time']:.3f}s", f"{efficiency['answer_pct']:.1f}%")
+            st.metric("Pipeline Efficiency", f"{(1/metrics['total_time']):.2f} q/s")
     
-    # 🆕 Hybrid Retrieval Intelligence
+    # Hybrid Retrieval Intelligence
     retrieval_result = result["retrieval_result"]
-    st.header("🔍 Retrieval Intelligence")
+    st.header("Retrieval Intelligence")
     
     # Determine search strategy used
     methods_used = retrieval_result.methods_used
     is_hybrid = len([m for m in methods_used if "database" in m]) > 0 and len([m for m in methods_used if "vector" in m or "llamaindex" in m]) > 0
     
     if is_hybrid:
-        st.markdown('<div class="hybrid-box"><h5>🚀 Hybrid Search Successfully Applied</h5><p>Combined database exact matching with vector semantic search for optimal results.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="hybrid-box"><h5>Hybrid Search Successfully Applied</h5><p>Combined database exact matching with vector semantic search for optimal results.</p></div>', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("📊 Total Candidates", retrieval_result.total_candidates)
+        st.metric("Total Candidates", retrieval_result.total_candidates)
     with col2:
-        st.metric("⚖️ After Fusion", result["fusion_result"].final_count)
+        st.metric("After Fusion", result["fusion_result"].final_count)
     with col3:
         fusion_ratio = result["fusion_result"].final_count / retrieval_result.total_candidates if retrieval_result.total_candidates > 0 else 0
-        st.metric("🎯 Quality Ratio", f"{fusion_ratio:.1%}")
+        st.metric("Quality Ratio", f"{fusion_ratio:.1%}")
     
     # Method badges with hybrid awareness
-    st.write("**🔧 Methods Used:**")
+    st.write("**Methods Used:**")
     methods_html = ""
     for method in result["retrieval_result"].methods_used:
         if "database" in method:
-            methods_html += f'<span class="method-badge database-method">🗄️ {method}</span>'
+            methods_html += f'<span class="method-badge database-method">{method}</span>'
         elif "hybrid" in method:
-            methods_html += f'<span class="method-badge hybrid-method">🚀 {method}</span>'
+            methods_html += f'<span class="method-badge hybrid-method">{method}</span>'
         elif "vector" in method or "llamaindex" in method:
-            methods_html += f'<span class="method-badge primary-method">🔍 {method}</span>'
+            methods_html += f'<span class="method-badge primary-method">{method}</span>'
         else:
             methods_html += f'<span class="method-badge secondary-method">{method}</span>'
     
@@ -636,32 +637,32 @@ def render_search_results(result: Dict):
     
     # Sources with hybrid source indicators
     if result["fusion_result"].fused_results:
-        st.header(f"📁 Sources ({len(result['fusion_result'].fused_results)} documents)")
+        st.header(f"Sources ({len(result['fusion_result'].fused_results)} documents)")
         
-        # 🆕 Fixed quality distribution - use correct keys
+        # Fixed quality distribution - use correct keys
         quality_dist = result["fusion_result"].fusion_metadata.get("quality_distribution", {})
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("🌟 Excellent", quality_dist.get("excellent", 0), "≥80% similarity")
+            st.metric("Excellent", quality_dist.get("excellent", 0), "≥80% similarity")
         with col2:
-            st.metric("✅ Good", quality_dist.get("good", 0), "≥60% similarity")
+            st.metric("Good", quality_dist.get("good", 0), "≥60% similarity")
         with col3:
-            st.metric("⚠️ Moderate", quality_dist.get("moderate", 0), "≥40% similarity")
+            st.metric("Moderate", quality_dist.get("moderate", 0), "≥40% similarity")
         with col4:
-            st.metric("📄 Low", quality_dist.get("low", 0), "<40% similarity")
+            st.metric("Low", quality_dist.get("low", 0), "<40% similarity")
         
         # Individual sources with hybrid indicators
         for i, doc in enumerate(result["fusion_result"].fused_results, 1):
             # Determine source type for icon
-            source_icon = "🗄️" if "database" in doc.source_method else "🔍"
+            source_icon = "" if "database" in doc.source_method else ""
             source_label = "Database Match" if "database" in doc.source_method else "Vector Match"
             
             with st.expander(f"{source_icon} Document {i}. {doc.filename} (similarity: {doc.similarity_score:.3f})", expanded=False):
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
-                    st.markdown("**📄 Content Preview:**")
+                    st.markdown("**Content Preview:**")
                     st.text_area(
                         "preview", 
                         doc.content, 
@@ -671,7 +672,7 @@ def render_search_results(result: Dict):
                     )
                 
                 with col2:
-                    st.markdown("**🔍 Document Intelligence:**")
+                    st.markdown("**Document Intelligence:**")
                     st.write(f"**Similarity:** {doc.similarity_score:.3f}")
                     st.write(f"**Source:** {source_label}")
                     st.write(f"**Method:** {doc.source_method}")
@@ -690,25 +691,26 @@ def render_search_results(result: Dict):
                         st.write(f"**Query Frequency:** {occurrences}x")
                     
                     # Show fusion scores
+                    # Show fusion scores
                     fusion_scores = []
                     for score_key in ["hybrid_weighted_score", "person_priority_score", "database_priority_score"]:
                         if score_key in doc.metadata:
                             fusion_scores.append(f"{score_key.replace('_', ' ').title()}: {doc.metadata[score_key]:.3f}")
                     
                     if fusion_scores:
-                        st.write("**🎯 Fusion Scores:**")
+                        st.write("**Fusion Scores:**")
                         for score in fusion_scores[:2]:  # Limit to 2 scores
                             st.write(f"  {score}")
                     
                     # Show hybrid fusion factors if available
                     if "fusion_factors" in doc.metadata:
                         factors = doc.metadata["fusion_factors"]
-                        st.write("**⚖️ Quality Factors:**")
+                        st.write("**Quality Factors:**")
                         factor_indicators = {
-                            "exact_query_match": "🎯",
-                            "entity_match": "👤", 
-                            "content_length_optimal": "📏",
-                            "database_strategy": "🗄️"
+                            "exact_query_match": "",
+                            "entity_match": "", 
+                            "content_length_optimal": "",
+                            "database_strategy": ""
                         }
                         
                         for factor, value in factors.items():
@@ -742,25 +744,25 @@ def main():
     # Render main interface
     current_query, search_button = render_main_interface()
     
-    # 🆕 Hybrid Search Advanced Settings
-    with st.expander("🔧 Hybrid Search Settings", expanded=False):
+    # Hybrid Search Advanced Settings
+    with st.expander("Hybrid Search Settings", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
-            show_entity_extraction = st.checkbox("🧠 Show entity extraction", value=True)
-            show_query_variants = st.checkbox("✏️ Show query variants", value=False)
-            show_performance = st.checkbox("📊 Show performance metrics", value=True)
-            show_fusion_details = st.checkbox("⚖️ Show fusion details", value=True)
+            show_entity_extraction = st.checkbox("Show entity extraction", value=True)
+            show_query_variants = st.checkbox("Show query variants", value=False)
+            show_performance = st.checkbox("Show performance metrics", value=True)
+            show_fusion_details = st.checkbox("Show fusion details", value=True)
         with col2:
-            show_retrieval_details = st.checkbox("🔍 Show retrieval intelligence", value=True)  
-            show_source_breakdown = st.checkbox("📁 Show source breakdown", value=True)
-            show_hybrid_indicators = st.checkbox("🚀 Show hybrid indicators", value=True)
-            show_debug_info = st.checkbox("🐛 Show debug information", value=False)
+            show_retrieval_details = st.checkbox("Show retrieval intelligence", value=True)  
+            show_source_breakdown = st.checkbox("Show source breakdown", value=True)
+            show_hybrid_indicators = st.checkbox("Show hybrid indicators", value=True)
+            show_debug_info = st.checkbox("Show debug information", value=False)
         
         # Hybrid search strategy info
         if status.get("hybrid_enabled", True):
-            st.info("🚀 **Hybrid Search Active**: Combines database exact matching with vector semantic search for optimal precision and recall.")
+            st.info("**Hybrid Search Active**: Combines database exact matching with vector semantic search for optimal precision and recall.")
         else:
-            st.warning("⚠️ **Vector-Only Mode**: Using traditional vector search. Enable hybrid search for better results on person queries.")
+            st.warning("**Vector-Only Mode**: Using traditional vector search. Enable hybrid search for better results on person queries.")
     
     # Handle search
     auto_search = st.session_state.get("auto_search_triggered", False)
@@ -806,7 +808,7 @@ def main():
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            if st.button("🗑️ Clear Results", use_container_width=True):
+            if st.button("Clear Results", use_container_width=True):
                 st.session_state.search_performed = False
                 st.session_state.search_results = None
                 st.session_state.last_query = ""
@@ -816,9 +818,9 @@ def main():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; font-size: 1rem; margin-top: 2rem;">
-        <strong>🔍 Production RAG System</strong><br>
-        🚀 Hybrid Search • 🧠 Multi-Strategy Intelligence • ⚖️ Advanced Fusion • 📊 Excel Export Ready<br>
-        <small>Powered by LlamaIndex, Ollama & Streamlit | Enhanced with Database + Vector Search</small>
+        <strong>Production RAG System</strong><br>
+        Hybrid Search • Multi-Strategy Intelligence • Advanced Fusion • Excel Export Ready<br>
+        <small>Powered by LlamaIndex, Gemini API & Streamlit | Enhanced with Database + Vector Search</small>
     </div>
     """, unsafe_allow_html=True)
 

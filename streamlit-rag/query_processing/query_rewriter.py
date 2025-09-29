@@ -1,5 +1,6 @@
 # query_processing/query_rewriter.py
 # Advanced query rewriting and transformation for better retrieval
+# UPDATED: Migrated from Ollama to Gemini API
 
 import re
 import logging
@@ -36,7 +37,7 @@ class BaseQueryRewriter(ABC):
         pass
 
 class LLMQueryRewriter(BaseQueryRewriter):
-    """LLM-based query rewriting"""
+    """LLM-based query rewriting - UPDATED for Gemini API"""
     
     def __init__(self, llm_config):
         self.llm_config = llm_config
@@ -44,25 +45,20 @@ class LLMQueryRewriter(BaseQueryRewriter):
         self._initialize_llm()
     
     def _initialize_llm(self):
-        """Initialize LLM for query rewriting"""
+        """Initialize LLM for query rewriting - UPDATED for Gemini API"""
         try:
-            from llama_index.llms.ollama import Ollama
+            from llama_index.llms.gemini import Gemini
             
-            self.llm = Ollama(
+            self.llm = Gemini(
                 model=self.llm_config.rewrite_model,
-                base_url=self.llm_config.rewrite_base_url,
-                request_timeout=self.llm_config.rewrite_timeout,
-                additional_kwargs={
-                    "temperature": self.llm_config.rewrite_temperature,
-                    "num_predict": self.llm_config.rewrite_max_tokens,
-                    "top_k": 40,
-                    "top_p": 0.9
-                }
+                api_key=self.llm_config.api_key,
+                temperature=self.llm_config.rewrite_temperature,
+                max_tokens=self.llm_config.rewrite_max_tokens,
             )
-            logger.info(f"? LLM Query Rewriter initialized: {self.llm_config.rewrite_model}")
+            logger.info(f"✅ LLM Query Rewriter initialized with Gemini: {self.llm_config.rewrite_model}")
             
         except Exception as e:
-            logger.error(f"? Failed to initialize LLM Query Rewriter: {e}")
+            logger.error(f"❌ Failed to initialize LLM Query Rewriter with Gemini: {e}")
             self.llm = None
     
     def is_available(self) -> bool:
@@ -90,7 +86,7 @@ class LLMQueryRewriter(BaseQueryRewriter):
             # Remove duplicates and filter
             unique_rewrites = self._filter_rewrites(rewrites, query)
             
-            logger.info(f"?? LLM generated {len(unique_rewrites)} query rewrites")
+            logger.info(f"🔄 LLM generated {len(unique_rewrites)} query rewrites")
             
             return QueryRewriteResult(
                 original_query=query,
@@ -105,7 +101,7 @@ class LLMQueryRewriter(BaseQueryRewriter):
             )
             
         except Exception as e:
-            logger.warning(f"?? LLM query rewriting failed: {e}")
+            logger.warning(f"⚠️ LLM query rewriting failed: {e}")
             return QueryRewriteResult(
                 original_query=query,
                 rewrites=[query],
@@ -276,7 +272,7 @@ class RuleBasedQueryRewriter(BaseQueryRewriter):
         
         confidence = 0.6 if pattern_rewrites else 0.4
         
-        logger.info(f"?? Rule-based generated {len(unique_rewrites)} query rewrites")
+        logger.info(f"🔧 Rule-based generated {len(unique_rewrites)} query rewrites")
         
         return QueryRewriteResult(
             original_query=query,
@@ -377,13 +373,13 @@ class HybridQueryRewriter(BaseQueryRewriter):
         # Rule-based is always available
         self.rewriters["rules"] = RuleBasedQueryRewriter()
         
-        # LLM rewriter if available
+        # LLM rewriter if available - UPDATED for Gemini
         if self.config.query_rewrite.enabled:
             llm_rewriter = LLMQueryRewriter(self.config.llm)
             if llm_rewriter.is_available():
                 self.rewriters["llm"] = llm_rewriter
         
-        logger.info(f"?? Initialized query rewriters: {list(self.rewriters.keys())}")
+        logger.info(f"🔧 Initialized query rewriters: {list(self.rewriters.keys())}")
     
     def is_available(self) -> bool:
         """Hybrid rewriter is available if any rewriter is available"""
@@ -403,7 +399,7 @@ class HybridQueryRewriter(BaseQueryRewriter):
                 methods_used.append("llm")
                 total_confidence += llm_result.confidence * 0.7  # 70% weight
             except Exception as e:
-                logger.warning(f"?? LLM rewriting failed: {e}")
+                logger.warning(f"⚠️ LLM rewriting failed: {e}")
         
         # Always try rule-based as backup/complement
         if "rules" in self.rewriters:
@@ -413,7 +409,7 @@ class HybridQueryRewriter(BaseQueryRewriter):
                 methods_used.append("rules")
                 total_confidence += rules_result.confidence * 0.3  # 30% weight
             except Exception as e:
-                logger.warning(f"?? Rule-based rewriting failed: {e}")
+                logger.warning(f"⚠️ Rule-based rewriting failed: {e}")
         
         # Combine and deduplicate
         unique_rewrites = self._combine_rewrites(all_rewrites, query, num_rewrites)
@@ -421,7 +417,7 @@ class HybridQueryRewriter(BaseQueryRewriter):
         # Calculate final confidence
         final_confidence = min(1.0, total_confidence)
         
-        logger.info(f"?? Hybrid rewriter generated {len(unique_rewrites)} queries using: {', '.join(methods_used)}")
+        logger.info(f"🔄 Hybrid rewriter generated {len(unique_rewrites)} queries using: {', '.join(methods_used)}")
         
         return QueryRewriteResult(
             original_query=query,
@@ -487,7 +483,7 @@ class ProductionQueryRewriter:
             if extracted_entity not in result.rewrites:
                 result.rewrites.insert(1, extracted_entity)  # Insert after original
         
-        logger.info(f"?? Final query variants ({len(result.rewrites)}): {result.rewrites}")
+        logger.info(f"🔄 Final query variants ({len(result.rewrites)}): {result.rewrites}")
         
         return result
     

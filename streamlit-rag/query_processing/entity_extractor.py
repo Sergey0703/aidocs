@@ -1,5 +1,6 @@
 # query_processing/entity_extractor.py
 # Smart entity extraction with multiple methods and fallbacks
+# UPDATED: Migrated from Ollama to Gemini API
 
 import re
 import logging
@@ -38,7 +39,7 @@ class BaseEntityExtractor(ABC):
         pass
 
 class LLMEntityExtractor(BaseEntityExtractor):
-    """LLM-based entity extraction"""
+    """LLM-based entity extraction - UPDATED for Gemini API"""
     
     def __init__(self, llm_config):
         self.llm_config = llm_config
@@ -46,26 +47,20 @@ class LLMEntityExtractor(BaseEntityExtractor):
         self._initialize_llm()
     
     def _initialize_llm(self):
-        """Initialize LLM for extraction"""
+        """Initialize LLM for extraction - UPDATED for Gemini API"""
         try:
-            from llama_index.llms.ollama import Ollama
+            from llama_index.llms.gemini import Gemini
             
-            self.llm = Ollama(
+            self.llm = Gemini(
                 model=self.llm_config.extraction_model,
-                base_url=self.llm_config.extraction_base_url,
-                request_timeout=self.llm_config.extraction_timeout,
-                additional_kwargs={
-                    "temperature": self.llm_config.extraction_temperature,
-                    "num_predict": self.llm_config.extraction_max_tokens,
-                    "top_k": 1,
-                    "top_p": 0.1,
-                    "stop": ["\n", ".", ",", ":", ";", "!", "?", " and", " or"]
-                }
+                api_key=self.llm_config.api_key,
+                temperature=self.llm_config.extraction_temperature,
+                max_tokens=self.llm_config.extraction_max_tokens,
             )
-            logger.info(f"? LLM Entity Extractor initialized: {self.llm_config.extraction_model}")
+            logger.info(f"✅ LLM Entity Extractor initialized with Gemini: {self.llm_config.extraction_model}")
             
         except Exception as e:
-            logger.error(f"? Failed to initialize LLM Entity Extractor: {e}")
+            logger.error(f"❌ Failed to initialize LLM Entity Extractor with Gemini: {e}")
             self.llm = None
     
     def is_available(self) -> bool:
@@ -96,7 +91,7 @@ class LLMEntityExtractor(BaseEntityExtractor):
             confidence = self._calculate_confidence(extracted_entity, query)
             
             if confidence > 0.5:
-                logger.info(f"?? LLM extracted entity: '{extracted_entity}' (confidence: {confidence:.2f})")
+                logger.info(f"🎯 LLM extracted entity: '{extracted_entity}' (confidence: {confidence:.2f})")
                 
                 return EntityExtractionResult(
                     entity=extracted_entity,
@@ -117,7 +112,7 @@ class LLMEntityExtractor(BaseEntityExtractor):
                 )
                 
         except Exception as e:
-            logger.warning(f"?? LLM entity extraction failed: {e}")
+            logger.warning(f"⚠️ LLM entity extraction failed: {e}")
             return EntityExtractionResult(
                 entity=query,
                 confidence=0.0,
@@ -207,7 +202,7 @@ class RegexEntityExtractor(BaseEntityExtractor):
             alternatives = [candidate for candidate, conf in all_candidates 
                           if candidate != best_entity and conf > 0.5]
             
-            logger.info(f"?? Regex extracted entity: '{best_entity}' (confidence: {best_confidence:.2f})")
+            logger.info(f"🎯 Regex extracted entity: '{best_entity}' (confidence: {best_confidence:.2f})")
             
             return EntityExtractionResult(
                 entity=best_entity,
@@ -260,9 +255,9 @@ class SpacyEntityExtractor(BaseEntityExtractor):
         try:
             import spacy
             self.nlp = spacy.load("en_core_web_sm")
-            logger.info("? SpaCy Entity Extractor initialized")
+            logger.info("✅ SpaCy Entity Extractor initialized")
         except (ImportError, OSError) as e:
-            logger.warning(f"?? SpaCy not available: {e}")
+            logger.warning(f"⚠️ SpaCy not available: {e}")
             self.nlp = None
     
     def is_available(self) -> bool:
@@ -291,7 +286,7 @@ class SpacyEntityExtractor(BaseEntityExtractor):
                 
                 alternatives = [ent.text for ent in person_entities[1:]]
                 
-                logger.info(f"?? SpaCy extracted entity: '{best_entity.text}' (confidence: {confidence:.2f})")
+                logger.info(f"🎯 SpaCy extracted entity: '{best_entity.text}' (confidence: {confidence:.2f})")
                 
                 return EntityExtractionResult(
                     entity=best_entity.text,
@@ -314,7 +309,7 @@ class SpacyEntityExtractor(BaseEntityExtractor):
                 )
                 
         except Exception as e:
-            logger.warning(f"?? SpaCy entity extraction failed: {e}")
+            logger.warning(f"⚠️ SpaCy entity extraction failed: {e}")
             return EntityExtractionResult(
                 entity=query,
                 confidence=0.0,
@@ -337,7 +332,7 @@ class ProductionEntityExtractor:
         # Always available
         self.extractors["regex"] = RegexEntityExtractor()
         
-        # LLM extractor (if available)
+        # LLM extractor (if available) - UPDATED for Gemini
         if "llm" in self.config.entity_extraction.extraction_methods:
             llm_extractor = LLMEntityExtractor(self.config.llm)
             if llm_extractor.is_available():
@@ -349,7 +344,7 @@ class ProductionEntityExtractor:
             if spacy_extractor.is_available():
                 self.extractors["spacy"] = spacy_extractor
         
-        logger.info(f"?? Initialized entity extractors: {list(self.extractors.keys())}")
+        logger.info(f"🔧 Initialized entity extractors: {list(self.extractors.keys())}")
     
     def extract_entity(self, query: str) -> EntityExtractionResult:
         """Extract entity using multiple methods with intelligent selection"""
@@ -374,11 +369,11 @@ class ProductionEntityExtractor:
                     
                     # If we get high confidence result, use it
                     if result.confidence > 0.7:
-                        logger.info(f"? High confidence extraction: '{result.entity}' via {result.method}")
+                        logger.info(f"✅ High confidence extraction: '{result.entity}' via {result.method}")
                         return result
                         
                 except Exception as e:
-                    logger.warning(f"?? Extractor {extractor_name} failed: {e}")
+                    logger.warning(f"⚠️ Extractor {extractor_name} failed: {e}")
                     continue
         
         # Select best result from all attempts
@@ -391,7 +386,7 @@ class ProductionEntityExtractor:
                 for r in results
             ]
             
-            logger.info(f"?? Best extraction: '{best_result.entity}' via {best_result.method} (confidence: {best_result.confidence:.2f})")
+            logger.info(f"🎯 Best extraction: '{best_result.entity}' via {best_result.method} (confidence: {best_result.confidence:.2f})")
             return best_result
         
         # Ultimate fallback
@@ -421,7 +416,7 @@ class ProductionEntityExtractor:
             if variant not in unique_variants:
                 unique_variants.append(variant)
         
-        logger.info(f"?? Generated {len(unique_variants)} extraction variants: {unique_variants}")
+        logger.info(f"🔧 Generated {len(unique_variants)} extraction variants: {unique_variants}")
         return unique_variants
     
     def validate_entity(self, entity: str, original_query: str) -> Tuple[bool, float]:
