@@ -123,3 +123,6 @@ uvicorn api:app --reload
 Your backend API is now running and ready to accept requests! You can typically access it at `http://127.0.0.1:8000`.
 
 ---
+Client start:
+
+streamlit run main_app.py
