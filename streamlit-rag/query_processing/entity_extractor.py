@@ -49,9 +49,9 @@ class LLMEntityExtractor(BaseEntityExtractor):
     def _initialize_llm(self):
         """Initialize LLM for extraction - UPDATED for Gemini API"""
         try:
-            from llama_index.llms.gemini import Gemini
+            from llama_index.llms.google_genai import GoogleGenAI
             
-            self.llm = Gemini(
+            self.llm = GoogleGenAI(
                 model=self.llm_config.extraction_model,
                 api_key=self.llm_config.api_key,
                 temperature=self.llm_config.extraction_temperature,

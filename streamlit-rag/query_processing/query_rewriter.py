@@ -47,9 +47,9 @@ class LLMQueryRewriter(BaseQueryRewriter):
     def _initialize_llm(self):
         """Initialize LLM for query rewriting - UPDATED for Gemini API"""
         try:
-            from llama_index.llms.gemini import Gemini
+            from llama_index.llms.google_genai import GoogleGenAI
             
-            self.llm = Gemini(
+            self.llm = GoogleGenAI(
                 model=self.llm_config.rewrite_model,
                 api_key=self.llm_config.api_key,
                 temperature=self.llm_config.rewrite_temperature,

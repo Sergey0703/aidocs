@@ -1,18 +1,18 @@
-# Streamlit and core dependencies
+# Streamlit UI framework
 streamlit==1.28.2
 python-dotenv==1.0.0
 
-# LlamaIndex core components - UPDATED for Python 3.12 compatibility
+# LlamaIndex core components (matching backend versions)
 llama-index>=0.10.0
 llama-index-core>=0.10.0
-llama-index-llms-ollama>=0.1.2
-llama-index-embeddings-ollama>=0.2.0
+llama-index-llms-ollama>=0.1.0
+llama-index-llms-google-genai>=0.1.0
+llama-index-embeddings-ollama>=0.1.0
+llama-index-embeddings-google-genai>=0.1.0
 llama-index-vector-stores-supabase>=0.1.0
 
-# NEW: Gemini API dependencies
-llama-index-llms-gemini>=0.1.0
-llama-index-embeddings-google>=0.2.0
-google-generativeai>=0.5.2
+# Google Gemini (matching backend constraint)
+google-generativeai>=0.5.2,<0.6.0
 
 # Database support
 psycopg2-binary>=2.9.0

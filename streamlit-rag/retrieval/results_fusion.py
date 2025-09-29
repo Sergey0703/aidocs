@@ -58,6 +58,7 @@ class HybridResultsFusionEngine:
         # ?? Quality indicators for content analysis
         self.quality_indicators = {
             "person_name_exact": self.config.search.exact_match_boost,
+            "exact_match": 1.2,
             "high_query_frequency": 1.3,  # Multiple query occurrences
             "optimal_content_length": 1.1, # Good content length (100-2000 chars)
             "recent_document": 1.05,       # Newer documents slight boost
