@@ -1,52 +1,45 @@
-# Streamlit UI framework
-streamlit==1.28.2
-python-dotenv==1.0.0
+# FastAPI - UPDATED to match installed packages
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.11.0
+pydantic-settings>=2.6.0
 
-# LlamaIndex core components (matching backend versions)
-llama-index>=0.10.0
-llama-index-core>=0.10.0
-llama-index-llms-ollama>=0.1.0
+# CORS
+python-multipart>=0.0.6
+
+# Core
+python-dotenv>=1.0.0
+
+# LlamaIndex - use installed versions
+llama-index-core>=0.14.0
 llama-index-llms-google-genai>=0.1.0
-llama-index-embeddings-ollama>=0.1.0
 llama-index-embeddings-google-genai>=0.1.0
 llama-index-vector-stores-supabase>=0.1.0
 
-# Google Gemini (matching backend constraint)
+# Google Gemini - already installed
 google-generativeai>=0.5.2,<0.6.0
 
-# Database support
+# Database
 psycopg2-binary>=2.9.0
-supabase>=2.0.0
 
 # Document processing
 pypdf>=3.17.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
 
-# Additional file processing dependencies
+# Additional dependencies
 pandas>=2.0.0
 numpy>=1.24.0
-
-# HTTP requests
 requests>=2.31.0
-
-# Image processing
 Pillow>=10.0.0
-
-# Text processing
 chardet>=5.2.0
-
-# System utilities
 psutil>=5.9.0
-
-# Excel export
 xlsxwriter>=3.1.0
-
-# JSON and data handling
 ujson>=5.8.0
-
-# Async operations
 aiohttp>=3.9.0
+
+# HTTP client for async requests
+httpx>=0.27.0
 
 # Optional: Advanced text processing
 #spacy>=3.7.0
