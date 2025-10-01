@@ -3,8 +3,10 @@ data/
 */data/
 **/data/
 
+/webclient/node_modules
+
 # Virtual environments
-venv/
+venv
 */venv/
 **/venv/
 
