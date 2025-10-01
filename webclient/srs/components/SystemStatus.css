@@ -1,0 +1,118 @@
+/* src/components/SystemStatus.css */
+.system-status {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.system-status h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+}
+
+.hybrid-enabled {
+  background: linear-gradient(135deg, #d4edda, #c3e6cb);
+  color: #155724;
+  border: 1px solid #28a745;
+}
+
+.status-section {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.status-section:last-of-type {
+  border-bottom: none;
+}
+
+.status-section h4 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  color: #555;
+  font-size: 1rem;
+}
+
+.status-ok {
+  color: #28a745;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.status-error {
+  color: #dc3545;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.status-icon {
+  font-weight: bold;
+  margin-right: 0.5rem;
+  font-size: 1.2rem;
+}
+
+.status-details {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.status-details div {
+  margin: 0.25rem 0;
+}
+
+.component-ok,
+.component-error {
+  padding: 0.3rem 0.5rem;
+  margin: 0.3rem 0;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.component-ok {
+  color: #28a745;
+  background: #f1f9f1;
+}
+
+.component-error {
+  color: #dc3545;
+  background: #fef5f5;
+}
+
+.refresh-button {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.3s;
+}
+
+.refresh-button:hover {
+  background: #0056b3;
+}
+
+.status-loading,
+.error-message {
+  padding: 1rem;
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
