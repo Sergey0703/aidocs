@@ -21,7 +21,7 @@ const SearchBar = ({ onSearch, isLoading }) => {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Enter your question (e.g., tell me about Breeda Daly)"
+            placeholder="Enter your question (e.g., tell me about ...)"
             className="search-input"
             disabled={isLoading}
           />

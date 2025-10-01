@@ -102,7 +102,7 @@ function App() {
                 <li>Advanced results fusion</li>
               </ul>
               <p className="example-query">
-                Try: "tell me about Breeda Daly"
+                Try: "tell me about ..."
               </p>
             </div>
           )}

@@ -126,3 +126,15 @@ Your backend API is now running and ready to accept requests! You can typically 
 Client start:
 
 streamlit run main_app.py
+
+# Перейдите в родительскую папку
+cd C:\projects\aidocs
+
+# Создайте React проект (это займет несколько минут)
+npx create-react-app webclient
+
+# Перейдите в созданный проект
+cd webclient
+
+# Установите зависимости
+npm install axios react-markdown
