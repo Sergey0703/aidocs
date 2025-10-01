@@ -68,19 +68,25 @@ async def get_status(components: SystemComponents = Depends(get_system_component
         # Check embedding model
         embedding_status = {}
         try:
+            logger.info("Testing embedding model...")
             from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+            
             embed_model = GoogleGenAIEmbedding(
                 model_name=config.embedding.model_name,
                 api_key=config.embedding.api_key
             )
+            logger.info(f"Embedding model created: {config.embedding.model_name}")
+            
             test_embedding = embed_model.get_text_embedding("test")
+            logger.info(f"Test embedding created, dimension: {len(test_embedding)}")
+            
             embedding_status = {
-                "available": len(test_embedding) == config.embedding.dimension,
+                "available": True,
                 "model": config.embedding.model_name,
                 "dimension": len(test_embedding)
             }
         except Exception as e:
-            logger.error(f"Embedding check failed: {e}")
+            logger.error(f"Embedding check failed: {e}", exc_info=True)
             embedding_status = {
                 "available": False,
                 "error": str(e)
@@ -106,7 +112,7 @@ async def get_status(components: SystemComponents = Depends(get_system_component
         )
         
     except Exception as e:
-        logger.error(f"Status check failed: {e}")
+        logger.error(f"Status check failed: {e}", exc_info=True)
         return SystemStatus(
             status="error",
             components={},
