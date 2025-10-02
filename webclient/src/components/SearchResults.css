@@ -11,6 +11,7 @@
   font-size: 1.1rem;
 }
 
+/* ANSWER SECTION - Always visible at top */
 .answer-section {
   margin-bottom: 2rem;
 }
@@ -18,6 +19,7 @@
 .answer-section h2 {
   margin-bottom: 1rem;
   color: #333;
+  font-size: 1.5rem;
 }
 
 .answer-box {
@@ -34,6 +36,11 @@
   color: #155724;
 }
 
+/* DOCUMENTS SECTION - Always visible after answer */
+.documents-section {
+  margin-bottom: 2rem;
+}
+
 .results-header {
   display: flex;
   justify-content: space-between;
@@ -46,6 +53,7 @@
 .results-header h2 {
   margin: 0;
   color: #333;
+  font-size: 1.3rem;
 }
 
 .quality-badges {
@@ -88,9 +96,344 @@
   gap: 1rem;
 }
 
+/* COLLAPSIBLE SECTIONS - Collapsed by default */
+.collapsible-section {
+  margin-bottom: 1.5rem;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.collapsible-section:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Collapsible Toggle Button */
+.collapsible-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: white;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.3s;
+  border-left: 4px solid #007bff;
+}
+
+.collapsible-toggle:hover {
+  background: #f8f9fa;
+}
+
+.toggle-icon {
+  color: #007bff;
+  font-size: 0.9rem;
+  transition: transform 0.3s;
+  flex-shrink: 0;
+}
+
+.toggle-title {
+  font-weight: 600;
+  color: #333;
+  font-size: 1.1rem;
+  flex: 1;
+}
+
+.toggle-badge {
+  background: linear-gradient(135deg, #e7f3ff, #cfe2ff);
+  color: #004085;
+  padding: 0.35rem 0.85rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Entity Badge specific styling */
+.entity-badge {
+  background: linear-gradient(135deg, #e7f3ff, #b3d9ff);
+  border: 1px solid #007bff;
+}
+
+/* Performance Badge specific styling - with left border accent */
+.performance-section {
+  border-left: 4px solid #007bff;
+}
+
+.performance-toggle {
+  border-left: none;
+}
+
+.performance-badge {
+  background: linear-gradient(135deg, #e7f3ff, #cfe2ff);
+  border: 1px solid #007bff;
+}
+
+/* Collapsible Content */
+.collapsible-content {
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-top: 1px solid #e0e0e0;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Entity Details */
+.entity-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+
+.detail-row.variants-row {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #555;
+  min-width: 140px;
+  font-size: 0.9rem;
+}
+
+.detail-value {
+  color: #333;
+  flex: 1;
+}
+
+.detail-value.highlight {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #007bff;
+}
+
+.detail-value.alternatives {
+  color: #666;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.detail-badge {
+  background: #007bff;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.confidence-score {
+  font-weight: bold;
+  color: #28a745;
+  font-size: 1rem;
+}
+
+.query-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.variant-badge {
+  background: linear-gradient(135deg, #e7f3ff, #cfe2ff);
+  color: #004085;
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  border: 1px solid #b3d9ff;
+}
+
+/* Performance Details */
+.performance-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.metric-card {
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: center;
+  border-left: 3px solid #007bff;
+  transition: all 0.2s;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+}
+
+.metric-label {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: #007bff;
+  font-family: 'Courier New', monospace;
+}
+
+/* Efficiency Breakdown */
+.efficiency-breakdown {
+  background: white;
+  padding: 1.25rem;
+  border-radius: 8px;
+}
+
+.efficiency-breakdown h4 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #333;
+  font-size: 1rem;
+}
+
+.efficiency-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.efficiency-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.bar-label {
+  font-size: 0.85rem;
+  color: #555;
+  font-weight: 600;
+  min-width: 90px;
+}
+
+.bar-container {
+  flex: 1;
+  position: relative;
+  height: 24px;
+  background: #e9ecef;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  transition: width 0.5s ease;
+  border-radius: 12px;
+}
+
+.bar-fill.extraction {
+  background: linear-gradient(90deg, #28a745, #20c997);
+}
+
+.bar-fill.rewrite {
+  background: linear-gradient(90deg, #17a2b8, #20c997);
+}
+
+.bar-fill.retrieval {
+  background: linear-gradient(90deg, #007bff, #6610f2);
+}
+
+.bar-fill.fusion {
+  background: linear-gradient(90deg, #fd7e14, #ffc107);
+}
+
+.bar-fill.rerank {
+  background: linear-gradient(90deg, #e83e8c, #6f42c1);
+}
+
+.bar-fill.answer {
+  background: linear-gradient(90deg, #6f42c1, #e83e8c);
+}
+
+.bar-value {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: #333;
+  text-shadow: 0 0 3px white;
+}
+
+/* Responsive Design */
 @media (max-width: 768px) {
   .results-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+  
+  .collapsible-toggle {
+    padding: 0.875rem 1rem;
+  }
+  
+  .toggle-title {
+    font-size: 1rem;
+  }
+  
+  .toggle-badge {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
+  }
+  
+  .detail-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .detail-label {
+    min-width: auto;
+  }
+  
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .efficiency-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .bar-label {
+    min-width: auto;
   }
 }

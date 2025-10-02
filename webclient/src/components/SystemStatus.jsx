@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ragApi } from '../api/ragApi';
 import './SystemStatus.css';
 
-const SystemStatus = () => {
+const SystemStatus = ({ lastSearchMetrics }) => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -27,6 +27,11 @@ const SystemStatus = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const formatTime = (seconds) => {
+    if (!seconds) return 'N/A';
+    return seconds < 1 ? `${(seconds * 1000).toFixed(0)}ms` : `${seconds.toFixed(2)}s`;
+  };
+
   if (loading && !status) return <div className="status-loading">Loading status...</div>;
   if (error) return <div className="status-error">Error: {error}</div>;
   if (!status) return null;
@@ -36,7 +41,7 @@ const SystemStatus = () => {
       <h3>System Status</h3>
       
       {status.hybrid_enabled && (
-        <div className="status-badge hybrid-enabled">Hybrid Search Enabled</div>
+        <div className="status-badge hybrid-enabled">✅ Hybrid Search Enabled</div>
       )}
 
       <div className="status-section">
@@ -75,15 +80,35 @@ const SystemStatus = () => {
         )}
       </div>
 
-      <div className="status-section">
-        <h4>Components</h4>
-        {Object.entries(status.components).map(([key, value]) => (
-          <div key={key} className={value ? "component-ok" : "component-error"}>
-            <span className="status-icon">{value ? '✓' : '✗'}</span>
-            {key.replace(/_/g, ' ')}
+      {lastSearchMetrics && (
+        <div className="status-section last-search-section">
+          <h4>📊 Last Search</h4>
+          <div className="last-search-stats">
+            <div className="stat-item">
+              <span className="stat-label">Total:</span>
+              <span className="stat-value total">{formatTime(lastSearchMetrics.total_time)}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Extraction:</span>
+              <span className="stat-value">{formatTime(lastSearchMetrics.extraction_time)}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Retrieval:</span>
+              <span className="stat-value">{formatTime(lastSearchMetrics.retrieval_time)}</span>
+            </div>
+            {lastSearchMetrics.rerank_time > 0 && (
+              <div className="stat-item">
+                <span className="stat-label">Re-Ranking:</span>
+                <span className="stat-value">{formatTime(lastSearchMetrics.rerank_time)}</span>
+              </div>
+            )}
+            <div className="stat-item">
+              <span className="stat-label">Fusion:</span>
+              <span className="stat-value">{formatTime(lastSearchMetrics.fusion_time)}</span>
+            </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
 
       <button onClick={fetchStatus} className="refresh-button">
         Refresh Status

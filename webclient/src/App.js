@@ -44,7 +44,7 @@ function App() {
 
       <div className="app-container">
         <aside className="sidebar">
-          <SystemStatus />
+          <SystemStatus lastSearchMetrics={searchResults?.performance_metrics} />
         </aside>
 
         <main className="main-content">
@@ -69,17 +69,13 @@ function App() {
 
           {searchResults && !isLoading && (
             <>
-              <EntityInfo 
-                entityResult={searchResults.entity_result}
-                rewriteResult={searchResults.rewrite_result}
-              />
-
-              <PerformanceMetrics metrics={searchResults.performance_metrics} />
-
               <SearchResults 
                 results={searchResults.results}
                 answer={searchResults.answer}
                 totalResults={searchResults.total_results}
+                entityResult={searchResults.entity_result}
+                rewriteResult={searchResults.rewrite_result}
+                performanceMetrics={searchResults.performance_metrics}
               />
 
               <div className="clear-section">
