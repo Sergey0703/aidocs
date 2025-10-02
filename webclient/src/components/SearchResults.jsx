@@ -4,7 +4,7 @@ import DocumentCard from './DocumentCard';
 import './SearchResults.css';
 
 const SearchResults = ({ results, answer, totalResults }) => {
-  // Show answer even if no results
+  // Show answer if it exists
   if (answer) {
     return (
       <div className="search-results">
@@ -21,7 +21,18 @@ const SearchResults = ({ results, answer, totalResults }) => {
           <>
             <div className="results-header">
               <h2>Sources ({totalResults} documents)</h2>
-              {/* quality badges code... */}
+              <div className="quality-badges">
+                {results.filter(r => r.similarity_score >= 0.8).length > 0 && (
+                  <span className="badge high-quality">
+                    {results.filter(r => r.similarity_score >= 0.8).length} High Quality
+                  </span>
+                )}
+                {results.filter(r => r.similarity_score >= 0.7 && r.similarity_score < 0.8).length > 0 && (
+                  <span className="badge medium-quality">
+                    {results.filter(r => r.similarity_score >= 0.7 && r.similarity_score < 0.8).length} Good
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="documents-list">

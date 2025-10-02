@@ -49,7 +49,7 @@ class PipelineEfficiency(BaseModel):
     rewrite_pct: float = 0
     retrieval_pct: float = 0
     fusion_pct: float = 0
-    rerank_pct: float = 0  # ADDED for AI re-ranking
+    rerank_pct: float = 0
     answer_pct: float = 0
 
 
@@ -60,9 +60,9 @@ class PerformanceMetrics(BaseModel):
     rewrite_time: float
     retrieval_time: float
     fusion_time: float
-    rerank_time: float = 0  # ADDED for AI re-ranking
+    rerank_time: float = 0
     answer_time: float
-    pipeline_efficiency: PipelineEfficiency  # CHANGED from Dict to structured model
+    pipeline_efficiency: PipelineEfficiency
 
 
 class SearchResponse(BaseModel):
@@ -89,7 +89,7 @@ class ErrorResponse(BaseModel):
 class SystemStatus(BaseModel):
     """System status response"""
     status: str
-    components: Dict[str, bool]
+    components: Dict[str, Any]
     database: Dict[str, Any]
     embedding: Dict[str, Any]
     hybrid_enabled: bool

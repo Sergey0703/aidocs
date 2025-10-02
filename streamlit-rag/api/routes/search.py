@@ -206,14 +206,14 @@ async def execute_search(system_components: Dict, query: str):
         # STAGE 1: Entity Extraction
         logger.info("STAGE 1: Entity Extraction")
         extraction_start = time.time()
-        entity_result = system_components["entity_extractor"].extract_entity(query)
+        entity_result = await system_components["entity_extractor"].extract_entity(query)
         extraction_time = time.time() - extraction_start
         logger.info(f"✓ Entity: '{entity_result.entity}' | Method: {entity_result.method} | Confidence: {entity_result.confidence:.2%} | Time: {extraction_time:.3f}s")
         
         # STAGE 2: Query Rewriting  
         logger.info("STAGE 2: Query Rewriting")
         rewrite_start = time.time()
-        rewrite_result = system_components["query_rewriter"].rewrite_query(
+        rewrite_result = await system_components["query_rewriter"].rewrite_query(
             query, entity_result.entity
         )
         rewrite_time = time.time() - rewrite_start

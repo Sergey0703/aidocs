@@ -1,93 +1,74 @@
 # api/core/dependencies.py
-# Dependency injection for FastAPI - initialize system components once
+# Dependency injection for FastAPI routes
 
 import logging
 from typing import Dict
-from functools import lru_cache
-
-from config.settings import config
-from query_processing.entity_extractor import ProductionEntityExtractor
-from query_processing.query_rewriter import ProductionQueryRewriter
-from retrieval.multi_retriever import MultiStrategyRetriever
-from retrieval.results_fusion import ResultsFusionEngine
+from fastapi import Depends
 
 logger = logging.getLogger(__name__)
 
 
 class SystemComponents:
-    """Singleton container for system components"""
+    """Container for system components with singleton pattern"""
     
     _instance = None
-    _initialized = False
+    _components = None
     
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self):
-        if not self._initialized:
-            self.components = None
-            self._initialized = True
-    
-    def initialize(self) -> Dict:
+    def initialize(self):
         """Initialize all system components"""
-        if self.components is not None:
-            return self.components
+        if self._components is not None:
+            return  # Already initialized
         
         try:
+            from config.settings import config
+            from query_processing.entity_extractor import ProductionEntityExtractor
+            from query_processing.query_rewriter import ProductionQueryRewriter
+            from retrieval.multi_retriever import MultiStrategyRetriever
+            from retrieval.results_fusion import HybridResultsFusionEngine
+            
             logger.info("Initializing Production RAG System with Gemini API...")
-            
-            # Validate configuration
-            validation_results = config.validate_config()
-            invalid_configs = [k for k, v in validation_results.items() if not v]
-            
-            if invalid_configs:
-                error_msg = f"Invalid configuration: {', '.join(invalid_configs)}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
             
             # Initialize components
             entity_extractor = ProductionEntityExtractor(config)
             query_rewriter = ProductionQueryRewriter(config)
             retriever = MultiStrategyRetriever(config)
-            fusion_engine = ResultsFusionEngine(config)
+            fusion_engine = HybridResultsFusionEngine(config)
             
-            # Check component status
-            component_status = {
-                "entity_extractor": len(entity_extractor.get_available_extractors()) > 0,
-                "query_rewriter": len(query_rewriter.get_rewriter_status()) > 0,
-                "retriever": len(retriever.get_retriever_status()) > 0,
-                "fusion_engine": True
-            }
-            
-            failed_components = [k for k, v in component_status.items() if not v]
-            if failed_components:
-                logger.warning(f"Some components failed to initialize: {failed_components}")
-            
-            self.components = {
+            self._components = {
                 "entity_extractor": entity_extractor,
                 "query_rewriter": query_rewriter,
                 "retriever": retriever,
                 "fusion_engine": fusion_engine,
-                "status": component_status
+                "config": config
             }
             
             logger.info("Production RAG System initialized successfully with Gemini API")
-            return self.components
             
         except Exception as e:
-            logger.error(f"Failed to initialize system: {e}")
+            logger.error(f"Failed to initialize system components: {e}")
             raise
     
     def get_components(self) -> Dict:
         """Get initialized components"""
-        if self.components is None:
-            return self.initialize()
-        return self.components
+        if self._components is None:
+            self.initialize()
+        return self._components
 
 
-@lru_cache()
+# Singleton instance
+_system_components = SystemComponents()
+
+
 def get_system_components() -> SystemComponents:
-    """FastAPI dependency to get system components"""
-    return SystemComponents()
+    """FastAPI dependency for system components"""
+    return _system_components
+
+
+def initialize_system_components():
+    """Initialize system components at startup"""
+    _system_components.initialize()

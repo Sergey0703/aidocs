@@ -1,6 +1,6 @@
 # query_processing/entity_extractor.py
 # Smart entity extraction with multiple methods and fallbacks
-# UPDATED: Migrated from Ollama to Gemini API
+# UPDATED: Full async support for FastAPI compatibility
 
 import re
 import logging
@@ -29,8 +29,8 @@ class BaseEntityExtractor(ABC):
     """Base class for entity extractors"""
     
     @abstractmethod
-    def extract(self, query: str) -> EntityExtractionResult:
-        """Extract entity from query"""
+    async def extract(self, query: str) -> EntityExtractionResult:
+        """Extract entity from query - NOW ASYNC"""
         pass
     
     @abstractmethod  
@@ -39,7 +39,7 @@ class BaseEntityExtractor(ABC):
         pass
 
 class LLMEntityExtractor(BaseEntityExtractor):
-    """LLM-based entity extraction - UPDATED for Gemini API"""
+    """LLM-based entity extraction with async support"""
     
     def __init__(self, llm_config):
         self.llm_config = llm_config
@@ -47,7 +47,7 @@ class LLMEntityExtractor(BaseEntityExtractor):
         self._initialize_llm()
     
     def _initialize_llm(self):
-        """Initialize LLM for extraction - UPDATED for Gemini API"""
+        """Initialize LLM for extraction"""
         try:
             from llama_index.llms.google_genai import GoogleGenAI
             
@@ -67,8 +67,8 @@ class LLMEntityExtractor(BaseEntityExtractor):
         """Check if LLM is available"""
         return self.llm is not None
     
-    def extract(self, query: str) -> EntityExtractionResult:
-        """Extract entity using LLM"""
+    async def extract(self, query: str) -> EntityExtractionResult:
+        """Extract entity using LLM - ASYNC"""
         if not self.is_available():
             return EntityExtractionResult(
                 entity=query,
@@ -77,21 +77,11 @@ class LLMEntityExtractor(BaseEntityExtractor):
             )
         
         try:
-            # Use configured prompt from settings
             from config.settings import config
             extraction_prompt = config.entity_extraction.person_extraction_prompt.format(query=query)
             
-            # FIXED: Changed from self.llm.complete() to self.llm.acomplete()
-            # Note: This method is now synchronous but will be called from async context
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                # We're in async context - this will be handled by the caller
-                response = self.llm.complete(extraction_prompt)
-            except RuntimeError:
-                # No event loop running
-                response = self.llm.complete(extraction_prompt)
-            
+            # FIXED: Use async method
+            response = await self.llm.acomplete(extraction_prompt)
             extracted_entity = response.text.strip()
             
             # Clean extraction
@@ -132,16 +122,10 @@ class LLMEntityExtractor(BaseEntityExtractor):
     
     def _clean_extraction(self, extracted_entity: str) -> str:
         """Clean extracted entity"""
-        # Remove common prefixes/suffixes
         cleaned = re.sub(r'^(name|answer|result)[:=]\s*', '', extracted_entity, flags=re.IGNORECASE)
         cleaned = re.sub(r'\s*(is|the|answer|result)$', '', cleaned, flags=re.IGNORECASE)
-        
-        # Remove quotes
         cleaned = cleaned.strip('"\'')
-        
-        # Clean extra whitespace
         cleaned = ' '.join(cleaned.split())
-        
         return cleaned
     
     def _calculate_confidence(self, entity: str, original_query: str) -> float:
@@ -149,48 +133,40 @@ class LLMEntityExtractor(BaseEntityExtractor):
         if not entity or len(entity.strip()) < 2:
             return 0.0
         
-        # Check if entity contains question words (bad)
         question_words = {'question', 'query', 'extract', 'name', 'tell', 'about', 'who', 'is', 'find', 'show'}
         entity_words = set(entity.lower().split())
         
         if entity_words.intersection(question_words):
             return 0.2
         
-        # Entity should be shorter than original query
         if len(entity) > len(original_query):
             return 0.1
         
-        # Higher confidence for capitalized names
         if re.match(r'^[A-Z][a-z]+(?: [A-Z][a-z]+)*$', entity):
             return 0.9
         
-        # Medium confidence for other patterns
         if len(entity.split()) <= 3:
             return 0.7
         
         return 0.5
 
 class RegexEntityExtractor(BaseEntityExtractor):
-    """Regex-based entity extraction"""
+    """Regex-based entity extraction - synchronous, wrapped in async"""
     
     def __init__(self):
         self.patterns = [
-            # Person names (capitalized words)
             (r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b', 0.8),
-            # Single capitalized word (lower confidence)  
             (r'\b[A-Z][a-z]+\b', 0.6),
-            # Words after "about", "is", etc.
             (r'(?:about|is|find|show)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', 0.7),
         ]
-        
         self.question_words = {'Tell', 'Show', 'Find', 'What', 'Who', 'Where', 'When', 'Why', 'How'}
     
     def is_available(self) -> bool:
         """Regex is always available"""
         return True
     
-    def extract(self, query: str) -> EntityExtractionResult:
-        """Extract entity using regex patterns"""
+    async def extract(self, query: str) -> EntityExtractionResult:
+        """Extract entity using regex patterns - ASYNC WRAPPER"""
         best_entity = None
         best_confidence = 0.0
         all_candidates = []
@@ -199,7 +175,6 @@ class RegexEntityExtractor(BaseEntityExtractor):
             matches = re.findall(pattern, query)
             
             for match in matches:
-                # Filter out question words
                 if match not in self.question_words:
                     confidence = self._calculate_regex_confidence(match, query, base_confidence)
                     all_candidates.append((match, confidence))
@@ -225,7 +200,6 @@ class RegexEntityExtractor(BaseEntityExtractor):
                 }
             )
         else:
-            # Fallback to whole query
             return EntityExtractionResult(
                 entity=query.strip(),
                 confidence=0.3,
@@ -237,15 +211,12 @@ class RegexEntityExtractor(BaseEntityExtractor):
         """Calculate confidence for regex extraction"""
         confidence = base_confidence
         
-        # Boost confidence for multi-word entities
         if len(entity.split()) > 1:
             confidence += 0.1
         
-        # Reduce confidence for very long entities
         if len(entity) > len(query) * 0.8:
             confidence -= 0.2
         
-        # Boost confidence if entity appears early in query
         entity_position = query.lower().find(entity.lower())
         if entity_position >= 0:
             position_factor = 1.0 - (entity_position / len(query))
@@ -254,7 +225,7 @@ class RegexEntityExtractor(BaseEntityExtractor):
         return min(1.0, max(0.0, confidence))
 
 class SpacyEntityExtractor(BaseEntityExtractor):
-    """SpaCy-based entity extraction (optional)"""
+    """SpaCy-based entity extraction - synchronous, wrapped in async"""
     
     def __init__(self):
         self.nlp = None
@@ -274,8 +245,8 @@ class SpacyEntityExtractor(BaseEntityExtractor):
         """Check if SpaCy is available"""
         return self.nlp is not None
     
-    def extract(self, query: str) -> EntityExtractionResult:
-        """Extract entity using SpaCy NER"""
+    async def extract(self, query: str) -> EntityExtractionResult:
+        """Extract entity using SpaCy NER - ASYNC WRAPPER"""
         if not self.is_available():
             return EntityExtractionResult(
                 entity=query,
@@ -285,15 +256,11 @@ class SpacyEntityExtractor(BaseEntityExtractor):
         
         try:
             doc = self.nlp(query)
-            
-            # Look for PERSON entities
             person_entities = [ent for ent in doc.ents if ent.label_ == "PERSON"]
             
             if person_entities:
-                # Take the first/most confident person entity
                 best_entity = person_entities[0]
-                confidence = 0.8  # SpaCy is generally reliable
-                
+                confidence = 0.8
                 alternatives = [ent.text for ent in person_entities[1:]]
                 
                 logger.info(f"🎯 SpaCy extracted entity: '{best_entity.text}' (confidence: {confidence:.2f})")
@@ -328,27 +295,22 @@ class SpacyEntityExtractor(BaseEntityExtractor):
             )
 
 class ProductionEntityExtractor:
-    """Production-ready entity extractor with multiple methods and intelligent fallback"""
+    """Production-ready entity extractor with full async support"""
     
     def __init__(self, config):
         self.config = config
         self.extractors = {}
-        
-        # Initialize available extractors
         self._initialize_extractors()
     
     def _initialize_extractors(self):
-        """Initialize all available extractors"""
-        # Always available
+        """Initialize available extractors"""
         self.extractors["regex"] = RegexEntityExtractor()
         
-        # LLM extractor (if available) - UPDATED for Gemini
         if "llm" in self.config.entity_extraction.extraction_methods:
             llm_extractor = LLMEntityExtractor(self.config.llm)
             if llm_extractor.is_available():
                 self.extractors["llm"] = llm_extractor
         
-        # SpaCy extractor (if available)
         if "spacy" in self.config.entity_extraction.extraction_methods:
             spacy_extractor = SpacyEntityExtractor()
             if spacy_extractor.is_available():
@@ -356,8 +318,8 @@ class ProductionEntityExtractor:
         
         logger.info(f"🔧 Initialized entity extractors: {list(self.extractors.keys())}")
     
-    def extract_entity(self, query: str) -> EntityExtractionResult:
-        """Extract entity using multiple methods with intelligent selection"""
+    async def extract_entity(self, query: str) -> EntityExtractionResult:
+        """Extract entity using multiple methods - FULLY ASYNC"""
         if not query or not query.strip():
             return EntityExtractionResult(
                 entity="",
@@ -366,18 +328,15 @@ class ProductionEntityExtractor:
             )
         
         query = query.strip()
-        
-        # Try extractors in order of preference
         extraction_order = ["llm", "spacy", "regex"]
         results = []
         
         for extractor_name in extraction_order:
             if extractor_name in self.extractors:
                 try:
-                    result = self.extractors[extractor_name].extract(query)
+                    result = await self.extractors[extractor_name].extract(query)
                     results.append(result)
                     
-                    # If we get high confidence result, use it
                     if result.confidence > 0.7:
                         logger.info(f"✅ High confidence extraction: '{result.entity}' via {result.method}")
                         return result
@@ -386,20 +345,15 @@ class ProductionEntityExtractor:
                     logger.warning(f"⚠️ Extractor {extractor_name} failed: {e}")
                     continue
         
-        # Select best result from all attempts
         if results:
             best_result = max(results, key=lambda x: x.confidence)
-            
-            # Add metadata about all attempts
             best_result.metadata["all_attempts"] = [
                 {"method": r.method, "entity": r.entity, "confidence": r.confidence} 
                 for r in results
             ]
-            
             logger.info(f"🎯 Best extraction: '{best_result.entity}' via {best_result.method} (confidence: {best_result.confidence:.2f})")
             return best_result
         
-        # Ultimate fallback
         return EntityExtractionResult(
             entity=query,
             confidence=0.1,
@@ -407,20 +361,17 @@ class ProductionEntityExtractor:
             metadata={"reason": "All extractors failed"}
         )
     
-    def get_extraction_variants(self, query: str) -> List[str]:
-        """Get multiple extraction variants for multi-query approach"""
-        base_result = self.extract_entity(query)
+    async def get_extraction_variants(self, query: str) -> List[str]:
+        """Get multiple extraction variants - ASYNC"""
+        base_result = await self.extract_entity(query)
         variants = [base_result.entity]
         
-        # Add alternatives if available
         if base_result.alternatives:
-            variants.extend(base_result.alternatives[:2])  # Max 2 alternatives
+            variants.extend(base_result.alternatives[:2])
         
-        # Add original query as fallback
         if query.strip() not in variants:
             variants.append(query.strip())
         
-        # Remove duplicates while preserving order
         unique_variants = []
         for variant in variants:
             if variant not in unique_variants:
@@ -434,12 +385,10 @@ class ProductionEntityExtractor:
         if not entity or len(entity.strip()) < 2:
             return False, 0.0
         
-        # Check against known entities
         entity_lower = entity.lower()
         if entity_lower in self.config.entity_extraction.known_entities:
             return True, 0.95
         
-        # Basic validation rules
         question_words = {'question', 'query', 'extract', 'name', 'tell', 'about', 'who', 'is', 'find', 'show'}
         entity_words = set(entity.lower().split())
         

@@ -3,7 +3,7 @@
 
 import logging
 import psycopg2
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime
 
 from api.models.schemas import SystemStatus, HealthCheck
@@ -92,18 +92,21 @@ async def get_status(components: SystemComponents = Depends(get_system_component
                 "error": str(e)
             }
         
-        # Get component status
+        # FIXED: Get component status directly from components
         component_status = {
-            "entity_extractor": system_components["status"]["entity_extractor"],
-            "query_rewriter": system_components["status"]["query_rewriter"],
-            "retriever": system_components["status"]["retriever"],
-            "fusion_engine": system_components["status"]["fusion_engine"]
+            "entity_extractor": system_components["entity_extractor"].get_extractor_status(),
+            "query_rewriter": system_components["query_rewriter"].get_rewriter_status(),
+            "retriever": system_components["retriever"].get_retriever_status(),
+            "fusion_engine": True  # Fusion engine doesn't have status method
         }
         
         hybrid_enabled = config.search.enable_hybrid_search if hasattr(config.search, 'enable_hybrid_search') else True
         
         return SystemStatus(
-            status="operational" if all(component_status.values()) else "degraded",
+            status="operational" if all([
+                embedding_status.get("available", False),
+                database_status.get("available", False)
+            ]) else "degraded",
             components=component_status,
             database=database_status,
             embedding=embedding_status,
@@ -113,11 +116,4 @@ async def get_status(components: SystemComponents = Depends(get_system_component
         
     except Exception as e:
         logger.error(f"Status check failed: {e}", exc_info=True)
-        return SystemStatus(
-            status="error",
-            components={},
-            database={"available": False, "error": str(e)},
-            embedding={"available": False, "error": str(e)},
-            hybrid_enabled=False,
-            timestamp=datetime.now()
-        )
+        raise HTTPException(status_code=500, detail=str(e))
