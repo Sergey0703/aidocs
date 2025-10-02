@@ -43,6 +43,16 @@ class DocumentResult(BaseModel):
     metadata: Dict[str, Any] = {}
 
 
+class PipelineEfficiency(BaseModel):
+    """Pipeline stage efficiency percentages"""
+    extraction_pct: float = 0
+    rewrite_pct: float = 0
+    retrieval_pct: float = 0
+    fusion_pct: float = 0
+    rerank_pct: float = 0  # ADDED for AI re-ranking
+    answer_pct: float = 0
+
+
 class PerformanceMetrics(BaseModel):
     """Performance metrics for search pipeline"""
     total_time: float
@@ -50,8 +60,9 @@ class PerformanceMetrics(BaseModel):
     rewrite_time: float
     retrieval_time: float
     fusion_time: float
+    rerank_time: float = 0  # ADDED for AI re-ranking
     answer_time: float
-    pipeline_efficiency: Dict[str, float]
+    pipeline_efficiency: PipelineEfficiency  # CHANGED from Dict to structured model
 
 
 class SearchResponse(BaseModel):

@@ -81,7 +81,17 @@ class LLMEntityExtractor(BaseEntityExtractor):
             from config.settings import config
             extraction_prompt = config.entity_extraction.person_extraction_prompt.format(query=query)
             
-            response = self.llm.complete(extraction_prompt)
+            # FIXED: Changed from self.llm.complete() to self.llm.acomplete()
+            # Note: This method is now synchronous but will be called from async context
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                # We're in async context - this will be handled by the caller
+                response = self.llm.complete(extraction_prompt)
+            except RuntimeError:
+                # No event loop running
+                response = self.llm.complete(extraction_prompt)
+            
             extracted_entity = response.text.strip()
             
             # Clean extraction

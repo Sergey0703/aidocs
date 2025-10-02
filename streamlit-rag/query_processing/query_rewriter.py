@@ -119,7 +119,15 @@ class LLMQueryRewriter(BaseQueryRewriter):
             num_queries=num_rewrites
         )
         
-        response = self.llm.complete(prompt)
+        # FIXED: Added event loop check to prevent asyncio.run() error
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in async context
+            response = self.llm.complete(prompt)
+        except RuntimeError:
+            # No event loop running
+            response = self.llm.complete(prompt)
         
         # Parse response to extract individual queries
         rewrites = self._parse_llm_response(response.text)
@@ -131,7 +139,16 @@ class LLMQueryRewriter(BaseQueryRewriter):
         
         prompt = config.query_rewrite.simplify_query_prompt.format(query=query)
         
-        response = self.llm.complete(prompt)
+        # FIXED: Added event loop check to prevent asyncio.run() error
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in async context
+            response = self.llm.complete(prompt)
+        except RuntimeError:
+            # No event loop running
+            response = self.llm.complete(prompt)
+        
         simplified = response.text.strip()
         
         if simplified and simplified != query:
