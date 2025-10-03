@@ -41,6 +41,7 @@
   border: 2px solid #ddd;
   border-radius: 8px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .search-button {
@@ -54,6 +55,7 @@
   cursor: pointer;
   transition: all 0.3s;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .search-button:hover:not(:disabled) {
@@ -71,12 +73,46 @@
 /* Responsive Design */
 @media (max-width: 768px) {
   .search-input-group {
-    flex-direction: column;
+    flex-wrap: wrap;
   }
   
-  .search-input,
-  .max-results-input,
-  .search-button {
+  .search-input {
     width: 100%;
+    flex: 1 1 100%;
+    order: 1;
+  }
+  
+  .max-results-input {
+    width: 70px;
+    padding: 0.75rem 0.5rem;
+    font-size: 0.95rem;
+    flex: 0 0 70px;
+    order: 2;
+  }
+  
+  .search-button {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+    order: 3;
+  }
+}
+
+@media (max-width: 480px) {
+  .search-input {
+    padding: 0.875rem;
+    font-size: 0.95rem;
+  }
+  
+  .max-results-input {
+    width: 65px;
+    padding: 0.7rem 0.4rem;
+    font-size: 0.9rem;
+    flex: 0 0 65px;
+  }
+  
+  .search-button {
+    padding: 0.7rem 0.875rem;
+    font-size: 0.9rem;
   }
 }
