@@ -153,7 +153,7 @@ def compare_directory_with_database(directory_path, connection_string, table_nam
     print(f"\n?? Performing end-to-end analysis: Directory vs Database")
     
     # Import here to avoid circular imports
-    from file_utils import scan_files_in_directory
+    from file_utils_core import scan_files_in_directory
     
     # Step 1: Get all files in directory
     all_files_in_dir = scan_files_in_directory(directory_path, recursive)

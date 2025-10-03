@@ -4,6 +4,14 @@ SELECT replace(metadata ->> 'text', E'\n', ' ') AS full_document
 FROM vecs.documents;
 
 
+SELECT 
+    metadata->>'file_name' as file_name,
+    COUNT(*) as chunks_count,
+    AVG(LENGTH(metadata->>'text')) as avg_chunk_size
+FROM vecs.documents
+GROUP BY metadata->>'file_name';
+
+
 I need backup for this table select COUNT(*) FROM vecs.documents in my local Supabase
 ThinkingThoughts
 (experimental)
@@ -24,7 +32,7 @@ Bash
 You'll see output like this. Look for the service named db or an image like supabase/postgres.
 Generated code
 CONTAINER ID   IMAGE                  COMMAND                  CREATED         STATUS         PORTS                               NAMES
-a1b2c3d4e5f6   supabase/postgres:15   "docker-entrypoint.s…"   2 hours ago     Up 2 hours     0.0.0.0:5432->5432/tcp              supabase-db-your-project-ref
+a1b2c3d4e5f6   supabase/postgres:15   "docker-entrypoint.sï¿½"   2 hours ago     Up 2 hours     0.0.0.0:5432->5432/tcp              supabase-db-your-project-ref
 ...other containers...
 Use code with caution.
 The container name we need here is supabase-db-your-project-ref (yours will be different). Let's use this for the examples.

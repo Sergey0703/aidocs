@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Core file utilities module for RAG Document Indexer
-Basic utility functions without circular dependencies
-RESILIENT VERSION: Skip files instead of binary extraction when proper libraries missing
+Simplified core file utilities module for RAG Document Indexer (Part 2: Chunking & Vectors Only)
+Contains only utility functions needed for markdown processing
+SIMPLIFIED: Removed all document processing functions - only cleaning utilities remain
 """
 
 import os
-import sys
 from pathlib import Path
 
 
@@ -56,505 +55,6 @@ def clean_metadata_recursive(obj):
         return obj
 
 
-def safe_import_with_fallback(module_name, package=None, fallback_message=None):
-    """
-    Safely import a module with graceful fallback
-    
-    Args:
-        module_name: Name of the module to import
-        package: Package name if doing relative import
-        fallback_message: Custom message to show if import fails
-    
-    Returns:
-        tuple: (module_object_or_None, success_boolean, error_message)
-    """
-    try:
-        if package:
-            module = __import__(module_name, fromlist=[package])
-        else:
-            module = __import__(module_name)
-        return module, True, None
-    except ImportError as e:
-        error_msg = fallback_message or f"Optional dependency '{module_name}' not available: {str(e)}"
-        return None, False, error_msg
-    except Exception as e:
-        error_msg = f"Unexpected error importing '{module_name}': {str(e)}"
-        return None, False, error_msg
-
-
-def safe_read_file_with_fallbacks(file_path, max_size=50*1024*1024):
-    """
-    RESILIENT: Read file with proper library checks - skip files when libraries missing
-    NO BINARY EXTRACTION - if we can't read it properly, we skip it
-    
-    Args:
-        file_path: Path to the file to read
-        max_size: Maximum file size in bytes (default 50MB)
-    
-    Returns:
-        tuple: (content, error_code, processing_info)
-    """
-    try:
-        # Check file size first
-        file_size = os.path.getsize(file_path)
-        if file_size > max_size:
-            return None, "FILE_TOO_LARGE", {'size': file_size, 'max_allowed': max_size}
-        
-        if file_size == 0:
-            return None, "EMPTY_FILE", {'size': 0}
-        
-        file_ext = os.path.splitext(file_path)[1].lower()
-        processing_info = {'file_extension': file_ext, 'file_size': file_size, 'methods_tried': []}
-        
-        # RESILIENT STRATEGY: Check what we can actually process
-        
-        # Strategy 1: Handle Excel files - SKIP if no proper libraries
-        if file_ext in ['.xlsx', '.xls']:
-            return _read_excel_file_resilient(file_path, processing_info)
-        
-        # Strategy 2: Handle CSV files - use built-in csv module, skip if issues
-        elif file_ext == '.csv':
-            return _read_csv_file_resilient(file_path, processing_info)
-        
-        # Strategy 3: Handle structured data files
-        elif file_ext in ['.json', '.xml', '.yaml', '.yml']:
-            return _read_structured_file_resilient(file_path, processing_info)
-        
-        # Strategy 4: Handle text files with encoding detection
-        elif file_ext in ['.txt', '.md', '.rst', '.log', '.py', '.js', '.html', '.htm']:
-            return _read_text_file_resilient(file_path, processing_info)
-        
-        # Strategy 5: Handle binary files that might contain text - SKIP if no proper tools
-        elif file_ext in ['.doc', '.rtf']:
-            return _read_binary_text_file_resilient(file_path, processing_info)
-        
-        # Strategy 6: Default text reading with multiple encodings
-        else:
-            return _read_unknown_file_resilient(file_path, processing_info)
-        
-    except Exception as e:
-        return None, f"FATAL_ERROR_{type(e).__name__}", {'error': str(e)}
-
-
-def _read_excel_file_resilient(file_path, processing_info):
-    """
-    RESILIENT: Read Excel files - SKIP if no proper libraries available
-    NO BINARY EXTRACTION
-    
-    Args:
-        file_path: Path to Excel file
-        processing_info: Processing information dict
-    
-    Returns:
-        tuple: (content, error_code, processing_info)
-    """
-    file_ext = processing_info['file_extension']
-    
-    # Strategy 1: Try pandas (best option)
-    pandas_module, pandas_success, pandas_error = safe_import_with_fallback('pandas')
-    if pandas_success:
-        try:
-            processing_info['methods_tried'].append('pandas_excel')
-            
-            # Try with appropriate engine
-            if file_ext == '.xlsx':
-                try:
-                    df = pandas_module.read_excel(file_path, engine='openpyxl')
-                except ImportError:
-                    # openpyxl not available, try default
-                    df = pandas_module.read_excel(file_path)
-            else:  # .xls
-                try:
-                    df = pandas_module.read_excel(file_path, engine='xlrd')
-                except ImportError:
-                    # xlrd not available, try default
-                    df = pandas_module.read_excel(file_path)
-            
-            content = df.to_string()
-            content = clean_content_from_null_bytes(content)
-            if content.strip():
-                processing_info['success_method'] = 'pandas_excel'
-                return content, None, processing_info
-                
-        except Exception as e:
-            processing_info['methods_tried'].append(f'pandas_excel_error_{type(e).__name__}')
-    
-    # Strategy 2: Try openpyxl directly (for .xlsx only)
-    if file_ext == '.xlsx':
-        openpyxl_module, openpyxl_success, openpyxl_error = safe_import_with_fallback('openpyxl')
-        if openpyxl_success:
-            try:
-                processing_info['methods_tried'].append('openpyxl_direct')
-                workbook = openpyxl_module.load_workbook(file_path, data_only=True)
-                content_parts = []
-                for sheet_name in workbook.sheetnames:
-                    sheet = workbook[sheet_name]
-                    for row in sheet.iter_rows(values_only=True):
-                        row_text = '\t'.join([str(cell) if cell is not None else '' for cell in row])
-                        if row_text.strip():
-                            content_parts.append(row_text)
-                
-                content = '\n'.join(content_parts)
-                content = clean_content_from_null_bytes(content)
-                if content.strip():
-                    processing_info['success_method'] = 'openpyxl_direct'
-                    return content, None, processing_info
-            except Exception as e:
-                processing_info['methods_tried'].append(f'openpyxl_direct_error_{type(e).__name__}')
-    
-    # Strategy 3: Try xlrd directly (for .xls only)
-    if file_ext == '.xls':
-        xlrd_module, xlrd_success, xlrd_error = safe_import_with_fallback('xlrd')
-        if xlrd_success:
-            try:
-                processing_info['methods_tried'].append('xlrd_direct')
-                workbook = xlrd_module.open_workbook(file_path)
-                content_parts = []
-                for sheet_index in range(workbook.nsheets):
-                    sheet = workbook.sheet_by_index(sheet_index)
-                    for row_index in range(sheet.nrows):
-                        row_values = sheet.row_values(row_index)
-                        row_text = '\t'.join([str(cell) for cell in row_values])
-                        if row_text.strip():
-                            content_parts.append(row_text)
-                
-                content = '\n'.join(content_parts)
-                content = clean_content_from_null_bytes(content)
-                if content.strip():
-                    processing_info['success_method'] = 'xlrd_direct'
-                    return content, None, processing_info
-            except Exception as e:
-                processing_info['methods_tried'].append(f'xlrd_direct_error_{type(e).__name__}')
-    
-    # RESILIENT: No proper methods available - SKIP the file
-    error_details = {
-        'pandas_available': pandas_success,
-        'pandas_error': pandas_error if not pandas_success else None,
-        'methods_attempted': len(processing_info['methods_tried']),
-        'file_type': 'Excel',
-        'recommendation': 'Install: pip install pandas openpyxl xlrd',
-        'action_taken': 'File skipped - no suitable Excel reader available'
-    }
-    processing_info['error_details'] = error_details
-    
-    return None, "SKIP_EXCEL_NO_LIBRARY", processing_info
-
-
-def _read_csv_file_resilient(file_path, processing_info):
-    """
-    RESILIENT: Read CSV files with built-in csv module first
-    
-    Args:
-        file_path: Path to CSV file
-        processing_info: Processing information dict
-    
-    Returns:
-        tuple: (content, error_code, processing_info)
-    """
-    # Strategy 1: Try built-in csv module (always available)
-    try:
-        import csv
-        processing_info['methods_tried'].append('builtin_csv')
-        
-        content_parts = []
-        with open(file_path, 'r', encoding='utf-8', newline='') as f:
-            csv_reader = csv.reader(f)
-            for row in csv_reader:
-                row_text = '\t'.join(row)
-                content_parts.append(row_text)
-        
-        content = '\n'.join(content_parts)
-        content = clean_content_from_null_bytes(content)
-        if content.strip():
-            processing_info['success_method'] = 'builtin_csv'
-            return content, None, processing_info
-    except Exception as e:
-        processing_info['methods_tried'].append(f'builtin_csv_error_{type(e).__name__}')
-    
-    # Strategy 2: Try pandas if available (better for complex CSVs)
-    pandas_module, pandas_success, pandas_error = safe_import_with_fallback('pandas')
-    if pandas_success:
-        try:
-            processing_info['methods_tried'].append('pandas_csv')
-            df = pandas_module.read_csv(file_path)
-            content = df.to_string()
-            content = clean_content_from_null_bytes(content)
-            if content.strip():
-                processing_info['success_method'] = 'pandas_csv'
-                return content, None, processing_info
-        except Exception as e:
-            processing_info['methods_tried'].append(f'pandas_csv_error_{type(e).__name__}')
-    
-    # Strategy 3: Fallback to text reading
-    return _read_text_file_resilient(file_path, processing_info)
-
-
-def _read_structured_file_resilient(file_path, processing_info):
-    """
-    RESILIENT: Read structured data files (JSON, XML, YAML)
-    
-    Args:
-        file_path: Path to structured file
-        processing_info: Processing information dict
-    
-    Returns:
-        tuple: (content, error_code, processing_info)
-    """
-    file_ext = processing_info['file_extension']
-    
-    # Strategy 1: Try appropriate parser
-    if file_ext == '.json':
-        try:
-            import json
-            processing_info['methods_tried'].append('json_parser')
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            content = json.dumps(data, indent=2, ensure_ascii=False)
-            content = clean_content_from_null_bytes(content)
-            if content.strip():
-                processing_info['success_method'] = 'json_parser'
-                return content, None, processing_info
-        except Exception as e:
-            processing_info['methods_tried'].append(f'json_parser_error_{type(e).__name__}')
-    
-    elif file_ext == '.xml':
-        # Try xml.etree.ElementTree (built-in)
-        try:
-            import xml.etree.ElementTree as ET
-            processing_info['methods_tried'].append('xml_etree')
-            tree = ET.parse(file_path)
-            root = tree.getroot()
-            content = ET.tostring(root, encoding='unicode')
-            content = clean_content_from_null_bytes(content)
-            if content.strip():
-                processing_info['success_method'] = 'xml_etree'
-                return content, None, processing_info
-        except Exception as e:
-            processing_info['methods_tried'].append(f'xml_etree_error_{type(e).__name__}')
-    
-    elif file_ext in ['.yaml', '.yml']:
-        # Try yaml parser if available
-        yaml_module, yaml_success, yaml_error = safe_import_with_fallback('yaml')
-        if yaml_success:
-            try:
-                processing_info['methods_tried'].append('yaml_parser')
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = yaml_module.safe_load(f)
-                content = yaml_module.dump(data, default_flow_style=False, allow_unicode=True)
-                content = clean_content_from_null_bytes(content)
-                if content.strip():
-                    processing_info['success_method'] = 'yaml_parser'
-                    return content, None, processing_info
-            except Exception as e:
-                processing_info['methods_tried'].append(f'yaml_parser_error_{type(e).__name__}')
-        else:
-            processing_info['methods_tried'].append('yaml_not_available')
-    
-    # Fallback to text reading
-    return _read_text_file_resilient(file_path, processing_info)
-
-
-def _read_text_file_resilient(file_path, processing_info):
-    """
-    RESILIENT: Read text files with multiple encoding strategies
-    
-    Args:
-        file_path: Path to text file
-        processing_info: Processing information dict
-    
-    Returns:
-        tuple: (content, error_code, processing_info)
-    """
-    # Define encoding strategies in order of preference
-    encoding_strategies = [
-        ('utf-8', 'UTF-8 standard'),
-        ('utf-8-sig', 'UTF-8 with BOM'),
-        ('latin-1', 'Latin-1 fallback'),
-        ('cp1252', 'Windows-1252'),
-        ('iso-8859-1', 'ISO-8859-1'),
-        ('ascii', 'ASCII strict'),
-    ]
-    
-    for encoding, description in encoding_strategies:
-        try:
-            processing_info['methods_tried'].append(f'encoding_{encoding}')
-            with open(file_path, 'r', encoding=encoding) as f:
-                content = f.read()
-            
-            content = clean_content_from_null_bytes(content)
-            if content.strip():
-                processing_info['success_method'] = f'encoding_{encoding}'
-                processing_info['encoding_used'] = encoding
-                error_code = None if encoding == 'utf-8' else f"ENCODING_FALLBACK_{encoding.upper()}"
-                return content, error_code, processing_info
-        except UnicodeDecodeError:
-            continue
-        except Exception as e:
-            processing_info['methods_tried'].append(f'encoding_{encoding}_error_{type(e).__name__}')
-    
-    # RESILIENT: If all text encodings fail, try one more with error replacement
-    try:
-        processing_info['methods_tried'].append('forced_text_decode')
-        with open(file_path, 'rb') as f:
-            raw_content = f.read()
-        
-        content = raw_content.decode('utf-8', errors='replace')
-        content = content.replace('\ufffd', ' ')  # Remove replacement chars
-        content = ''.join(c for c in content if c.isprintable() or c.isspace())
-        content = clean_content_from_null_bytes(content)
-        
-        if content.strip():
-            processing_info['success_method'] = 'forced_text_decode'
-            processing_info['warning'] = 'Forced text decoding used - some characters may be lost'
-            return content, "FORCED_TEXT_DECODE", processing_info
-    except Exception as e:
-        processing_info['methods_tried'].append(f'forced_text_decode_error_{type(e).__name__}')
-    
-    # RESILIENT: All text methods failed - skip the file
-    return None, "SKIP_FILE_NO_TEXT_READER", processing_info
-
-
-def _read_binary_text_file_resilient(file_path, processing_info):
-    """
-    RESILIENT: Handle binary files that might contain text - SKIP if no proper libraries
-    NO BINARY EXTRACTION FALLBACK
-    
-    Args:
-        file_path: Path to binary file
-        processing_info: Processing information dict
-    
-    Returns:
-        tuple: (content, error_code, processing_info)
-    """
-    file_ext = processing_info['file_extension']
-    
-    # RESILIENT: Only try if proper libraries available
-    if file_ext == '.doc':
-        # Check for proper .doc handling libraries
-        docx2txt_module, docx2txt_success, docx2txt_error = safe_import_with_fallback('docx2txt')
-        if docx2txt_success:
-            try:
-                processing_info['methods_tried'].append('docx2txt_doc')
-                content = docx2txt_module.process(file_path)
-                content = clean_content_from_null_bytes(content)
-                if content and content.strip():
-                    processing_info['success_method'] = 'docx2txt_doc'
-                    return content, None, processing_info
-            except Exception as e:
-                processing_info['methods_tried'].append(f'docx2txt_doc_error_{type(e).__name__}')
-        
-        # Check for pandoc (handled in document_parsers.py)
-        processing_info['methods_tried'].append('doc_conversion_needed')
-    
-    elif file_ext == '.rtf':
-        # Try striprtf if available
-        striprtf_module, striprtf_success, striprtf_error = safe_import_with_fallback('striprtf.striprtf', 'striprtf')
-        if striprtf_success:
-            try:
-                processing_info['methods_tried'].append('striprtf')
-                with open(file_path, 'r', encoding='latin-1') as f:
-                    rtf_content = f.read()
-                content = striprtf_module.rtf_to_text(rtf_content)
-                content = clean_content_from_null_bytes(content)
-                if content and content.strip():
-                    processing_info['success_method'] = 'striprtf'
-                    return content, None, processing_info
-            except Exception as e:
-                processing_info['methods_tried'].append(f'striprtf_error_{type(e).__name__}')
-    
-    # RESILIENT: No proper library available - SKIP the file
-    processing_info['error_details'] = {
-        'file_type': file_ext.upper(),
-        'required_library': 'docx2txt/pandoc' if file_ext == '.doc' else 'striprtf',
-        'recommendation': f'Install required library or convert to supported format',
-        'action_taken': 'File skipped - no proper library available'
-    }
-    
-    return None, f"SKIP_{file_ext.upper()}_FILE_NO_LIBRARY", processing_info
-
-
-def _read_unknown_file_resilient(file_path, processing_info):
-    """
-    RESILIENT: Read files with unknown extensions using text-only strategies
-    
-    Args:
-        file_path: Path to unknown file
-        processing_info: Processing information dict
-    
-    Returns:
-        tuple: (content, error_code, processing_info)
-    """
-    # Try text reading first
-    result = _read_text_file_resilient(file_path, processing_info)
-    if result[0] is not None:  # Success
-        return result
-    
-    # RESILIENT: Check if file is likely binary and should be skipped
-    try:
-        processing_info['methods_tried'].append('binary_detection')
-        with open(file_path, 'rb') as f:
-            sample = f.read(1000)  # Read first 1000 bytes
-        
-        # Count null bytes and non-printable characters
-        null_bytes = sample.count(b'\x00')
-        non_printable = sum(1 for byte in sample if byte < 32 and byte not in [9, 10, 13])  # Tab, LF, CR are OK
-        
-        # If more than 10% null bytes or 30% non-printable, it's likely binary
-        if len(sample) > 0:
-            null_ratio = null_bytes / len(sample)
-            non_printable_ratio = non_printable / len(sample)
-            
-            if null_ratio > 0.1 or non_printable_ratio > 0.3:
-                processing_info['error_details'] = {
-                    'file_type': 'Unknown binary file',
-                    'null_byte_ratio': null_ratio,
-                    'non_printable_ratio': non_printable_ratio,
-                    'action_taken': 'File skipped - appears to be binary data'
-                }
-                return None, "SKIP_UNKNOWN_BINARY_FILE", processing_info
-        
-        # RESILIENT: Try one final encoding attempt for text-like files
-        try:
-            processing_info['methods_tried'].append('latin1_final_attempt')
-            with open(file_path, 'r', encoding='latin-1') as f:
-                content = f.read()
-            
-            content = clean_content_from_null_bytes(content)
-            if content.strip() and len(content.strip()) > 20:  # Reasonable text
-                processing_info['success_method'] = 'latin1_final_attempt'
-                processing_info['warning'] = 'Unknown file type processed with latin-1 encoding'
-                return content, "UNKNOWN_FILE_LATIN1", processing_info
-        except Exception as e:
-            processing_info['methods_tried'].append(f'latin1_final_attempt_error_{type(e).__name__}')
-    
-    except Exception as e:
-        processing_info['methods_tried'].append(f'binary_detection_error_{type(e).__name__}')
-    
-    # RESILIENT: All methods failed - skip the file
-    processing_info['error_details'] = {
-        'file_type': 'Unknown file type',
-        'methods_attempted': len(processing_info['methods_tried']),
-        'action_taken': 'File skipped - no suitable reader found'
-    }
-    
-    return None, "SKIP_UNKNOWN_FILE_NO_READER", processing_info
-
-
-def safe_read_file(file_path, max_size=50*1024*1024):
-    """
-    Legacy wrapper for backward compatibility
-    
-    Args:
-        file_path: Path to the file to read
-        max_size: Maximum file size in bytes (default 50MB)
-    
-    Returns:
-        tuple: (content, error_code) - simplified for backward compatibility
-    """
-    content, error_code, processing_info = safe_read_file_with_fallbacks(file_path, max_size)
-    return content, error_code
-
-
 def normalize_file_path(file_path):
     """
     Normalize file path for comparison
@@ -596,7 +96,7 @@ def validate_file_path(file_path):
 
 def get_file_info(file_path):
     """
-    Get detailed information about a file
+    Get basic information about a file
     
     Args:
         file_path: Path to the file
@@ -615,15 +115,7 @@ def get_file_info(file_path):
             'size': stat_info.st_size,
             'size_mb': stat_info.st_size / (1024 * 1024),
             'modified': stat_info.st_mtime,
-            'is_text_file': path_obj.suffix.lower() in ['.txt', '.md', '.rst', '.log'],
-            'is_document': path_obj.suffix.lower() in ['.pdf', '.docx', '.doc', '.rtf'],
-            'is_word_document': path_obj.suffix.lower() in ['.docx', '.doc'],
-            'is_image': path_obj.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif'],
-            'is_excel': path_obj.suffix.lower() in ['.xlsx', '.xls'],
-            'is_csv': path_obj.suffix.lower() == '.csv',
-            'supports_advanced_parsing': path_obj.suffix.lower() in ['.docx', '.doc'],
-            'requires_special_handling': path_obj.suffix.lower() in ['.xlsx', '.xls', '.csv', '.xml', '.json'],
-            'needs_proper_library': path_obj.suffix.lower() in ['.xlsx', '.xls', '.doc', '.rtf', '.pdf']
+            'is_markdown': path_obj.suffix.lower() == '.md',
         }
     except Exception as e:
         return {'error': str(e)}
@@ -688,7 +180,7 @@ def should_skip_directory(directory_path, blacklist_directories=None, verbose=Fa
     # Check blacklist
     if blacklist_directories and is_blacklisted_directory(directory_path, blacklist_directories):
         if verbose:
-            print(f"   Ì†ΩÌ∫´ Skipping blacklisted directory: {path_obj.name}")
+            print(f"   🚫 Skipping blacklisted directory: {path_obj.name}")
         return True, f"Directory '{path_obj.name}' is blacklisted"
     
     return False, None
@@ -712,9 +204,9 @@ def scan_files_in_directory(directory, recursive=True, blacklist_directories=Non
     
     try:
         if verbose:
-            print(f"Ì†ΩÌ≥Å Scanning directory: {directory}")
+            print(f"📂 Scanning directory: {directory}")
             if blacklist_directories:
-                print(f"Ì†ΩÌ∫´ Blacklisted directories: {', '.join(blacklist_directories)}")
+                print(f"🚫 Blacklisted directories: {', '.join(blacklist_directories)}")
         
         if recursive:
             # Use os.walk for better control over directory traversal
@@ -745,467 +237,63 @@ def scan_files_in_directory(directory, recursive=True, blacklist_directories=Non
                     file_list.append(str(item))
         
         if verbose and skipped_dirs:
-            print(f"Ì†ΩÌ∫´ Skipped {len(skipped_dirs)} blacklisted directories:")
+            print(f"🚫 Skipped {len(skipped_dirs)} blacklisted directories:")
             for skipped_dir, reason in skipped_dirs[:5]:  # Show first 5
                 print(f"   - {Path(skipped_dir).name}: {reason}")
             if len(skipped_dirs) > 5:
                 print(f"   ... and {len(skipped_dirs) - 5} more")
         
         if verbose:
-            print(f"Ì†ΩÌ≥Ñ Found {len(file_list)} files total")
+            print(f"📄 Found {len(file_list)} files total")
     
     except Exception as e:
-        print(f"‚ùå ERROR: Failed to scan directory {directory}: {e}")
+        print(f"❌ ERROR: Failed to scan directory {directory}: {e}")
     
     return file_list
 
 
-def scan_directory_with_stats(directory, recursive=True, blacklist_directories=None, verbose=False):
+def ensure_directory_exists(directory_path):
     """
-    Scan directory and return comprehensive statistics with blacklist info
-    RESILIENT VERSION: Better reporting of what can/cannot be processed
+    Ensure a directory exists, create if necessary
     
     Args:
-        directory: Directory to scan
-        recursive: Whether to scan recursively
-        blacklist_directories: List of directory names to exclude
-        verbose: Whether to print detailed info
+        directory_path: Path to directory
     
     Returns:
-        dict: Comprehensive directory statistics including blacklist info
+        bool: True if directory exists or was created successfully
     """
-    stats = {
-        'total_files': 0,
-        'text_files': 0,
-        'document_files': 0,
-        'word_documents': 0,
-        'docx_files': 0,
-        'doc_files': 0,
-        'image_files': 0,
-        'pdf_files': 0,
-        'excel_files': 0,
-        'csv_files': 0,
-        'other_files': 0,
-        'total_size': 0,
-        'large_files': [],
-        'problematic_files': [],
-        'advanced_parsing_candidates': 0,
-        'special_handling_files': 0,
-        'files_needing_libraries': 0,  # NEW: Files that need special libraries
-        'skippable_files': 0,  # NEW: Files that will be skipped due to missing libs
-        'file_extensions': {},
-        'directories_scanned': 0,
-        'directories_skipped': 0,
-        'blacklisted_directories': [],
-        'scan_errors': [],
-        'library_requirements': {}  # NEW: Track what libraries are needed
-    }
-    
     try:
-        if verbose:
-            print(f"Ì†ΩÌ≥ä Analyzing directory: {directory}")
-        
-        # Get all files with blacklist filtering
-        all_files = scan_files_in_directory(directory, recursive, blacklist_directories, verbose=False)
-        
-        # Count directories
-        if recursive:
-            for root, dirs, files in os.walk(directory):
-                stats['directories_scanned'] += 1
-                
-                # Check for blacklisted directories
-                for dir_name in dirs:
-                    dir_path = os.path.join(root, dir_name)
-                    if blacklist_directories and is_blacklisted_directory(dir_path, blacklist_directories):
-                        stats['directories_skipped'] += 1
-                        stats['blacklisted_directories'].append(dir_name)
-        
-        # Analyze each file with resilient processing awareness
-        for file_path in all_files:
-            try:
-                file_info = get_file_info(file_path)
-                
-                if 'error' in file_info:
-                    stats['problematic_files'].append(file_path)
-                    stats['scan_errors'].append(f"{file_path}: {file_info['error']}")
-                    continue
-                
-                stats['total_files'] += 1
-                stats['total_size'] += file_info['size']
-                
-                # Count by extension
-                ext = file_info['suffix']
-                stats['file_extensions'][ext] = stats['file_extensions'].get(ext, 0) + 1
-                
-                # Categorize files
-                if file_info['is_text_file']:
-                    stats['text_files'] += 1
-                elif file_info['is_document']:
-                    stats['document_files'] += 1
-                    if file_info['is_word_document']:
-                        stats['word_documents'] += 1
-                        if ext == '.docx':
-                            stats['docx_files'] += 1
-                        elif ext == '.doc':
-                            stats['doc_files'] += 1
-                    elif ext == '.pdf':
-                        stats['pdf_files'] += 1
-                elif file_info['is_image']:
-                    stats['image_files'] += 1
-                elif file_info['is_excel']:
-                    stats['excel_files'] += 1
-                elif file_info['is_csv']:
-                    stats['csv_files'] += 1
-                else:
-                    stats['other_files'] += 1
-                
-                # Count files that support advanced parsing
-                if file_info['supports_advanced_parsing']:
-                    stats['advanced_parsing_candidates'] += 1
-                
-                # Count files that require special handling
-                if file_info['requires_special_handling']:
-                    stats['special_handling_files'] += 1
-                
-                # NEW: Count files that need proper libraries
-                if file_info['needs_proper_library']:
-                    stats['files_needing_libraries'] += 1
-                    
-                    # Track library requirements
-                    if ext == '.xlsx':
-                        stats['library_requirements']['pandas/openpyxl'] = stats['library_requirements'].get('pandas/openpyxl', 0) + 1
-                    elif ext == '.xls':
-                        stats['library_requirements']['pandas/xlrd'] = stats['library_requirements'].get('pandas/xlrd', 0) + 1
-                    elif ext == '.doc':
-                        stats['library_requirements']['pandoc/docx2txt'] = stats['library_requirements'].get('pandoc/docx2txt', 0) + 1
-                    elif ext == '.pdf':
-                        stats['library_requirements']['PyMuPDF/pdfplumber'] = stats['library_requirements'].get('PyMuPDF/pdfplumber', 0) + 1
-                    elif ext == '.rtf':
-                        stats['library_requirements']['striprtf'] = stats['library_requirements'].get('striprtf', 0) + 1
-                
-                # Track large files (>10MB)
-                if file_info['size_mb'] > 10:
-                    stats['large_files'].append({
-                        'path': file_path,
-                        'size_mb': file_info['size_mb']
-                    })
-            
-            except Exception as e:
-                stats['problematic_files'].append(file_path)
-                stats['scan_errors'].append(f"{file_path}: {str(e)}")
-        
-        stats['total_size_mb'] = stats['total_size'] / (1024 * 1024)
-        
-        # Remove duplicates from blacklisted directories
-        stats['blacklisted_directories'] = list(set(stats['blacklisted_directories']))
-        
-        # Calculate library dependency statistics
-        stats['library_dependency_ratio'] = (
-            stats['files_needing_libraries'] / stats['total_files'] * 100 
-            if stats['total_files'] > 0 else 0
-        )
-        
-        if verbose:
-            print(f"Ì†ΩÌ≥ä Scan complete:")
-            print(f"   Files found: {stats['total_files']}")
-            print(f"   Directories scanned: {stats['directories_scanned']}")
-            print(f"   Directories skipped: {stats['directories_skipped']}")
-            print(f"   Files needing libraries: {stats['files_needing_libraries']}")
-            if stats['blacklisted_directories']:
-                print(f"   Blacklisted dirs found: {', '.join(stats['blacklisted_directories'][:5])}")
-        
-        return stats
-        
+        Path(directory_path).mkdir(parents=True, exist_ok=True)
+        return True
     except Exception as e:
-        stats['scan_errors'].append(f"Fatal scan error: {str(e)}")
-        return stats
-
-
-def print_directory_scan_summary(stats, show_blacklist_info=True):
-    """
-    Print summary of directory scan with blacklist information and library requirements
-    RESILIENT VERSION: Shows what files will be skipped
-    
-    Args:
-        stats: Directory scan statistics
-        show_blacklist_info: Whether to show blacklist details
-    """
-    print(f"\nÌ†ΩÌ≥ä RESILIENT DIRECTORY SCAN SUMMARY:")
-    print(f"Ì†ΩÌ≥Ñ Total files found: {stats['total_files']:,}")
-    print(f"Ì†ΩÌ≥Å Directories scanned: {stats['directories_scanned']:,}")
-    
-    if show_blacklist_info and stats['directories_skipped'] > 0:
-        print(f"Ì†ΩÌ∫´ Directories skipped (blacklisted): {stats['directories_skipped']:,}")
-        if stats['blacklisted_directories']:
-            print(f"   Blacklisted dirs found: {', '.join(stats['blacklisted_directories'][:5])}")
-            if len(stats['blacklisted_directories']) > 5:
-                print(f"   ... and {len(stats['blacklisted_directories']) - 5} more")
-    
-    print(f"\nÌ†ΩÌ≥ã File Types:")
-    print(f"   Text files: {stats['text_files']:,}")
-    print(f"   Document files: {stats['document_files']:,}")
-    print(f"     - Word documents: {stats['word_documents']:,} (.docx: {stats['docx_files']}, .doc: {stats['doc_files']})")
-    print(f"     - PDF files: {stats['pdf_files']:,}")
-    print(f"   Excel files: {stats['excel_files']:,}")
-    print(f"   CSV files: {stats['csv_files']:,}")
-    print(f"   Image files: {stats['image_files']:,}")
-    print(f"   Other files: {stats['other_files']:,}")
-    
-    print(f"\nÌ†ΩÌ¥ß Processing Requirements:")
-    print(f"   Advanced parsing candidates: {stats['advanced_parsing_candidates']:,}")
-    print(f"   Special handling required: {stats['special_handling_files']:,}")
-    print(f"   Files needing libraries: {stats['files_needing_libraries']:,} ({stats['library_dependency_ratio']:.1f}%)")
-    print(f"   Total size: {stats['total_size_mb']:.1f} MB")
-    
-    if stats['large_files']:
-        print(f"   Large files (>10MB): {len(stats['large_files'])}")
-    
-    if stats['problematic_files']:
-        print(f"   ‚ö†Ô∏è Problematic files: {len(stats['problematic_files'])}")
-    
-    if stats['scan_errors']:
-        print(f"   ‚ùå Scan errors: {len(stats['scan_errors'])}")
-    
-    # NEW: Show library requirements
-    if stats['library_requirements']:
-        print(f"\nÌ†ΩÌ≥ö Library Requirements:")
-        for library, count in stats['library_requirements'].items():
-            print(f"   Ì†ΩÌ≥¶ {library}: {count} files")
-        
-        print(f"\n‚ö†Ô∏è Resilient Processing Note:")
-        print(f"   Files will be SKIPPED if required libraries are missing")
-        print(f"   No binary extraction fallbacks - only proper library processing")
-    
-    print()
-
-
-def get_supported_file_extensions():
-    """Get list of supported file extensions for resilient processing"""
-    return {
-        'always_supported': ['.txt', '.md', '.rst', '.log', '.json', '.html', '.htm'],
-        'documents_need_libraries': ['.pdf', '.docx', '.doc', '.rtf'],
-        'spreadsheets_need_libraries': ['.xlsx', '.xls'],
-        'csv_builtin_support': ['.csv'],
-        'images': ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif'],
-        'advanced_parsing': ['.docx', '.doc'],
-        'xml_builtin_support': ['.xml'],
-        'yaml_needs_library': ['.yaml', '.yml']
-    }
-
-
-def is_supported_file(file_path):
-    """
-    RESILIENT: Check if file is supported and what processing method will be used
-    
-    Args:
-        file_path: Path to file
-    
-    Returns:
-        tuple: (is_supported, file_category, processing_method, library_required)
-    """
-    file_info = get_file_info(file_path)
-    if 'error' in file_info:
-        return False, 'error', 'none', None
-    
-    supported_extensions = get_supported_file_extensions()
-    file_ext = file_info['suffix']
-    
-    # Check each category
-    for category, extensions in supported_extensions.items():
-        if file_ext in extensions:
-            if category == 'always_supported':
-                return True, category, 'built_in', None
-            elif category == 'csv_builtin_support':
-                return True, category, 'built_in_csv', None
-            elif category == 'xml_builtin_support':
-                return True, category, 'built_in_xml', None
-            elif category == 'documents_need_libraries':
-                lib_needed = 'python-docx' if file_ext == '.docx' else 'pandoc' if file_ext == '.doc' else 'PyMuPDF/pdfplumber'
-                return True, category, 'library_dependent', lib_needed
-            elif category == 'spreadsheets_need_libraries':
-                lib_needed = 'pandas/openpyxl' if file_ext == '.xlsx' else 'pandas/xlrd'
-                return True, category, 'library_dependent', lib_needed
-            elif category == 'yaml_needs_library':
-                return True, category, 'library_dependent', 'pyyaml'
-            elif category == 'images':
-                return True, category, 'ocr_dependent', 'pytesseract/PIL'
-            elif category == 'advanced_parsing':
-                return True, category, 'advanced_parser', 'python-docx'
-    
-    return False, 'unsupported', 'none', None
-
-
-def get_missing_dependencies_report():
-    """
-    Generate a report of missing optional dependencies for resilient processing
-    
-    Returns:
-        dict: Report of missing dependencies and their impact
-    """
-    dependencies_to_check = [
-        ('pandas', 'Excel and CSV processing'),
-        ('openpyxl', 'Modern Excel (.xlsx) files'),
-        ('xlrd', 'Legacy Excel (.xls) files'),
-        ('yaml', 'YAML file processing'),
-        ('docx2txt', 'Legacy .doc file text extraction'),
-        ('striprtf', 'RTF file processing'),
-        ('lxml', 'Advanced XML processing'),
-        ('python-docx', 'DOCX file processing'),
-        ('pypandoc', 'DOC file conversion'),
-        ('PyMuPDF', 'PDF text extraction'),
-        ('pdfplumber', 'PDF table extraction'),
-        ('pdf2image', 'PDF to image conversion'),
-        ('pytesseract', 'OCR text extraction'),
-        ('PIL', 'Image processing')
-    ]
-    
-    report = {
-        'available': [],
-        'missing': [],
-        'impact_summary': {},
-        'installation_commands': [],
-        'files_affected': {}
-    }
-    
-    for module_name, description in dependencies_to_check:
-        module, success, error = safe_import_with_fallback(module_name)
-        if success:
-            report['available'].append((module_name, description))
-        else:
-            report['missing'].append((module_name, description, error))
-            report['impact_summary'][module_name] = description
-    
-    # Generate installation commands
-    if report['missing']:
-        missing_modules = [item[0] for item in report['missing']]
-        report['installation_commands'] = [
-            f"pip install {' '.join(missing_modules)}",
-            "# Or install individually:",
-        ] + [f"pip install {module}" for module in missing_modules]
-    
-    # Map missing libraries to file types affected
-    library_file_mapping = {
-        'pandas': ['.xlsx', '.xls', '.csv'],
-        'openpyxl': ['.xlsx'],
-        'xlrd': ['.xls'],
-        'python-docx': ['.docx'],
-        'pypandoc': ['.doc'],
-        'PyMuPDF': ['.pdf'],
-        'pdfplumber': ['.pdf'],
-        'pytesseract': ['.jpg', '.png', '.tiff', '.bmp'],
-        'PIL': ['.jpg', '.png', '.tiff', '.bmp'],
-        'striprtf': ['.rtf'],
-        'yaml': ['.yaml', '.yml']
-    }
-    
-    for missing_lib, _, _ in report['missing']:
-        if missing_lib in library_file_mapping:
-            affected_files = library_file_mapping[missing_lib]
-            report['files_affected'][missing_lib] = affected_files
-    
-    return report
-
-
-def print_resilient_processing_status():
-    """Print the status of resilient processing capabilities"""
-    print("\nÌ†ΩÌª°Ô∏è RESILIENT PROCESSING STATUS:")
-    print("=" * 60)
-    
-    report = get_missing_dependencies_report()
-    
-    if report['available']:
-        print("‚úÖ Available Dependencies:")
-        for module_name, description in report['available']:
-            print(f"   ‚úÖ {module_name}: {description}")
-    
-    if report['missing']:
-        print(f"\n‚ö†Ô∏è Missing Optional Dependencies:")
-        for module_name, description, error in report['missing']:
-            print(f"   ‚ùå {module_name}: {description}")
-        
-        print(f"\nÌ†ΩÌ≥ã Files Affected by Missing Libraries:")
-        for lib, file_types in report['files_affected'].items():
-            print(f"   Ì†ΩÌ≥¶ {lib}: {', '.join(file_types)} files will be SKIPPED")
-        
-        print(f"\nÌ†ΩÌ≤° Installation Commands:")
-        for command in report['installation_commands']:
-            print(f"   {command}")
-        
-        print(f"\nÌ†ΩÌª°Ô∏è Resilient Processing Guarantees:")
-        print(f"   ‚Ä¢ Files will be SKIPPED if proper libraries missing")
-        print(f"   ‚Ä¢ NO binary extraction attempts")
-        print(f"   ‚Ä¢ NO system crashes due to missing dependencies")
-        print(f"   ‚Ä¢ Clear error messages and recommendations")
-        print(f"   ‚Ä¢ Graceful degradation of functionality")
-    else:
-        print("‚úÖ All optional dependencies are available!")
-        print("Ì†ΩÌ∫Ä Full resilient processing capabilities enabled")
-    
-    print("=" * 60)
-
-
-def check_file_processing_capability(file_path):
-    """
-    RESILIENT: Check what will happen when we try to process this specific file
-    
-    Args:
-        file_path: Path to file to check
-    
-    Returns:
-        dict: Detailed capability assessment
-    """
-    is_supported, category, method, library = is_supported_file(file_path)
-    
-    assessment = {
-        'file_path': file_path,
-        'file_extension': os.path.splitext(file_path)[1].lower(),
-        'is_supported': is_supported,
-        'category': category,
-        'processing_method': method,
-        'library_required': library,
-        'will_be_processed': False,
-        'will_be_skipped': False,
-        'reason': None,
-        'recommendation': None
-    }
-    
-    if not is_supported:
-        assessment['will_be_skipped'] = True
-        assessment['reason'] = 'Unsupported file type'
-        assessment['recommendation'] = 'Convert to supported format'
-    elif method == 'built_in':
-        assessment['will_be_processed'] = True
-        assessment['reason'] = 'Built-in support available'
-    elif method == 'library_dependent':
-        # Check if required library is available
-        module, success, error = safe_import_with_fallback(library.split('/')[0])
-        if success:
-            assessment['will_be_processed'] = True
-            assessment['reason'] = f'Required library {library} is available'
-        else:
-            assessment['will_be_skipped'] = True
-            assessment['reason'] = f'Required library {library} is missing'
-            assessment['recommendation'] = f'Install: pip install {library}'
-    
-    return assessment
+        print(f"ERROR: Could not create directory {directory_path}: {e}")
+        return False
 
 
 if __name__ == "__main__":
-    # Test resilient processing capabilities when run directly
-    print("Ì†ΩÌª°Ô∏è Resilient File Processing - Capability Test")
+    # Test simplified utilities when run directly
+    print("🔧 Simplified File Utilities - Part 2: Chunking & Vectors Only")
     print("=" * 60)
     
-    print_resilient_processing_status()
+    # Test content cleaning
+    test_content = "Hello\x00World\x01Test"
+    cleaned = clean_content_from_null_bytes(test_content)
+    print(f"Content cleaning test:")
+    print(f"  Original: {repr(test_content)}")
+    print(f"  Cleaned: {repr(cleaned)}")
     
-    # Test file capability checking
-    test_files = ['test.xlsx', 'test.doc', 'test.pdf', 'test.txt', 'test.unknown']
+    # Test metadata cleaning
+    test_metadata = {
+        'name': 'test\x00file',
+        'path': '/path/to\x00/file',
+        'nested': {
+            'key': 'value\x00clean'
+        }
+    }
+    cleaned_metadata = clean_metadata_recursive(test_metadata)
+    print(f"\nMetadata cleaning test:")
+    print(f"  Original: {test_metadata}")
+    print(f"  Cleaned: {cleaned_metadata}")
     
-    print(f"\nÌ†æÌ∑™ Testing File Capability Assessment:")
-    for test_file in test_files:
-        assessment = check_file_processing_capability(test_file)
-        status = "‚úÖ WILL PROCESS" if assessment['will_be_processed'] else "‚ö†Ô∏è WILL SKIP"
-        print(f"   {test_file}: {status} - {assessment['reason']}")
-        if assessment['recommendation']:
-            print(f"      Ì†ΩÌ≤° {assessment['recommendation']}")
-    
+    print("\n✅ Simplified utilities for markdown processing ready")
     print("=" * 60)
