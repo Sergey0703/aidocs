@@ -12,10 +12,11 @@ const api = axios.create({
 
 export const ragApi = {
   // Search endpoint
-  search: async (query, maxResults = 20) => {
+  search: async (query, maxResults = 20, rerankMode = 'smart') => {
     const response = await api.post('/api/search', {
       query,
       max_results: maxResults,
+      rerank_mode: rerankMode,  // ⭐ Добавлен параметр
     });
     return response.data;
   },

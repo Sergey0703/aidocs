@@ -4,6 +4,13 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
 from datetime import datetime
+from enum import Enum
+
+
+class RerankMode(str, Enum):
+    """Re-ranking modes"""
+    SMART = "smart"  # Auto-skip when not needed (default)
+    FULL = "full"    # Always use LLM for all documents
 
 
 class SearchRequest(BaseModel):
@@ -11,6 +18,7 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=1000, description="Search query text")
     max_results: Optional[int] = Field(default=20, ge=1, le=100, description="Maximum number of results")
     similarity_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Similarity threshold")
+    rerank_mode: Optional[RerankMode] = Field(default=RerankMode.SMART, description="Re-ranking mode (smart or full)")
     
 
 class EntityResult(BaseModel):
@@ -63,6 +71,9 @@ class PerformanceMetrics(BaseModel):
     rerank_time: float = 0
     answer_time: float
     pipeline_efficiency: PipelineEfficiency
+    rerank_mode: str = "smart"
+    rerank_decision: str = ""
+    tokens_used: int = 0
 
 
 class SearchResponse(BaseModel):

@@ -1,12 +1,12 @@
 # api/routes/search.py
-# Search endpoint with AI re-ranking, quality filtering, and comprehensive logging
+# Search endpoint with Smart and Full Re-Ranking modes
 
 import logging
 import time
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List
 
-from api.models.schemas import SearchRequest, SearchResponse, ErrorResponse
+from api.models.schemas import SearchRequest, SearchResponse, ErrorResponse, RerankMode
 from api.core.dependencies import get_system_components, SystemComponents
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ My capabilities include:
 - Entity Extraction: Using AI to understand what you're looking for
 - Intelligent Query Rewriting: Generating multiple search variants
 - Multi-Strategy Retrieval: Searching across different data sources
-- AI Re-Ranking: Verifying document relevance before showing results
+- Smart AI Re-Ranking: Automatically skips LLM when not needed (saves time & tokens!)
 - Advanced Results Fusion: Ranking and combining results intelligently
 
 I specialize in searching through your document knowledge base. Ask me questions about the content in your documents, and I'll find the most relevant information.
@@ -79,11 +79,11 @@ The AI fallback also encountered an error. Please try:
 - Checking if relevant documents exist in the knowledge base"""
 
 
-async def rerank_results_with_llm(query: str, documents: List, top_k: int = 5) -> List:
-    """Re-rank documents using LLM to verify relevance"""
+async def batch_rerank_results(query: str, documents: List, top_k: int = 5) -> tuple:
+    """Batch re-rank documents using SINGLE LLM call for all documents"""
     
     if not documents:
-        return []
+        return [], 0
     
     try:
         from llama_index.llms.google_genai import GoogleGenAI
@@ -95,46 +95,143 @@ async def rerank_results_with_llm(query: str, documents: List, top_k: int = 5) -
             temperature=0.0
         )
         
-        logger.info(f"Starting AI re-ranking for {len(documents)} documents...")
-        
-        relevant_docs = []
-        
+        # Prepare batch prompt with ALL documents
+        docs_text = ""
         for idx, doc in enumerate(documents[:top_k], 1):
-            # Create relevance check prompt
-            prompt = f"""You are a relevance evaluator. Determine if this document is relevant to the user's query.
+            docs_text += f"\n--- Document {idx} ---\n"
+            docs_text += f"Filename: {doc.filename}\n"
+            docs_text += f"Content: {doc.content[:400]}...\n"
+        
+        # Single LLM call for all documents
+        prompt = f"""You are a relevance evaluator. Evaluate if EACH document is relevant to the user's query.
 
 User Query: "{query}"
 
-Document Content (first 500 chars):
-{doc.content[:500]}
+{docs_text}
 
-Is this document relevant to answering the user's query?
-Respond with ONLY ONE WORD: "RELEVANT" or "NOT_RELEVANT"
+For EACH document, respond with ONLY ONE WORD: "RELEVANT" or "NOT_RELEVANT"
 
-Your answer:"""
+Format your response EXACTLY as:
+Document 1: RELEVANT
+Document 2: NOT_RELEVANT
+Document 3: RELEVANT
+...
 
-            response = await llm.acomplete(prompt)
-            decision = response.text.strip().upper()
-            
-            is_relevant = "RELEVANT" in decision and "NOT_RELEVANT" not in decision
-            
-            logger.info(f"Re-rank {idx}/{len(documents)}: {doc.filename[:40]} | Score: {doc.similarity_score:.3f} | Decision: {decision}")
-            
-            if is_relevant:
+Your evaluation:"""
+
+        logger.info(f"🤖 Batch re-ranking {len(documents[:top_k])} documents with single LLM call...")
+        
+        response = await llm.acomplete(prompt)
+        
+        # Calculate tokens used (rough estimate)
+        prompt_tokens = len(prompt.split()) * 1.3  # Rough token estimate
+        response_tokens = len(response.text.split()) * 1.3
+        total_tokens = int(prompt_tokens + response_tokens)
+        
+        # Parse batch response
+        decisions = parse_batch_decisions(response.text, len(documents[:top_k]))
+        
+        # Filter relevant documents
+        relevant_docs = []
+        for idx, doc in enumerate(documents[:top_k]):
+            if idx < len(decisions) and decisions[idx] == "RELEVANT":
+                doc.metadata['rerank_verified'] = True
+                doc.metadata['rerank_decision'] = 'llm_verified'
                 relevant_docs.append(doc)
+            else:
+                logger.debug(f"   Filtered out: {doc.filename} - NOT_RELEVANT")
         
-        logger.info(f"AI re-ranking complete. Found {len(relevant_docs)} relevant documents out of {len(documents)}.")
+        logger.info(f"✅ Batch re-ranking complete: {len(relevant_docs)}/{len(documents[:top_k])} relevant")
         
-        return relevant_docs
+        return relevant_docs, total_tokens
         
     except Exception as e:
-        logger.error(f"AI re-ranking failed: {e}")
-        # Fallback: return original documents
-        return documents
+        logger.error(f"Batch re-ranking failed: {e}")
+        return documents[:top_k], 0  # Fallback: return original documents
 
 
-async def execute_search(system_components: Dict, query: str):
-    """Execute the search pipeline with AI re-ranking, quality filtering, and comprehensive logging"""
+def parse_batch_decisions(response_text: str, expected_count: int) -> List[str]:
+    """Parse LLM batch response into decisions"""
+    decisions = []
+    lines = response_text.strip().split('\n')
+    
+    for line in lines:
+        line = line.strip().upper()
+        if 'RELEVANT' in line:
+            if 'NOT_RELEVANT' in line or 'NOT RELEVANT' in line:
+                decisions.append("NOT_RELEVANT")
+            else:
+                decisions.append("RELEVANT")
+    
+    # If parsing failed or mismatch, assume all relevant
+    if len(decisions) != expected_count:
+        logger.warning(f"Batch parsing mismatch: got {len(decisions)}, expected {expected_count}")
+        return ["RELEVANT"] * expected_count
+    
+    return decisions
+
+
+async def smart_rerank_results(query: str, documents: List) -> tuple:
+    """Smart re-ranking: LLM only when needed"""
+    
+    if not documents:
+        return [], "no_documents", 0
+    
+    logger.info(f"🧠 Smart re-ranking: analyzing {len(documents)} documents...")
+    
+    # Condition 1: High-quality database matches (>= 0.85 score)
+    high_quality_db = [d for d in documents 
+                       if "database" in d.source_method 
+                       and d.similarity_score >= 0.85]
+    
+    if len(high_quality_db) >= 3:
+        logger.info(f"✅ Smart: Skipping LLM - {len(high_quality_db)} high-quality DB matches")
+        for doc in high_quality_db[:5]:
+            doc.metadata['rerank_decision'] = 'skipped_high_quality_db'
+        return high_quality_db[:5], "skipped_high_quality_db", 0
+    
+    # Condition 2: Few candidates (no need for filtering)
+    if len(documents) <= 2:
+        logger.info(f"✅ Smart: Skipping LLM - only {len(documents)} candidates")
+        for doc in documents:
+            doc.metadata['rerank_decision'] = 'skipped_few_candidates'
+        return documents, "skipped_few_candidates", 0
+    
+    # Condition 3: All top documents have very high scores
+    top_3 = documents[:3]
+    all_high_score = all(d.similarity_score >= 0.80 for d in top_3)
+    
+    if all_high_score and len(documents) <= 3:
+        logger.info(f"✅ Smart: Skipping LLM - all {len(documents)} docs have high scores (>= 0.80)")
+        for doc in documents:
+            doc.metadata['rerank_decision'] = 'skipped_high_scores'
+        return documents, "skipped_high_scores", 0
+    
+    # Otherwise: use batch LLM re-ranking
+    logger.info(f"🤖 Smart: Using batch LLM re-ranking (conditions not met for skip)")
+    relevant_docs, tokens = await batch_rerank_results(query, documents, top_k=5)
+    return relevant_docs, "llm_verified", tokens
+
+
+async def full_rerank_results(query: str, documents: List) -> tuple:
+    """Full re-ranking: ALWAYS use LLM for all documents"""
+    
+    if not documents:
+        return [], "no_documents", 0
+    
+    logger.info(f"🚀 Full re-ranking: Using LLM for ALL {len(documents)} documents")
+    
+    # Always use batch LLM re-ranking (up to 10 documents)
+    relevant_docs, tokens = await batch_rerank_results(query, documents, top_k=min(len(documents), 10))
+    
+    for doc in relevant_docs:
+        doc.metadata['rerank_decision'] = 'full_llm_verified'
+    
+    return relevant_docs, "full_llm_verified", tokens
+
+
+async def execute_search(system_components: Dict, query: str, rerank_mode: str = "smart"):
+    """Execute the search pipeline with configurable re-ranking mode"""
     
     pipeline_start = time.time()
     
@@ -145,6 +242,8 @@ async def execute_search(system_components: Dict, query: str):
     fusion_time = 0
     rerank_time = 0
     answer_time = 0
+    rerank_decision = ""
+    tokens_used = 0
     
     try:
         # STAGE 0: Check if this is a direct question about the system itself
@@ -195,12 +294,16 @@ async def execute_search(system_components: Dict, query: str):
                     "fusion_time": 0,
                     "rerank_time": 0,
                     "answer_time": 0,
-                    "pipeline_efficiency": PipelineEfficiency()
+                    "pipeline_efficiency": PipelineEfficiency(),
+                    "rerank_mode": rerank_mode,
+                    "rerank_decision": "system_question",
+                    "tokens_used": 0
                 }
             }
         
         logger.info("=" * 80)
         logger.info(f"SEARCH PIPELINE STARTED: {query}")
+        logger.info(f"Re-Ranking Mode: {rerank_mode.upper()}")
         logger.info("=" * 80)
         
         # STAGE 1: Entity Extraction
@@ -254,21 +357,28 @@ async def execute_search(system_components: Dict, query: str):
         if fusion_result.fused_results:
             logger.info(f"  Top scores: {[f'{doc.similarity_score:.3f}' for doc in fusion_result.fused_results[:3]]}")
         
-        # STAGE 5: AI-Powered Re-Ranking for Relevance
-        logger.info("STAGE 5: AI Re-Ranking")
+        # STAGE 5: Smart or Full Re-Ranking
+        logger.info(f"STAGE 5: AI Re-Ranking ({rerank_mode.upper()} mode)")
         rerank_start = time.time()
         
-        candidate_docs = fusion_result.fused_results[:5]  # Re-rank top 5
+        candidate_docs = fusion_result.fused_results[:10]
         
         if candidate_docs:
-            logger.info(f"  Re-ranking top {len(candidate_docs)} candidates...")
-            relevant_docs = await rerank_results_with_llm(query, candidate_docs)
+            if rerank_mode == RerankMode.SMART:
+                relevant_docs, rerank_decision, tokens_used = await smart_rerank_results(query, candidate_docs)
+            elif rerank_mode == RerankMode.FULL:
+                relevant_docs, rerank_decision, tokens_used = await full_rerank_results(query, candidate_docs)
+            else:
+                # Default to smart
+                relevant_docs, rerank_decision, tokens_used = await smart_rerank_results(query, candidate_docs)
         else:
             logger.info("  No candidates to re-rank")
             relevant_docs = []
+            rerank_decision = "no_candidates"
+            tokens_used = 0
         
         rerank_time = time.time() - rerank_start
-        logger.info(f"✓ Re-ranking complete | Found {len(relevant_docs)} relevant | Time: {rerank_time:.3f}s")
+        logger.info(f"✓ Re-ranking complete | Mode: {rerank_mode} | Decision: {rerank_decision} | Found {len(relevant_docs)} relevant | Tokens: {tokens_used} | Time: {rerank_time:.3f}s")
         
         # STAGE 6: Quality Filtering
         logger.info("STAGE 6: Quality Filtering")
@@ -291,7 +401,7 @@ async def execute_search(system_components: Dict, query: str):
             fusion_result.final_count = 0
         else:
             logger.info(f"  Generating answer from {len(quality_results)} documents")
-            answer = generate_answer(query, quality_results, entity_result)
+            answer = generate_answer(query, quality_results, entity_result, rerank_mode, rerank_decision)
             fusion_result.fused_results = quality_results
             fusion_result.final_count = len(quality_results)
         
@@ -314,6 +424,7 @@ async def execute_search(system_components: Dict, query: str):
         logger.info("=" * 80)
         logger.info(f"SEARCH PIPELINE COMPLETED")
         logger.info(f"Total Time: {total_time:.3f}s | Results: {fusion_result.final_count}")
+        logger.info(f"Re-Ranking: {rerank_mode} mode | Decision: {rerank_decision} | Tokens: {tokens_used}")
         logger.info(f"Breakdown: Extract={extraction_time:.3f}s | Rewrite={rewrite_time:.3f}s | Retrieve={retrieval_time:.3f}s | Fuse={fusion_time:.3f}s | Rerank={rerank_time:.3f}s | Answer={answer_time:.3f}s")
         logger.info("=" * 80)
         
@@ -330,7 +441,10 @@ async def execute_search(system_components: Dict, query: str):
                 "fusion_time": fusion_time,
                 "rerank_time": rerank_time,
                 "answer_time": answer_time,
-                "pipeline_efficiency": pipeline_efficiency
+                "pipeline_efficiency": pipeline_efficiency,
+                "rerank_mode": rerank_mode,
+                "rerank_decision": rerank_decision,
+                "tokens_used": tokens_used
             }
         }
         
@@ -339,8 +453,8 @@ async def execute_search(system_components: Dict, query: str):
         raise
 
 
-def generate_answer(query: str, results, entity_result) -> str:
-    """Generate answer from search results"""
+def generate_answer(query: str, results, entity_result, rerank_mode: str = "smart", rerank_decision: str = "") -> str:
+    """Generate answer from search results with re-ranking info"""
     
     if not results:
         return f"""No relevant information found for your query: "{query}"
@@ -348,7 +462,7 @@ def generate_answer(query: str, results, entity_result) -> str:
 Search Summary:
 - Entity extracted: "{entity_result.entity}" (confidence: {entity_result.confidence:.1%})
 - Method used: {entity_result.method}
-- Search strategy: Hybrid (Vector + Database) + AI Re-Ranking
+- Search strategy: Hybrid (Vector + Database) + AI Re-Ranking ({rerank_mode} mode)
 
 Suggestions:
 - Try rephrasing your query
@@ -395,10 +509,24 @@ Suggestions:
             answer_parts.append(f"{i}. [{source_indicator}] {result.filename} (score: {result.similarity_score:.3f})")
             answer_parts.append(f"   {preview}")
     
-    # Search intelligence summary
+    # Search intelligence summary with re-ranking info
     answer_parts.append(f"\n\nSearch Intelligence:")
     answer_parts.append(f"- Entity analysis: {entity_result.method} extraction")
     answer_parts.append(f"- Search approach: Hybrid (Database + Vector) + AI Re-Ranking")
+    answer_parts.append(f"- Re-Ranking mode: {rerank_mode}")
+    
+    # Add re-ranking decision info
+    if rerank_decision == "skipped_high_quality_db":
+        answer_parts.append(f"- Re-Ranking decision: Skipped (high-quality DB matches)")
+    elif rerank_decision == "skipped_few_candidates":
+        answer_parts.append(f"- Re-Ranking decision: Skipped (few candidates)")
+    elif rerank_decision == "skipped_high_scores":
+        answer_parts.append(f"- Re-Ranking decision: Skipped (all high scores)")
+    elif rerank_decision == "llm_verified":
+        answer_parts.append(f"- Re-Ranking decision: AI verified (needed for accuracy)")
+    elif rerank_decision == "full_llm_verified":
+        answer_parts.append(f"- Re-Ranking decision: Full AI verification")
+    
     answer_parts.append(f"- Best match confidence: {max(r.similarity_score for r in results):.1%}")
     
     return "\n".join(answer_parts)
@@ -410,26 +538,32 @@ async def search(
     components: SystemComponents = Depends(get_system_components)
 ):
     """
-    Execute hybrid search with AI re-ranking, quality filtering, and comprehensive logging.
+    Execute hybrid search with Smart or Full AI Re-Ranking.
     
     Pipeline:
-    1. Detects if query is about the system itself (e.g., "who are you?")
+    1. Detects if query is about the system itself
     2. Extracts entities and rewrites queries for better retrieval
     3. Searches knowledge base using hybrid approach (database + vector)
-    4. Uses AI to re-rank top candidates and verify relevance
-    5. Filters results by quality threshold (score >= 0.7)
-    6. If no quality documents found, uses Gemini AI fallback
-    7. Returns document-based answer, system info, or AI-generated response
+    4. Re-Ranking modes:
+       - Smart (default): Uses AI only when needed, auto-skips for exact matches
+       - Full: Always verifies all documents with AI for maximum accuracy
+    5. Filters results by quality threshold
+    6. Returns document-based answer or AI-generated response
     
     - **query**: Search query text (1-1000 characters)
     - **max_results**: Maximum results to return (1-100, default: 20)
     - **similarity_threshold**: Optional similarity threshold (0.0-1.0)
+    - **rerank_mode**: Re-ranking mode (smart or full, default: smart)
     """
     
     try:
         system_components = components.get_components()
         
-        result = await execute_search(system_components, request.query)
+        result = await execute_search(
+            system_components, 
+            request.query,
+            rerank_mode=request.rerank_mode.value if request.rerank_mode else "smart"
+        )
         
         # Convert to response model
         from api.models.schemas import (
