@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ragApi } from '../api/ragApi';
 import './SystemStatus.css';
 
-const SystemStatus = ({ lastSearchMetrics }) => {
+const SystemStatus = ({ lastSearchMetrics, rerankMode, onRerankModeChange }) => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -30,6 +30,12 @@ const SystemStatus = ({ lastSearchMetrics }) => {
   const formatTime = (seconds) => {
     if (!seconds) return 'N/A';
     return seconds < 1 ? `${(seconds * 1000).toFixed(0)}ms` : `${seconds.toFixed(2)}s`;
+  };
+
+  const handleRerankModeChange = (mode) => {
+    if (onRerankModeChange) {
+      onRerankModeChange(mode);
+    }
   };
 
   if (loading && !status) return <div className="status-loading">Loading status...</div>;
@@ -80,6 +86,58 @@ const SystemStatus = ({ lastSearchMetrics }) => {
         )}
       </div>
 
+      {/* AI Re-Ranking Mode Selection */}
+      <div className="status-section rerank-section">
+        <h4>🤖 AI Re-Ranking</h4>
+        <div className="rerank-modes-compact">
+          <label className={`rerank-mode-option ${rerankMode === 'smart' ? 'active' : ''}`}>
+            <input
+              type="radio"
+              name="rerankMode"
+              value="smart"
+              checked={rerankMode === 'smart'}
+              onChange={(e) => handleRerankModeChange(e.target.value)}
+            />
+            <span className="mode-icon">🧠</span>
+            <span className="mode-text">
+              <span className="mode-name">Smart</span>
+              <span className="mode-hint">Auto-skip</span>
+            </span>
+            {rerankMode === 'smart' && <span className="active-indicator">✓</span>}
+          </label>
+
+          <label className={`rerank-mode-option ${rerankMode === 'full' ? 'active' : ''}`}>
+            <input
+              type="radio"
+              name="rerankMode"
+              value="full"
+              checked={rerankMode === 'full'}
+              onChange={(e) => handleRerankModeChange(e.target.value)}
+            />
+            <span className="mode-icon">🚀</span>
+            <span className="mode-text">
+              <span className="mode-name">Full</span>
+              <span className="mode-hint">Max accuracy</span>
+            </span>
+            {rerankMode === 'full' && <span className="active-indicator">✓</span>}
+          </label>
+        </div>
+
+        <div className="rerank-info-compact">
+          {rerankMode === 'smart' && (
+            <div className="info-text smart">
+              💡 Skips AI for exact matches (~70% queries)
+            </div>
+          )}
+          {rerankMode === 'full' && (
+            <div className="info-text full">
+              ⚠️ Always uses AI (slower, max accuracy)
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Last Search Stats */}
       {lastSearchMetrics && (
         <div className="status-section last-search-section">
           <h4>📊 Last Search</h4>
@@ -107,6 +165,55 @@ const SystemStatus = ({ lastSearchMetrics }) => {
               <span className="stat-value">{formatTime(lastSearchMetrics.fusion_time)}</span>
             </div>
           </div>
+
+          {/* Re-Ranking Decision Info */}
+          {lastSearchMetrics.rerank_decision && (
+            <div className="rerank-decision-box">
+              {lastSearchMetrics.rerank_mode === 'smart' && (
+                <>
+                  {lastSearchMetrics.rerank_decision.includes('skipped') ? (
+                    <div className="decision-info skipped">
+                      <span className="decision-icon">🧠</span>
+                      <div className="decision-details">
+                        <div className="decision-title">Smart: Skipped ✓</div>
+                        <div className="decision-reason">
+                          {lastSearchMetrics.rerank_decision === 'skipped_high_quality_db' && 'Exact DB match'}
+                          {lastSearchMetrics.rerank_decision === 'skipped_few_candidates' && 'Few candidates'}
+                          {lastSearchMetrics.rerank_decision === 'skipped_high_scores' && 'High scores'}
+                        </div>
+                        <div className="decision-saved">
+                          Saved: ~4s + {lastSearchMetrics.tokens_used || 0} tokens
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="decision-info verified">
+                      <span className="decision-icon">🤖</span>
+                      <div className="decision-details">
+                        <div className="decision-title">Smart: AI Verified</div>
+                        <div className="decision-reason">Needed for accuracy</div>
+                        <div className="decision-tokens">
+                          Tokens: {lastSearchMetrics.tokens_used || 0}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              {lastSearchMetrics.rerank_mode === 'full' && (
+                <div className="decision-info verified">
+                  <span className="decision-icon">🚀</span>
+                  <div className="decision-details">
+                    <div className="decision-title">Full: AI Verified ✓</div>
+                    <div className="decision-reason">All documents checked</div>
+                    <div className="decision-tokens">
+                      Tokens: {lastSearchMetrics.tokens_used || 0}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -10,8 +10,9 @@ function App() {
   const [searchResults, setSearchResults] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [rerankMode, setRerankMode] = useState('smart'); // Global state for rerank mode
 
-  const handleSearch = async (query, maxResults, rerankMode) => {
+  const handleSearch = async (query, maxResults) => {
     setIsLoading(true);
     setError(null);
     
@@ -42,7 +43,11 @@ function App() {
 
       <div className="app-container">
         <aside className="sidebar">
-          <SystemStatus lastSearchMetrics={searchResults?.performance_metrics} />
+          <SystemStatus 
+            lastSearchMetrics={searchResults?.performance_metrics}
+            rerankMode={rerankMode}
+            onRerankModeChange={setRerankMode}
+          />
         </aside>
 
         <main className="main-content">
@@ -98,6 +103,9 @@ function App() {
               </ul>
               <div className="rerank-explainer">
                 <h3>🤖 AI Re-Ranking Modes:</h3>
+                <p className="explainer-intro">
+                  Configure your preferred mode in the <strong>System Status</strong> panel (left sidebar).
+                </p>
                 <div className="mode-card smart">
                   <div className="mode-header">
                     <span className="mode-icon">🧠</span>
