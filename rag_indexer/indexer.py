@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Enhanced RAG Document Indexer - Complete Integration
-Enhanced version with advanced document parsing, auto-rotation OCR, and text quality analysis
-Optimized for English documents with comprehensive error handling and progress tracking
-UPDATED: Migrated from Ollama to Gemini API with text-embedding-004
+Simplified RAG Document Indexer - Part 2: Chunking & Vectors Only
+Loads markdown files from Docling (Part 1) → chunks → embeddings → vector storage
+SIMPLIFIED: No document conversion, OCR, or PDF processing
+PURPOSE: markdown input → chunking → Gemini embeddings → Supabase vectors
 """
 
 import logging
@@ -15,15 +15,13 @@ from datetime import datetime
 # --- LLAMA INDEX IMPORTS ---
 from llama_index.core import VectorStoreIndex, StorageContext
 from llama_index.vector_stores.supabase import SupabaseVectorStore
-from llama_index.embeddings.google_genai import GoogleGenAIEmbedding # UPDATED: Changed from Ollama to Gemini
+from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 
-# --- ENHANCED LOCAL MODULES ---
+# --- SIMPLIFIED LOCAL MODULES ---
 from config import get_config, print_feature_status
-from file_utils import create_safe_reader
-from ocr_processor import create_ocr_processor, check_ocr_availability
 from database_manager import create_database_manager
-from embedding_processor import create_embedding_processor, create_node_processor
+from embedding_processor import create_embedding_processor
 from batch_processor import create_batch_processor, create_progress_tracker
 from utils import (
     InterruptHandler, PerformanceMonitor, StatusReporter,
@@ -31,12 +29,15 @@ from utils import (
     setup_logging_directory, safe_file_write, save_failed_files_details
 )
 
-# --- HELPER MODULES ---
+# --- SIMPLIFIED HELPER MODULES ---
 from loading_helpers import (
-    load_and_process_documents_enhanced, 
-    print_enhanced_loading_summary,
+    load_markdown_documents, 
+    print_loading_summary,
     validate_documents_for_processing,
-    print_document_validation_summary
+    print_document_validation_summary,
+    check_processing_requirements,
+    get_loading_recommendations,
+    print_loading_recommendations
 )
 from analysis_helpers import (
     analyze_final_results_enhanced,
@@ -50,33 +51,32 @@ from chunk_helpers import (
 )
 
 
-def print_advanced_parsing_info():
+def print_simplified_info():
     """
-    Print information about advanced parsing capabilities
+    Print information about simplified system
     """
-    print("\n🔧 Advanced Document Processing Features:")
-    print("  📄 Automatic .doc to .docx conversion")
-    print("  🔧 LibreOffice/Pandoc integration") 
-    print("  💾 Safe file backup system")
-    print("  📊 Enhanced text extraction")
-    print("  🛡️ Robust error handling")
-    print("  📈 Progress tracking")
+    print("\n🔧 Simplified RAG System - Part 2: Chunking & Vectors")
+    print("  📄 Input: Markdown files from Docling (Part 1)")
+    print("  🧩 Processing: Chunking with SentenceSplitter")
+    print("  🚀 Embeddings: Google Gemini API")
+    print("  💾 Storage: Supabase vector database")
+    print("  ✅ No document conversion needed")
     print("=" * 50)
 
 
 def initialize_components(config):
     """
-    Initialize all LlamaIndex components with enhanced settings and Gemini API
+    Initialize LlamaIndex components for chunking and embeddings
     
     Args:
-        config: Enhanced configuration object
+        config: Configuration object
     
     Returns:
         dict: Initialized components
     """
-    print("🔧 Initializing enhanced LlamaIndex components with Gemini API...")
+    print("🔧 Initializing LlamaIndex components...")
     
-    # Vector store with optimized settings
+    # Vector store
     vector_store = SupabaseVectorStore(
         postgres_connection_string=config.CONNECTION_STRING,
         collection_name=config.TABLE_NAME,
@@ -86,16 +86,14 @@ def initialize_components(config):
     # Storage context
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     
-    # UPDATED: Gemini embedding model with API key authentication
+    # Gemini embedding model
     embed_settings = config.get_embedding_settings()
     embed_model = GoogleGenAIEmbedding(
         model_name=embed_settings['model'],
         api_key=embed_settings['api_key'],
-        # NOTE: Gemini API doesn't use timeout in the same way as Ollama
-        # Rate limiting is handled at the application level
     )
     
-    # Enhanced node parser with optimized chunk sizes
+    # Node parser for chunking
     chunk_settings = config.get_chunk_settings()
     node_parser = SentenceSplitter(
         chunk_size=chunk_settings['chunk_size'], 
@@ -106,7 +104,7 @@ def initialize_components(config):
         include_prev_next_rel=True
     )
     
-    print("✅ Enhanced components initialized successfully with Gemini API")
+    print("✅ Components initialized successfully")
     return {
         'vector_store': vector_store,
         'storage_context': storage_context,
@@ -116,7 +114,7 @@ def initialize_components(config):
 
 
 def main():
-    """Enhanced main function with comprehensive processing and analysis using Gemini API"""
+    """Simplified main function - markdown → chunks → embeddings → vectors"""
     
     # Setup
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -128,7 +126,7 @@ def main():
     # Initialize tracking
     progress_tracker = create_progress_tracker()
     performance_monitor = PerformanceMonitor()
-    status_reporter = StatusReporter("Enhanced RAG Document Indexing (Gemini API)")
+    status_reporter = StatusReporter("Simplified RAG Indexing (Part 2: Chunking & Vectors)")
     
     # Setup logging
     log_dir = setup_logging_directory()
@@ -137,19 +135,14 @@ def main():
     progress_tracker.start()
     performance_monitor.start()
     
-    # Enhanced statistics tracking
+    # Simplified statistics tracking
     stats = {
         'start_time': start_time,
         'documents_loaded': 0,
-        'images_processed': 0,
         'chunks_created': 0,
         'valid_chunks': 0,
         'embeddings_generated': 0,
         'records_saved': 0,
-        'encoding_issues': 0,
-        'rotation_stats': {},
-        'quality_analysis_results': {},
-        'advanced_parsing_usage': 0,
         'processing_stages': []
     }
     
@@ -160,27 +153,27 @@ def main():
         with InterruptHandler() as interrupt_handler:
             
             # ===============================================================
-            # 1. ENHANCED CONFIGURATION LOADING
+            # 1. CONFIGURATION LOADING
             # ===============================================================
             
-            print("🔧 Loading enhanced configuration...")
+            print("🔧 Loading configuration...")
             config = get_config()
             config.print_config()
             
             # Print feature status
             print_feature_status()
             
-            # Print advanced parsing info
-            print_advanced_parsing_info()
+            # Print simplified system info
+            print_simplified_info()
             
-            progress_tracker.add_checkpoint("Enhanced configuration loaded")
+            progress_tracker.add_checkpoint("Configuration loaded")
             
             # Print system information
             print_system_info()
             
-            # UPDATED: Gemini API validation
+            # Validate Gemini API configuration
             print("🚀 Validating Gemini API configuration...")
-            from config import validate_gemini_environment, print_gemini_environment_status
+            from config import validate_gemini_environment
             
             gemini_validation = validate_gemini_environment()
             if not gemini_validation['ready']:
@@ -190,47 +183,38 @@ def main():
                 print("\nPlease fix configuration issues before proceeding.")
                 sys.exit(1)
             else:
-                print("✅ Gemini API configuration validated successfully")
+                print("✅ Gemini API configuration validated")
                 print(f"   Model: {config.EMBED_MODEL}")
                 print(f"   Dimension: {config.EMBED_DIM}")
                 print(f"   Rate limit: {config.GEMINI_REQUEST_RATE_LIMIT} requests/sec")
             
-            # Enhanced OCR availability check
-            if config.ENABLE_OCR:
-                try:
-                    ocr_available, missing_libs = check_ocr_availability()
-                    if ocr_available:
-                        print("🔍 OCR Status: ✅ All libraries available")
-                        print(f"   Enhanced features: Auto-rotation, Quality analysis")
-                    else:
-                        print(f"🔍 OCR Status: ❌ Missing: {', '.join(missing_libs)}")
-                        print("   Install with: pip install pytesseract pillow opencv-python")
-                except Exception as e:
-                    print(f"🔍 OCR Status: ⚠️ Error checking: {e}")
-            else:
-                print("🔍 OCR Status: ⚠️ Disabled in configuration")
+            # Check processing requirements
+            requirements_met, missing = check_processing_requirements(config)
+            if not requirements_met:
+                print("\n❌ Cannot proceed - missing requirements")
+                sys.exit(1)
             
             # ===============================================================
-            # 2. ENHANCED COMPONENT INITIALIZATION
+            # 2. COMPONENT INITIALIZATION
             # ===============================================================
             
             components = initialize_components(config)
-            progress_tracker.add_checkpoint("Enhanced components initialized")
+            progress_tracker.add_checkpoint("Components initialized")
             
-            # Create enhanced processors
+            # Create processors
             db_manager = create_database_manager(config.CONNECTION_STRING, config.TABLE_NAME)
             embedding_processor = create_embedding_processor(
                 components['embed_model'], 
-                components['vector_store']
+                components['vector_store'],
+                config
             )
             
-            # UPDATED: Create batch processor with Gemini-appropriate restart interval
-            # For Gemini API, we don't need Ollama restarts, so set interval to 0
-            batch_restart_interval = 0  # Gemini API doesn't need service restarts
+            # Create batch processor (no restart interval for Gemini)
             batch_processor = create_batch_processor(
                 embedding_processor, 
                 config.PROCESSING_BATCH_SIZE,
-                batch_restart_interval
+                batch_restart_interval=0,  # Not needed for Gemini API
+                config=config
             )
             
             # Check for interruption
@@ -239,39 +223,34 @@ def main():
                 return
             
             # ===============================================================
-            # 3. ENHANCED DOCUMENT LOADING
+            # 3. MARKDOWN DOCUMENT LOADING
             # ===============================================================
             
             try:
-                text_documents, image_documents, processing_summary = load_and_process_documents_enhanced(
-                    config, progress_tracker
-                )
-                stats['processing_stages'].append('document_loading')
+                documents, processing_summary = load_markdown_documents(config, progress_tracker)
+                stats['processing_stages'].append('markdown_loading')
             except Exception as e:
-                print(f"❌ Enhanced document loading failed: {e}")
+                print(f"❌ Markdown loading failed: {e}")
                 raise
             
-            # Combine documents
-            documents = text_documents + image_documents
-            stats['documents_loaded'] = len(text_documents)
-            stats['images_processed'] = len(image_documents)
-            
-            # Update stats with processing summary
-            if processing_summary:
-                if 'rotation_stats' in processing_summary:
-                    stats['rotation_stats'] = processing_summary['rotation_stats']
+            stats['documents_loaded'] = len(documents)
             
             load_time = time.time() - start_time
             
-            # Print enhanced loading summary
-            print_enhanced_loading_summary(text_documents, image_documents, processing_summary, load_time)
+            # Print loading summary
+            print_loading_summary(documents, processing_summary, load_time)
+            
+            # Get and print recommendations
+            recommendations = get_loading_recommendations(processing_summary, config)
+            print_loading_recommendations(recommendations)
             
             if not documents:
-                print("⚠️ No documents found in the specified directory.")
+                print("⚠️ No documents found in the markdown directory.")
+                print("💡 Ensure Docling (Part 1) has processed documents to markdown format.")
                 return
             
-            performance_monitor.checkpoint("Enhanced documents loaded", len(documents))
-            stats['processing_stages'].append('documents_combined')
+            performance_monitor.checkpoint("Markdown documents loaded", len(documents))
+            stats['processing_stages'].append('documents_loaded')
             
             # Check for interruption
             if interrupt_handler.check_interrupted():
@@ -279,11 +258,11 @@ def main():
                 return
             
             # ===============================================================
-            # 4. ENHANCED DELETION DIALOG
+            # 4. DELETION DIALOG
             # ===============================================================
             
             print(f"\n{'='*70}")
-            print("🗑️ ENHANCED SAFE DELETION CHECK")
+            print("🗑️ SAFE DELETION CHECK")
             print(f"{'='*70}")
             
             # Get file identifiers
@@ -297,7 +276,7 @@ def main():
                     files_to_process.add(file_name)
             
             deletion_info = db_manager.safe_deletion_dialog(files_to_process)
-            progress_tracker.add_checkpoint("Enhanced deletion dialog completed")
+            progress_tracker.add_checkpoint("Deletion dialog completed")
             stats['processing_stages'].append('deletion_dialog')
             
             # Check for interruption
@@ -306,25 +285,29 @@ def main():
                 return
             
             # ===============================================================
-            # 5. ENHANCED CHUNK CREATION AND FILTERING
+            # 5. DOCUMENT VALIDATION
             # ===============================================================
             
-            # Validate documents first using helper function
+            # Validate documents
             documents_with_content, documents_without_content = validate_documents_for_processing(documents, config)
             
             # Print validation summary
             print_document_validation_summary(documents_with_content, documents_without_content)
             
             if not documents_with_content:
-                print("❌ No documents with sufficient text content found. Exiting.")
+                print("❌ No documents with sufficient content found. Exiting.")
                 return
             
-            # Enhanced chunk creation and filtering using helper module
+            # ===============================================================
+            # 6. CHUNK CREATION AND FILTERING
+            # ===============================================================
+            
+            # Create and filter chunks
             valid_nodes, invalid_nodes, enhanced_node_stats = create_and_filter_chunks_enhanced(
                 documents_with_content, config, components['node_parser'], progress_tracker
             )
             
-            # Create comprehensive chunk processing report
+            # Create chunk processing report
             chunk_report = create_chunk_processing_report(valid_nodes, invalid_nodes, enhanced_node_stats, config)
             save_chunk_processing_report(chunk_report, log_dir)
             
@@ -338,10 +321,10 @@ def main():
             stats['processing_stages'].append('chunk_processing')
             
             if not valid_nodes:
-                print("❌ No valid text chunks were generated. Exiting.")
+                print("❌ No valid chunks were generated. Exiting.")
                 return
             
-            performance_monitor.checkpoint("Enhanced chunks processed", len(valid_nodes))
+            performance_monitor.checkpoint("Chunks processed", len(valid_nodes))
             
             # Check for interruption
             if interrupt_handler.check_interrupted():
@@ -349,32 +332,30 @@ def main():
                 return
             
             # ===============================================================
-            # 6. ENHANCED BATCH PROCESSING WITH GEMINI API
+            # 7. BATCH PROCESSING WITH GEMINI API
             # ===============================================================
             
-            print(f"\n🚀 Starting enhanced batch processing with Gemini API...")
+            print(f"\n🚀 Starting batch processing with Gemini API...")
             batch_settings = config.get_batch_settings()
             
-            print(f"🔧 Enhanced Processing Configuration (Gemini API):")
+            print(f"🔧 Processing Configuration:")
             print(f"   Processing batch size: {batch_settings['processing_batch_size']}")
             print(f"   Embedding batch size: {batch_settings['embedding_batch_size']}")
             print(f"   Database batch size: {batch_settings['db_batch_size']}")
             print(f"   Embedding model: {config.EMBED_MODEL} ({config.EMBED_DIM}D)")
             print(f"   Gemini rate limit: {config.GEMINI_REQUEST_RATE_LIMIT} requests/sec")
             print(f"   Gemini retry attempts: {config.GEMINI_RETRY_ATTEMPTS}")
-            print(f"   Gemini timeout: {config.GEMINI_TIMEOUT}s")
-            print(f"   Service restarts: Not applicable for Gemini API")
             
-            # Process all batches with enhanced monitoring
+            # Process all batches
             batch_results = batch_processor.process_all_batches(
                 valid_nodes,
                 batch_settings['embedding_batch_size'],
                 batch_settings['db_batch_size']
             )
             
-            # Update enhanced statistics
+            # Update statistics
             stats['records_saved'] = batch_results['total_saved']
-            stats['embeddings_generated'] = batch_results['total_saved']  # Approximate
+            stats['embeddings_generated'] = batch_results['total_saved']
             stats['processing_stages'].append('batch_processing')
             
             # Add batch processing stats
@@ -387,47 +368,51 @@ def main():
                 'total_time': batch_results['total_time']
             })
             
-            performance_monitor.checkpoint("Enhanced batch processing completed", batch_results['total_saved'])
-            progress_tracker.add_checkpoint("Enhanced processing completed", batch_results['total_saved'])
+            performance_monitor.checkpoint("Batch processing completed", batch_results['total_saved'])
+            progress_tracker.add_checkpoint("Processing completed", batch_results['total_saved'])
             
             # ===============================================================
-            # 7. ENHANCED END-TO-END ANALYSIS
+            # 8. END-TO-END ANALYSIS
             # ===============================================================
             
-            # Perform comprehensive enhanced analysis
+            # Perform comprehensive analysis
             final_analysis = analyze_final_results_enhanced(config, db_manager, log_dir, stats)
             stats['processing_stages'].append('final_analysis')
             
             # ===============================================================
-            # 8. ENHANCED FINAL RESULTS AND REPORTING
+            # 9. FINAL RESULTS AND REPORTING
             # ===============================================================
             
-            # Print enhanced final results
+            # Print final results
             success = batch_processor.print_final_results(batch_results, deletion_info)
             
-            # Write comprehensive enhanced log
+            # Write comprehensive log
             batch_processor.write_comprehensive_log(
                 batch_results, 
                 deletion_info, 
-                stats['encoding_issues'],
-                f"{log_dir}/enhanced_indexing_errors.log"
+                encoding_issues=0,  # Not applicable for markdown
+                error_log_file=f"{log_dir}/indexing_errors.log"
             )
             
-            # Create and save enhanced run summary
+            # Create and save run summary
             end_time = time.time()
+            
+            # Get failed files list from final analysis
+            failed_files_list = final_analysis.get('missing_files_detailed', []) if final_analysis else []
+            
             enhanced_summary = create_enhanced_run_summary(
                 start_time, end_time, stats, final_analysis, config
             )
             
-            summary_file = f"{log_dir}/enhanced_run_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            summary_file = f"{log_dir}/run_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             if safe_file_write(summary_file, enhanced_summary):
-                print(f"📊 Enhanced run summary saved to: {summary_file}")
+                print(f"📊 Run summary saved to: {summary_file}")
             
-            # Print enhanced performance summary
+            # Print performance summary
             performance_monitor.print_performance_summary()
             progress_tracker.print_progress_summary()
             
-            # Enhanced final status report
+            # Final status report
             create_enhanced_status_report(
                 status_reporter, stats, final_analysis, batch_results, 
                 deletion_info, start_time, end_time
@@ -435,38 +420,51 @@ def main():
             
             status_reporter.print_report()
             
+            # Final message
+            print("\n" + "="*70)
+            if success:
+                print("✅ SUCCESS: Simplified RAG indexing completed successfully!")
+                print("📊 Workflow: Markdown → Chunks → Embeddings → Vectors ✓")
+            else:
+                print("⚠️ WARNING: Indexing completed with some errors")
+                print("📊 Check logs for details")
+            print("="*70)
+            
             return success
     
     except KeyboardInterrupt:
-        print(f"\n\n⚠️ WARNING: Enhanced indexing interrupted by user.")
+        print(f"\n\n⚠️ WARNING: Indexing interrupted by user.")
         if 'stats' in locals():
             print(f"📊 Partial results: {stats.get('records_saved', 0)} chunks saved")
         print(f"✅ No data was corrupted - safe to restart.")
         sys.exit(1)
     
     except Exception as e:
-        print(f"\n\n❌ ERROR: FATAL ERROR: {e}")
+        print(f"\n\n❌ FATAL ERROR: {e}")
         print(f"🔧 Check your configuration and try again.")
         
         # Try to save error information
         if 'log_dir' in locals():
-            error_info = f"Enhanced indexer fatal error at {datetime.now()}: {str(e)}\n"
-            safe_file_write(f"{log_dir}/enhanced_fatal_error.log", error_info)
+            error_info = f"Indexer fatal error at {datetime.now()}: {str(e)}\n"
+            safe_file_write(f"{log_dir}/fatal_error.log", error_info)
+        
+        import traceback
+        traceback.print_exc()
         
         sys.exit(1)
 
 
 if __name__ == "__main__":
     try:
-        print("🚀 Enhanced RAG Document Indexer (Gemini API)")
-        print("=" * 50)
-        print("✨ Advanced features: Auto .doc conversion, OCR auto-rotation, Gemini API embeddings")
-        print("🎯 Optimized for English documents with comprehensive error handling")
-        print("=" * 50)
+        print("🚀 Simplified RAG Document Indexer - Part 2: Chunking & Vectors")
+        print("=" * 70)
+        print("📄 Input: Markdown files from Docling (Part 1)")
+        print("🧩 Processing: Chunking → Gemini Embeddings → Supabase Vectors")
+        print("=" * 70)
         
         main()
     except KeyboardInterrupt:
-        print(f"\n\n⚠️ Enhanced indexing interrupted by user.")
+        print(f"\n\n⚠️ Indexing interrupted by user.")
         print(f"✅ Safe to restart - no data corruption.")
         sys.exit(1)
     except Exception as e:

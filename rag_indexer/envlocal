@@ -1,90 +1,80 @@
-# Optimized settings for powerful system (42GB RAM, 2 Xeon CPUs)
-# Configured for Google Gemini embeddings instead of Ollama
+# Simplified settings for RAG Indexer Part 2: Chunking & Vectors Only
+# Expects markdown input from Docling (Part 1)
+
+# ============================================================================
+# DATABASE SETTINGS
+# ============================================================================
 SUPABASE_CONNECTION_STRING="postgresql://postgres:postgres@localhost:54322/postgres"
-MASTER_DOCUMENTS_DIR=./data/634/
-DOCUMENTS_DIR=./data/634/2025/1
-DOC_BACKUP_ABSOLUTE_PATH=./data/doc_backups
 TABLE_NAME=documents
 
-# Google Gemini API Settings
+# ============================================================================
+# INPUT DIRECTORY (Markdown files from Docling)
+# ============================================================================
+DOCUMENTS_DIR=./data/markdown
+
+# ============================================================================
+# GOOGLE GEMINI API SETTINGS
+# ============================================================================
 GEMINI_API_KEY=
 
 # Embedding model settings - Google Gemini embeddings
 EMBED_MODEL=text-embedding-004
-EMBED_DIM=768                  # gemini-embedding-001 supports 768, 1536, or 3072 dimensions
-
-# Text chunking settings - smaller chunks for faster processing
-CHUNK_SIZE=2048                # Reduced from 1024 for faster embedding generation
-CHUNK_OVERLAP=256              # Reduced proportionally to maintain quality
-MIN_CHUNK_LENGTH=100           # Slightly reduced minimum length
-BATCH_RESTART_INTERVAL=5
-ENABLE_TEXT_QUALITY_ANALYSIS=true
-
-# Processing batch settings - optimized for Gemini API
-BATCH_SIZE=10                  # Increased from 1 for better API utilization
-NUM_WORKERS=4                  # Utilize multiple cores for file processing
-
-# OCR optimization settings
-ENABLE_OCR=true
-OCR_BATCH_SIZE=10
-OCR_WORKERS=4
-OCR_QUALITY_THRESHOLD=0.3
-
-# Document conversion settings
-AUTO_CONVERT_DOC=true          # Автоматически конвертировать .doc файлы
-BACKUP_ORIGINAL_DOC=true       # Создавать резервные копии .doc файлов
-DELETE_ORIGINAL_DOC=false
+EMBED_DIM=768                  # gemini supports 768, 1536, or 3072 dimensions
 
 # ============================================================================
-# ENHANCED PDF PROCESSING SETTINGS (ИСПРАВЛЕНО И ДОПОЛНЕНО)
+# TEXT CHUNKING SETTINGS
 # ============================================================================
-
-# Core PDF settings
-ENABLE_ENHANCED_PDF_PROCESSING=true
-PDF_CHUNK_SIZE=2048            # ИСПРАВЛЕНО: убраны пробелы
-PDF_PRESERVE_STRUCTURE=true   # ИСПРАВЛЕНО: убраны пробелы, lowercase
-PDF_MIN_SECTION_LENGTH=200     # ИСПРАВЛЕНО: убраны пробелы
-PDF_HEADER_DETECTION=true      # ИСПРАВЛЕНО: убраны пробелы, lowercase
-PDF_FOOTER_CLEANUP=true        # ИСПРАВЛЕНО: убраны пробелы, lowercase
-
-# PDF processing strategy (НОВЫЕ НАСТРОЙКИ)
-PDF_AUTO_METHOD_SELECTION=true
-PDF_PREFER_PYMUPDF=true
-PDF_ENABLE_TABLE_EXTRACTION=true
-PDF_SCANNED_THRESHOLD=0.1
-PDF_TABLE_DETECTION_THRESHOLD=0.3
-
-# PDF OCR fallback (НОВЫЕ НАСТРОЙКИ)
-PDF_ENABLE_OCR_FALLBACK=true
-PDF_OCR_DPI=300
-PDF_OCR_IMAGE_FORMAT=jpeg
-PDF_OCR_MIN_TEXT_LENGTH=20
-PDF_OCR_TIMEOUT_PER_PAGE=30
-
-# PDF quality and validation (НОВЫЕ НАСТРОЙКИ)
-PDF_MIN_CONTENT_LENGTH=20
-PDF_MAX_PAGES_FOR_QUICK_ANALYSIS=3
-PDF_ENABLE_CONTENT_VALIDATION=true
-
-# PDF logging (НОВЫЕ НАСТРОЙКИ)
-LOG_PDF_PROCESSING_DETAILS=true
+CHUNK_SIZE=512                 # Characters per chunk
+CHUNK_OVERLAP=128              # Overlap between chunks
+MIN_CHUNK_LENGTH=50            # Minimum chunk length to keep
 
 # ============================================================================
+# BATCH PROCESSING SETTINGS
+# ============================================================================
+PROCESSING_BATCH_SIZE=50       # Chunks per processing batch
+BATCH_SIZE=5                   # Chunks per embedding batch
+DB_BATCH_SIZE=200              # Records per database batch
+NUM_WORKERS=4                  # Parallel workers
 
-# Database batch settings - larger batches for efficiency
-DB_BATCH_SIZE=1000             # Increased for better database performance
-PROCESSING_BATCH_SIZE=200      # Increased from 25 for better throughput
-SKIP_VALIDATION=false
+# ============================================================================
+# GEMINI API OPTIMIZATION
+# ============================================================================
+GEMINI_TIMEOUT=300             # API timeout in seconds
+GEMINI_REQUEST_RATE_LIMIT=10  # Requests per second
+GEMINI_RETRY_ATTEMPTS=3       # Number of retries for failed requests
+GEMINI_RETRY_DELAY=1.0         # Delay between retries in seconds
+GEMINI_MAX_TOKENS_PER_REQUEST=2048
 
-# Gemini API optimization settings
-GEMINI_TIMEOUT=300             # 5 minutes timeout for Gemini API calls
-GEMINI_MAX_RETRIES=3           # Number of retries for failed API calls
-GEMINI_RETRY_DELAY=1           # Delay between retries in seconds
-
-# CPU-specific optimizations (still relevant for local processing)
-NUM_THREAD=16                  # Use more CPU threads for local processing
-NUMA=false                     # Disable NUMA for consistency on dual-CPU setup
-
-# Performance monitoring settings
+# ============================================================================
+# MONITORING AND LOGGING
+# ============================================================================
 ENABLE_PROGRESS_LOGGING=true
 LOG_BATCH_TIMING=true
+LOG_GEMINI_API_CALLS=false
+
+# ============================================================================
+# DIRECTORY FILTERING (Optional - exclude these from scanning)
+# ============================================================================
+BLACKLIST_DIRECTORIES=logs,temp,.git,__pycache__,.vscode,.idea,node_modules
+
+# ============================================================================
+# PERFORMANCE SETTINGS
+# ============================================================================
+SKIP_VALIDATION=false
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# This configuration is for Part 2: Chunking & Vectors Only
+# 
+# Prerequisites:
+# 1. Markdown files should be in DOCUMENTS_DIR (output from Docling - Part 1)
+# 2. Supabase database should be running and accessible
+# 3. GEMINI_API_KEY must be set with valid Google AI API key
+#
+# Workflow:
+# 1. Docling (Part 1) converts documents → markdown files
+# 2. This system (Part 2) reads markdown → chunks → embeddings → vector store
+#
+# To get Gemini API key:
+# Visit: https://makersuite.google.com/app/apikey

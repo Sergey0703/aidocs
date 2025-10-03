@@ -1,75 +1,82 @@
-# RAG Document Indexer Requirements
-# Enhanced version with advanced document parsing, OCR, and PDF processing
-# Updated to use Google Gemini instead of Ollama
+# RAG Document Indexer Requirements - Part 2: Chunking & Vectors Only
+# Simplified version - removed all document processing libraries
+# Expects markdown input from Docling (Part 1)
 
-# Core LlamaIndex Components
+# ============================================================================
+# CORE LLAMAINDEX COMPONENTS
+# ============================================================================
 llama-index>=0.10.0
 llama-index-core>=0.10.0
 llama-index-embeddings-google-genai>=0.1.0
 llama-index-vector-stores-supabase>=0.1.0
 
-# Google Gemini Integration
+# ============================================================================
+# GOOGLE GEMINI INTEGRATION
+# ============================================================================
 google-generativeai>=0.5.2,<0.6.0
 google-genai>=1.0.0
 
-# Database & Vector Store
+# ============================================================================
+# DATABASE & VECTOR STORE
+# ============================================================================
 psycopg2-binary>=2.9.0
 supabase>=2.0.0
 
-# Environment Management
+# ============================================================================
+# ENVIRONMENT MANAGEMENT
+# ============================================================================
 python-dotenv>=1.0.0
 
-# Document Processing Libraries
-python-docx>=1.1.0
-docx2txt>=0.8
-pypandoc>=1.13
-
-# Enhanced PDF Processing
-PyMuPDF>=1.23.0
-pdfplumber>=0.10.0
-pdf2image>=1.16.0
-
-# OCR Processing
-pytesseract>=0.3.10
-Pillow>=10.0.0
-opencv-python>=4.8.0
-
-# Text Processing & NLP
-chardet>=5.2.0
-langdetect>=1.0.9
-
-# HTTP Requests
+# ============================================================================
+# HTTP REQUESTS
+# ============================================================================
 requests>=2.31.0
 
-# System Utilities
+# ============================================================================
+# SYSTEM UTILITIES
+# ============================================================================
 psutil>=5.9.0
 
-# Data Processing
+# ============================================================================
+# DATA PROCESSING (for statistics and analysis)
+# ============================================================================
 numpy>=1.24.0
-pandas>=2.0.0
 
-# Image Processing (additional support)
-imageio>=2.31.0
-
-# Optional: for better performance with large files
-lxml>=4.9.0
-
-# Development & Testing (optional, uncomment if needed)
-# pytest>=7.4.0
-# black>=23.0.0
-# flake8>=6.0.0
-
-# Optional: Advanced text processing
-# spacy>=3.7.0
-# nltk>=3.8.0
-
-# Note: Some system dependencies may be required:
-# - Tesseract OCR engine (sudo apt-get install tesseract-ocr)
-# - LibreOffice (sudo apt-get install libreoffice)
-# - Pandoc (sudo apt-get install pandoc)
-# - poppler-utils for pdf2image (sudo apt-get install poppler-utils)
-
-# Windows installation notes:
-# - Pandoc: winget install JohnMacFarlane.Pandoc
-# - Tesseract: Download from https://github.com/UB-Mannheim/tesseract/wiki
-# - Poppler: Download from https://github.com/oschwartz10612/poppler-windows/releases/
+# ============================================================================
+# NOTES
+# ============================================================================
+# This is a simplified requirements file for Part 2: Chunking & Vectors Only
+#
+# REMOVED DEPENDENCIES (handled by Docling in Part 1):
+# - python-docx (DOCX parsing)
+# - docx2txt (DOC text extraction)
+# - pypandoc (document conversion)
+# - PyMuPDF (PDF processing)
+# - pdfplumber (PDF table extraction)
+# - pdf2image (PDF to image conversion)
+# - pytesseract (OCR)
+# - Pillow (image processing)
+# - opencv-python (image processing)
+# - chardet (encoding detection)
+# - langdetect (language detection)
+# - imageio (image I/O)
+# - lxml (XML/HTML processing)
+# - pandas (spreadsheet processing - removed unless needed for stats)
+#
+# WORKFLOW:
+# Part 1 (Docling): Raw documents → Markdown files
+# Part 2 (This system): Markdown → Chunks → Embeddings → Vectors
+#
+# INSTALLATION:
+# pip install -r requirements.txt
+#
+# SYSTEM REQUIREMENTS:
+# - Python 3.8 or higher
+# - PostgreSQL/Supabase instance
+# - Google Gemini API key
+#
+# NO EXTERNAL TOOLS NEEDED:
+# - No Tesseract OCR
+# - No LibreOffice
+# - No Pandoc
+# - No Poppler
