@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Simplified RAG Document Indexer - Part 2: Chunking & Vectors Only
+Simplified RAG Document Indexer - Main Entry Point
+Part 2: Chunking & Vectors Only
 Loads markdown files from Docling (Part 1) → chunks → embeddings → vector storage
-SIMPLIFIED: No document conversion, OCR, or PDF processing
-PURPOSE: markdown input → chunking → Gemini embeddings → Supabase vectors
 """
 
 import logging
@@ -18,19 +17,17 @@ from llama_index.vector_stores.supabase import SupabaseVectorStore
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 
-# --- SIMPLIFIED LOCAL MODULES ---
-from config import get_config, print_feature_status
-from database_manager import create_database_manager
-from embedding_processor import create_embedding_processor
-from batch_processor import create_batch_processor, create_progress_tracker
-from utils import (
+# --- PART 2 MODULE IMPORTS ---
+from chunking_vectors.config import get_config, print_feature_status
+from chunking_vectors.database_manager import create_database_manager
+from chunking_vectors.embedding_processor import create_embedding_processor
+from chunking_vectors.batch_processor import create_batch_processor, create_progress_tracker
+from chunking_vectors.utils import (
     InterruptHandler, PerformanceMonitor, StatusReporter,
     validate_python_version, print_system_info, create_run_summary,
     setup_logging_directory, safe_file_write, save_failed_files_details
 )
-
-# --- SIMPLIFIED HELPER MODULES ---
-from loading_helpers import (
+from chunking_vectors.loading_helpers import (
     load_markdown_documents, 
     print_loading_summary,
     validate_documents_for_processing,
@@ -39,12 +36,12 @@ from loading_helpers import (
     get_loading_recommendations,
     print_loading_recommendations
 )
-from analysis_helpers import (
+from chunking_vectors.analysis_helpers import (
     analyze_final_results_enhanced,
     create_enhanced_run_summary,
     create_enhanced_status_report
 )
-from chunk_helpers import (
+from chunking_vectors.chunk_helpers import (
     create_and_filter_chunks_enhanced,
     create_chunk_processing_report,
     save_chunk_processing_report
@@ -52,9 +49,7 @@ from chunk_helpers import (
 
 
 def print_simplified_info():
-    """
-    Print information about simplified system
-    """
+    """Print information about simplified system"""
     print("\n🔧 Simplified RAG System - Part 2: Chunking & Vectors")
     print("  📄 Input: Markdown files from Docling (Part 1)")
     print("  🧩 Processing: Chunking with SentenceSplitter")
@@ -173,7 +168,7 @@ def main():
             
             # Validate Gemini API configuration
             print("🚀 Validating Gemini API configuration...")
-            from config import validate_gemini_environment
+            from chunking_vectors.config import validate_gemini_environment
             
             gemini_validation = validate_gemini_environment()
             if not gemini_validation['ready']:

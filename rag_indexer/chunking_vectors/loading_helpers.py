@@ -30,7 +30,7 @@ def load_markdown_documents(config, progress_tracker):
     print(f"   📝 Expected input: Markdown files from Docling (Part 1)")
     
     # Import markdown loader
-    from markdown_loader import create_markdown_loader
+    from .markdown_loader import create_markdown_loader
     
     # Create markdown loader
     print("\n📖 Initializing markdown loader...")
@@ -239,7 +239,7 @@ def check_processing_requirements(config):
         print(f"   📂 Documents Dir: ❌ Does not exist: {config.DOCUMENTS_DIR}")
     else:
         # Check for markdown files
-        from markdown_loader import scan_markdown_files
+        from .markdown_loader import scan_markdown_files
         scan_results = scan_markdown_files(config.DOCUMENTS_DIR, recursive=True)
         
         if scan_results.get('total_markdown_files', 0) == 0:

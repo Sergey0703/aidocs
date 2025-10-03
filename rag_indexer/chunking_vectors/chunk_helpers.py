@@ -6,7 +6,7 @@ Contains helper functions for chunk creation, filtering, and processing
 """
 
 import time
-from embedding_processor import create_node_processor
+from .embedding_processor import create_node_processor
 
 
 def create_and_filter_chunks_enhanced(documents, config, node_parser, progress_tracker):

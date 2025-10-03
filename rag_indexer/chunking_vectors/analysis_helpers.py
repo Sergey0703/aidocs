@@ -7,7 +7,7 @@ SIMPLIFIED: Removed OCR, PDF, document conversion statistics
 """
 
 from datetime import datetime
-from utils import save_failed_files_details
+from .utils import save_failed_files_details
 
 
 def analyze_final_results_enhanced(config, db_manager, log_dir, processing_stats):
