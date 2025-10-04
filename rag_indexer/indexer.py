@@ -121,6 +121,9 @@ def main():
     if not validate_python_version():
         sys.exit(1)
     
+    # Get incremental mode setting early
+    incremental_mode = os.getenv("INCREMENTAL_MODE", "false").lower() == "true"
+    
     # Initialize tracking
     progress_tracker = create_progress_tracker()
     performance_monitor = PerformanceMonitor()
@@ -257,8 +260,6 @@ def main():
             # INCREMENTAL FILTERING (if enabled)
             # ===============================================================
             
-            incremental_mode = os.getenv("INCREMENTAL_MODE", "false").lower() == "true"
-            
             if incremental_mode:
                 print(f"\n🔄 Incremental mode enabled")
                 
@@ -310,7 +311,8 @@ def main():
                 elif file_name:
                     files_to_process.add(file_name)
             
-            deletion_info = db_manager.safe_deletion_dialog(files_to_process)
+            # Pass incremental_mode flag to deletion dialog
+            deletion_info = db_manager.safe_deletion_dialog(files_to_process, incremental_mode=incremental_mode)
             progress_tracker.add_checkpoint("Deletion dialog completed")
             stats['processing_stages'].append('deletion_dialog')
             

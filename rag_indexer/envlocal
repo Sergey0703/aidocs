@@ -55,7 +55,7 @@ LOG_GEMINI_API_CALLS=false
 # ============================================================================
 # DIRECTORY FILTERING (Optional - exclude these from scanning)
 # ============================================================================
-BLACKLIST_DIRECTORIES=logs,temp,.git,__pycache__,.vscode,.idea,node_modules
+BLACKLIST_DIRECTORIES=logs,temp,.git,__pycache__,.vscode,.idea,node_modules,_metadata
 
 # ============================================================================
 # PERFORMANCE SETTINGS

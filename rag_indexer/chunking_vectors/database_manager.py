@@ -76,7 +76,7 @@ def get_files_in_database(connection_string, table_name="documents"):
                     if file_name:
                         files_in_db.add(file_name)
                 
-                print(f"?? Found {len(files_in_db)} unique files in database")
+                print(f"Found {len(files_in_db)} unique files in database")
                 
     except Exception as e:
         print(f"ERROR: Could not query database for files: {e}")
@@ -127,17 +127,10 @@ def analyze_missing_file(file_path):
         return f"{file_name} - UNSUPPORTED_EXTENSION: {file_ext}"
     
     # If we get here, the file looks processable but didn't make it to DB
-    # This could be due to:
-    # - Document loading failed
-    # - Chunk creation failed  
-    # - Embedding generation failed
-    # - Database insertion failed
-    # - Content too short/invalid after processing
-    
     return f"{file_name} - PROCESSING_PIPELINE_FAILURE (file looks valid but failed somewhere in the pipeline)"
 
 
-def compare_directory_with_database(directory_path, connection_string, table_name="documents", recursive=True):
+def compare_directory_with_database(directory_path, connection_string, table_name="documents", recursive=True, blacklist_directories=None):
     """
     Compare files in directory with files actually stored in database
     
@@ -146,17 +139,23 @@ def compare_directory_with_database(directory_path, connection_string, table_nam
         connection_string: PostgreSQL connection string
         table_name: Name of the documents table
         recursive: Whether to scan directory recursively
+        blacklist_directories: List of directory names to exclude
     
     Returns:
         dict: Comprehensive comparison results
     """
-    print(f"\n?? Performing end-to-end analysis: Directory vs Database")
+    print(f"\nPerforming end-to-end analysis: Directory vs Database")
     
     # Import here to avoid circular imports
     from .file_utils_core import scan_files_in_directory
     
-    # Step 1: Get all files in directory
-    all_files_in_dir = scan_files_in_directory(directory_path, recursive)
+    # Step 1: Get all files in directory (with blacklist)
+    all_files_in_dir = scan_files_in_directory(
+        directory_path, 
+        recursive=recursive,
+        blacklist_directories=blacklist_directories,
+        verbose=False
+    )
     
     # Normalize all directory file paths
     normalized_dir_files = set()
@@ -167,7 +166,7 @@ def compare_directory_with_database(directory_path, connection_string, table_nam
         normalized_dir_files.add(normalized_path)
         dir_file_mapping[normalized_path] = file_path
     
-    print(f"?? Total files in directory: {len(normalized_dir_files)}")
+    print(f"Total files in directory: {len(normalized_dir_files)}")
     
     # Step 2: Get all files in database
     files_in_db = get_files_in_database(connection_string, table_name)
@@ -190,14 +189,14 @@ def compare_directory_with_database(directory_path, connection_string, table_nam
         if not found_in_db:
             missing_files.append(original_path)
     
-    print(f"? Files successfully in database: {len(normalized_dir_files) - len(missing_files)}")
-    print(f"? Files missing from database: {len(missing_files)}")
+    print(f"Files successfully in database: {len(normalized_dir_files) - len(missing_files)}")
+    print(f"Files missing from database: {len(missing_files)}")
     
     # Step 4: Analyze why each missing file didn't make it to database
     missing_files_detailed = []
     
     if missing_files:
-        print(f"?? Analyzing {len(missing_files)} missing files...")
+        print(f"Analyzing {len(missing_files)} missing files...")
         
         for file_path in missing_files:
             error_detail = analyze_missing_file(file_path)
@@ -406,12 +405,13 @@ class DatabaseManager:
             print(f"Error getting database stats: {e}")
             return {'error': str(e)}
     
-    def safe_deletion_dialog(self, files_to_process):
+    def safe_deletion_dialog(self, files_to_process, incremental_mode=False):
         """
         Safe deletion dialog with user confirmation
         
         Args:
             files_to_process: Set of file identifiers to process
+            incremental_mode: If True, skip deletion check for new files
         
         Returns:
             dict: Deletion information
@@ -422,7 +422,16 @@ class DatabaseManager:
             print("SUCCESS: No files to process")
             return deletion_info
         
-        # Check existing records
+        # In incremental mode, skip deletion check - only new files are being processed
+        if incremental_mode:
+            print("INFO: Incremental mode - skipping deletion check (processing only new/modified files)")
+            deletion_info = {
+                'files_processed': len(files_to_process),
+                'records_deleted': 'Skipped in incremental mode'
+            }
+            return deletion_info
+        
+        # Check existing records (only in non-incremental mode)
         total_existing, existing_files = self.check_existing_records(files_to_process)
         
         if total_existing == 0:
@@ -632,13 +641,14 @@ class DatabaseManager:
         
         print("="*50)
     
-    def analyze_directory_vs_database(self, directory_path, recursive=True):
+    def analyze_directory_vs_database(self, directory_path, recursive=True, blacklist_directories=None):
         """
         Perform end-to-end analysis comparing directory with database
         
         Args:
             directory_path: Path to directory to analyze
             recursive: Whether to scan recursively
+            blacklist_directories: List of directory names to exclude
         
         Returns:
             dict: Analysis results
@@ -647,7 +657,8 @@ class DatabaseManager:
             directory_path, 
             self.connection_string, 
             self.table_name, 
-            recursive
+            recursive,
+            blacklist_directories
         )
 
 

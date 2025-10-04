@@ -27,10 +27,11 @@ def analyze_final_results_enhanced(config, db_manager, log_dir, processing_stats
     print("🔍 END-TO-END ANALYSIS")
     print(f"{'='*70}")
     
-    # Perform comprehensive directory vs database comparison
+    # Perform comprehensive directory vs database comparison WITH blacklist
     analysis_results = db_manager.analyze_directory_vs_database(
         config.DOCUMENTS_DIR, 
-        recursive=True
+        recursive=True,
+        blacklist_directories=config.BLACKLIST_DIRECTORIES  # FIXED: Pass blacklist
     )
     
     # Extract results
@@ -269,6 +270,7 @@ def create_config_summary(config):
     summary.append(f"   Chunk size: {config.CHUNK_SIZE} (overlap: {config.CHUNK_OVERLAP})")
     summary.append(f"   Processing batch size: {config.PROCESSING_BATCH_SIZE}")
     summary.append(f"   Gemini API rate limit: {config.GEMINI_REQUEST_RATE_LIMIT} requests/sec")
+    summary.append(f"   Blacklisted directories: {', '.join(config.BLACKLIST_DIRECTORIES)}")
     summary.append("")
     return summary
 
