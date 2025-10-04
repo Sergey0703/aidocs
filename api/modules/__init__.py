@@ -2,6 +2,7 @@
 # API modules registry
 
 from . import search
+from . import indexing
 
 # Registry of all available modules
 AVAILABLE_MODULES = {
@@ -12,31 +13,19 @@ AVAILABLE_MODULES = {
         "description": "Hybrid search with AI re-ranking",
         "routers": [search.search_router, search.system_router]
     },
-    # Future modules will be added here:
-    # "indexing": {...},
-    # "documents": {...},
+    "indexing": {
+        "name": "Indexing",
+        "version": "1.0.0",
+        "status": "active",
+        "description": "Document indexing and conversion",
+        "routers": [
+            indexing.indexing_router,
+            indexing.documents_router,
+            indexing.conversion_router,
+            indexing.monitoring_router
+        ]
+    },
+    # Future modules:
     # "templates": {...},
     # "verification": {...},
 }
-
-
-def get_module_info(module_name: str):
-    """Get information about a specific module"""
-    return AVAILABLE_MODULES.get(module_name)
-
-
-def get_active_modules():
-    """Get list of all active modules"""
-    return {
-        name: info 
-        for name, info in AVAILABLE_MODULES.items() 
-        if info["status"] == "active"
-    }
-
-
-__all__ = [
-    "search",
-    "AVAILABLE_MODULES",
-    "get_module_info",
-    "get_active_modules",
-]

@@ -15,7 +15,7 @@ backend_path = Path(__file__).parent.parent / "streamlit-rag"
 sys.path.insert(0, str(backend_path))
 
 # Import from modules
-from api.modules import search, AVAILABLE_MODULES
+from api.modules import search, indexing, AVAILABLE_MODULES
 from api.core.dependencies import initialize_system_components
 
 # Setup logging
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     logger.info("📁 Backend path: %s", backend_path)
     
     try:
-        # Initialize system components
+        # Initialize system components for search module
         initialize_system_components()
         logger.info("✅ System components initialized successfully")
     except Exception as e:
@@ -72,17 +72,43 @@ app.add_middleware(
 )
 
 
-# Include routers from search module with prefix
+# Include routers from search module
 app.include_router(
     search.search_router,
-    prefix="/api/search",  # FIXED: добавлен prefix
+    prefix="/api/search",
     tags=["Search"]
 )
 
 app.include_router(
     search.system_router,
-    prefix="/api/system",  # FIXED: добавлен prefix
+    prefix="/api/system",
     tags=["System"]
+)
+
+
+# Include routers from indexing module
+app.include_router(
+    indexing.indexing_router,
+    prefix="/api/indexing",
+    tags=["Indexing"]
+)
+
+app.include_router(
+    indexing.documents_router,
+    prefix="/api/documents",
+    tags=["Documents"]
+)
+
+app.include_router(
+    indexing.conversion_router,
+    prefix="/api/conversion",
+    tags=["Conversion"]
+)
+
+app.include_router(
+    indexing.monitoring_router,
+    prefix="/api/monitoring",
+    tags=["Monitoring"]
 )
 
 
@@ -98,6 +124,14 @@ async def root():
         "status": "operational",
         "description": "Unified API for document search, indexing, templates, and verification",
         "modules": AVAILABLE_MODULES,
+        "endpoints": {
+            "search": "/api/search",
+            "system": "/api/system",
+            "indexing": "/api/indexing",
+            "documents": "/api/documents",
+            "conversion": "/api/conversion",
+            "monitoring": "/api/monitoring"
+        },
         "documentation": {
             "swagger": "/docs",
             "redoc": "/redoc",
@@ -106,7 +140,7 @@ async def root():
     }
 
 
-# Health check endpoint (alias for /api/system/health)
+# Health check endpoint
 @app.get("/health", tags=["Root"])
 async def health_check():
     """
@@ -115,7 +149,11 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "Document Intelligence Platform",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "modules": {
+            "search": "active",
+            "indexing": "active"
+        }
     }
 
 
@@ -148,7 +186,13 @@ async def startup_message():
     logger.info("=" * 70)
     logger.info("🔗 API Documentation: http://localhost:8000/docs")
     logger.info("📚 ReDoc: http://localhost:8000/redoc")
-    logger.info("🔍 Search endpoint: http://localhost:8000/api/search")
+    logger.info("")
+    logger.info("🔍 Search endpoints: http://localhost:8000/api/search")
+    logger.info("📄 Indexing endpoints: http://localhost:8000/api/indexing")
+    logger.info("📋 Documents endpoints: http://localhost:8000/api/documents")
+    logger.info("🔄 Conversion endpoints: http://localhost:8000/api/conversion")
+    logger.info("📊 Monitoring endpoints: http://localhost:8000/api/monitoring")
+    logger.info("")
     logger.info("❤️  Health check: http://localhost:8000/health")
     logger.info("=" * 70)
 

@@ -15,32 +15,7 @@ from ..models.schemas import (
     ErrorResponse,
     IndexingMode,
 )
-# TODO: Uncomment when service is implemented
-# from ..services.indexing_service import get_indexing_service
-
-# Temporary mock function
-def get_indexing_service():
-    """Temporary mock service"""
-    class MockService:
-        async def create_task(self, mode):
-            return "mock_task_id"
-        
-        def get_active_tasks_count(self):
-            return 0
-        
-        async def start_indexing(self, **kwargs):
-            pass
-        
-        async def cancel_task(self, task_id):
-            return True
-        
-        async def get_task_status(self, task_id):
-            return None
-        
-        async def get_history(self, limit=10):
-            return []
-    
-    return MockService()
+from ..services.indexing_service import get_indexing_service
 
 logger = logging.getLogger(__name__)
 
