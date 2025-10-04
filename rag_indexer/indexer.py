@@ -4,10 +4,13 @@
 Simplified RAG Document Indexer - Main Entry Point
 Part 2: Chunking & Vectors Only
 Loads markdown files from Docling (Part 1) → chunks → embeddings → vector storage
+SIMPLIFIED: No document conversion, OCR, or PDF processing
+PURPOSE: markdown input → chunking → Gemini embeddings → Supabase vectors
 """
 
 import logging
 import sys
+import os
 import time
 from datetime import datetime
 
@@ -144,6 +147,9 @@ def main():
     # Final analysis results
     final_analysis = None
     
+    # Incremental indexer (will be initialized if needed)
+    incremental_indexer = None
+    
     try:
         with InterruptHandler() as interrupt_handler:
             
@@ -246,6 +252,40 @@ def main():
             
             performance_monitor.checkpoint("Markdown documents loaded", len(documents))
             stats['processing_stages'].append('documents_loaded')
+            
+            # ===============================================================
+            # INCREMENTAL FILTERING (if enabled)
+            # ===============================================================
+            
+            incremental_mode = os.getenv("INCREMENTAL_MODE", "false").lower() == "true"
+            
+            if incremental_mode:
+                print(f"\n🔄 Incremental mode enabled")
+                
+                # Import incremental indexer
+                from chunking_vectors.incremental_indexer import create_incremental_indexer
+                
+                # Create incremental indexer
+                incremental_indexer = create_incremental_indexer(config, db_manager)
+                
+                # Print current state
+                incremental_indexer.print_statistics()
+                
+                # Remove deleted files from database
+                cleanup_stats = incremental_indexer.remove_deleted_files()
+                
+                # Filter to only new/modified documents
+                new_docs, modified_docs, unchanged_docs = incremental_indexer.filter_new_and_modified(documents)
+                
+                # Use only new and modified
+                documents = new_docs + modified_docs
+                
+                if not documents:
+                    print("\n✅ No new or modified files to index")
+                    print("All files are up to date!")
+                    return True
+                
+                print(f"\n📊 Processing {len(documents)} files ({len(new_docs)} new, {len(modified_docs)} modified)")
             
             # Check for interruption
             if interrupt_handler.check_interrupted():
@@ -365,6 +405,13 @@ def main():
             
             performance_monitor.checkpoint("Batch processing completed", batch_results['total_saved'])
             progress_tracker.add_checkpoint("Processing completed", batch_results['total_saved'])
+            
+            # ===============================================================
+            # UPDATE INCREMENTAL STATE (if enabled)
+            # ===============================================================
+            
+            if incremental_mode and incremental_indexer and documents_with_content:
+                incremental_indexer.mark_batch_as_indexed(documents_with_content)
             
             # ===============================================================
             # 8. END-TO-END ANALYSIS

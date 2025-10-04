@@ -5,7 +5,9 @@ Simplified loading helpers module for RAG Document Indexer (Part 2: Chunking & V
 Simple markdown loading and validation - no document conversion, OCR, or PDF processing
 """
 
+import os
 import time
+from pathlib import Path
 from datetime import datetime
 
 
@@ -230,7 +232,6 @@ def check_processing_requirements(config):
         print(f"   🚀 Gemini API: ✅ API key configured")
     
     # Check documents directory
-    import os
     if not config.DOCUMENTS_DIR:
         missing_requirements.append("Documents directory path")
         print(f"   📂 Documents Dir: ❌ Path not configured")
@@ -242,11 +243,19 @@ def check_processing_requirements(config):
         from .markdown_loader import scan_markdown_files
         scan_results = scan_markdown_files(config.DOCUMENTS_DIR, recursive=True)
         
-        if scan_results.get('total_markdown_files', 0) == 0:
+        # Filter out files from _metadata directory
+        metadata_dir_name = '_metadata'
+        actual_markdown_files = [
+            f for f in scan_results.get('files', [])
+            if metadata_dir_name not in Path(f['path']).parts
+        ]
+        actual_count = len(actual_markdown_files)
+        
+        if actual_count == 0:
             warnings.append(f"No markdown files found in {config.DOCUMENTS_DIR}")
             print(f"   📂 Documents Dir: ⚠️ No markdown files found")
         else:
-            print(f"   📂 Documents Dir: ✅ {scan_results['total_markdown_files']} markdown files found")
+            print(f"   📂 Documents Dir: ✅ {actual_count} markdown files found")
     
     # Check blacklist configuration
     if config.BLACKLIST_DIRECTORIES:

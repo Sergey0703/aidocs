@@ -466,7 +466,7 @@ def save_chunk_processing_report(report, log_dir="./logs"):
         import os
         import json
         from datetime import datetime
-        from utils import ensure_directory_exists
+        from .utils import ensure_directory_exists
         
         # Ensure log directory exists
         if not ensure_directory_exists(log_dir):
