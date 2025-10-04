@@ -78,3 +78,41 @@ SKIP_VALIDATION=false
 #
 # To get Gemini API key:
 # Visit: https://makersuite.google.com/app/apikey
+# ============================================================================
+# DOCLING - DOCUMENT CONVERSION SETTINGS
+# ============================================================================
+RAW_DOCUMENTS_DIR=./data/raw
+MARKDOWN_OUTPUT_DIR=./data/markdown
+FAILED_CONVERSIONS_DIR=./data/failed
+METADATA_DIR=./data/markdown/_metadata
+
+# Supported formats (comma-separated)
+SUPPORTED_FORMATS=pdf,docx,doc,pptx,ppt,txt,html,htm,png,jpg,jpeg,tiff
+
+# Conversion settings
+RECURSIVE_SCAN=true
+MIRROR_DIRECTORY_STRUCTURE=true
+PRESERVE_IMAGES=false
+EXTRACT_TABLES=true
+
+# OCR settings
+ENABLE_OCR=true
+OCR_LANGUAGE=eng+rus
+
+# Naming: timestamp_originalname.md
+USE_TIMESTAMP_PREFIX=true
+TIMESTAMP_FORMAT=%Y%m%d_%H%M%S
+
+# Error handling
+SKIP_FAILED_CONVERSIONS=true
+RETRY_FAILED=false
+MAX_RETRIES=2
+
+# Performance
+DOCLING_BATCH_SIZE=5
+USE_GPU=false
+MAX_FILE_SIZE_MB=100
+
+# Logging
+VERBOSE_LOGGING=true
+LOG_DIR=./logs

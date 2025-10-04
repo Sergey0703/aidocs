@@ -1,9 +1,22 @@
-# RAG Document Indexer Requirements - Part 2: Chunking & Vectors Only
-# Simplified version - removed all document processing libraries
-# Expects markdown input from Docling (Part 1)
+# RAG Document Indexer Requirements - Part 1 + Part 2
+# Combined environment for Docling conversion and LlamaIndex chunking
 
 # ============================================================================
-# CORE LLAMAINDEX COMPONENTS
+# PART 1: DOCLING - DOCUMENT CONVERSION
+# ============================================================================
+docling>=1.0.0
+docling-core>=1.0.0
+docling-ibm-models>=1.0.0
+
+# Document processing dependencies for Docling
+pypdfium2>=4.0.0
+python-docx>=1.0.0
+python-pptx>=0.6.0
+pillow>=10.0.0
+pydantic>=2.0.0
+
+# ============================================================================
+# PART 2: LLAMAINDEX - CHUNKING & VECTORS
 # ============================================================================
 llama-index>=0.10.0
 llama-index-core>=0.10.0
@@ -38,45 +51,28 @@ requests>=2.31.0
 psutil>=5.9.0
 
 # ============================================================================
-# DATA PROCESSING (for statistics and analysis)
+# DATA PROCESSING
 # ============================================================================
 numpy>=1.24.0
+pandas>=2.0.0
+
+# ============================================================================
+# PROGRESS BARS & CLI
+# ============================================================================
+tqdm>=4.65.0
+rich>=13.0.0
 
 # ============================================================================
 # NOTES
 # ============================================================================
-# This is a simplified requirements file for Part 2: Chunking & Vectors Only
-#
-# REMOVED DEPENDENCIES (handled by Docling in Part 1):
-# - python-docx (DOCX parsing)
-# - docx2txt (DOC text extraction)
-# - pypandoc (document conversion)
-# - PyMuPDF (PDF processing)
-# - pdfplumber (PDF table extraction)
-# - pdf2image (PDF to image conversion)
-# - pytesseract (OCR)
-# - Pillow (image processing)
-# - opencv-python (image processing)
-# - chardet (encoding detection)
-# - langdetect (language detection)
-# - imageio (image I/O)
-# - lxml (XML/HTML processing)
-# - pandas (spreadsheet processing - removed unless needed for stats)
-#
-# WORKFLOW:
-# Part 1 (Docling): Raw documents → Markdown files
-# Part 2 (This system): Markdown → Chunks → Embeddings → Vectors
-#
-# INSTALLATION:
+# Installation:
 # pip install -r requirements.txt
 #
-# SYSTEM REQUIREMENTS:
-# - Python 3.8 or higher
+# System Requirements:
+# - Python 3.9 or higher
 # - PostgreSQL/Supabase instance
 # - Google Gemini API key
 #
-# NO EXTERNAL TOOLS NEEDED:
-# - No Tesseract OCR
-# - No LibreOffice
-# - No Pandoc
-# - No Poppler
+# Optional GPU support for Docling:
+# - For faster OCR processing
+# - Not required, will work on CPU
