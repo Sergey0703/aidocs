@@ -1,0 +1,309 @@
+/* src/components/indexing/DocumentCard.css */
+.document-card {
+  background: white;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.3s;
+}
+
+.document-card:hover {
+  border-color: #007bff;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+}
+
+.document-card.expanded {
+  border-color: #007bff;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.2);
+}
+
+/* Card Header */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  cursor: pointer;
+  background: #f8f9fa;
+  transition: background 0.3s;
+  gap: 1rem;
+}
+
+.card-header:hover {
+  background: #e9ecef;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.file-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.filename {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.chunks-badge {
+  padding: 0.3rem 0.7rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chunks-badge.high {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+}
+
+.chunks-badge.medium {
+  background: linear-gradient(135deg, #007bff, #17a2b8);
+  color: white;
+}
+
+.chunks-badge.low {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  color: white;
+}
+
+.expand-button {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: #666;
+  cursor: pointer;
+  padding: 0.4rem;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+.expand-button:hover {
+  color: #007bff;
+  transform: scale(1.2);
+}
+
+/* Card Content */
+.card-content {
+  padding: 1.5rem;
+  border-top: 1px solid #e0e0e0;
+  background: white;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Document Details */
+.document-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 3px solid #007bff;
+  transition: all 0.2s;
+}
+
+.detail-row:hover {
+  background: #e9ecef;
+  transform: translateX(4px);
+}
+
+.detail-label {
+  font-size: 0.9rem;
+  color: #666;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.detail-value {
+  font-size: 0.9rem;
+  color: #333;
+  font-weight: 500;
+  font-family: 'Courier New', monospace;
+}
+
+/* Card Actions */
+.card-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.delete-button {
+  padding: 0.6rem 1.5rem;
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.delete-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #c82333, #bd2130);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.delete-button:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .card-header {
+    padding: 0.875rem;
+  }
+
+  .card-title {
+    gap: 0.5rem;
+  }
+
+  .file-icon {
+    font-size: 1.3rem;
+  }
+
+  .filename {
+    font-size: 0.9rem;
+  }
+
+  .chunks-badge {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .card-content {
+    padding: 1rem;
+  }
+
+  .detail-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem;
+  }
+
+  .detail-label {
+    font-size: 0.85rem;
+  }
+
+  .detail-value {
+    font-size: 0.85rem;
+  }
+
+  .card-actions {
+    justify-content: stretch;
+  }
+
+  .delete-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .card-header {
+    padding: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .card-title {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  .card-badges {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .file-icon {
+    font-size: 1.2rem;
+  }
+
+  .filename {
+    font-size: 0.85rem;
+  }
+
+  .chunks-badge {
+    font-size: 0.75rem;
+  }
+
+  .detail-row {
+    padding: 0.5rem;
+  }
+
+  .detail-label,
+  .detail-value {
+    font-size: 0.8rem;
+  }
+
+  .delete-button {
+    font-size: 0.85rem;
+    padding: 0.5rem 1rem;
+  }
+}

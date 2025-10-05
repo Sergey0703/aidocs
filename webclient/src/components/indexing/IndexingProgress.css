@@ -1,0 +1,484 @@
+/* src/components/indexing/IndexingProgress.css */
+.indexing-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Progress Header */
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.status-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.status-badge {
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-badge.idle {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  color: white;
+}
+
+.status-badge.running {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.status-badge.completed {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+}
+
+.status-badge.failed {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  color: white;
+}
+
+.status-badge.cancelled {
+  background: linear-gradient(135deg, #6c757d, #5a6268);
+  color: white;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.pulse-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #28a745;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #28a745;
+  border-radius: 50%;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.5;
+  }
+}
+
+.progress-percentage {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #28a745;
+  font-family: 'Courier New', monospace;
+}
+
+/* Progress Bar */
+.progress-bar-container {
+  width: 100%;
+  height: 30px;
+  background: #e9ecef;
+  border-radius: 15px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #28a745, #20c997);
+  border-radius: 15px;
+  transition: width 0.5s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.progress-bar-text {
+  color: white;
+  font-weight: bold;
+  font-size: 0.85rem;
+  z-index: 1;
+}
+
+/* Current File */
+.current-file {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(40, 167, 69, 0.1);
+  border-left: 4px solid #28a745;
+  border-radius: 6px;
+}
+
+.current-file-label {
+  font-weight: 600;
+  color: #28a745;
+  font-size: 0.9rem;
+}
+
+.current-file-name {
+  color: #333;
+  font-size: 0.9rem;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+}
+
+/* Processing Statistics */
+.processing-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+.stat-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  border-left: 4px solid #28a745;
+  transition: all 0.2s;
+}
+
+.stat-group:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
+}
+
+.stat-header {
+  font-size: 0.85rem;
+  color: #666;
+  font-weight: 600;
+}
+
+.stat-progress {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  font-family: 'Courier New', monospace;
+}
+
+.stat-current {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #28a745;
+}
+
+.stat-separator {
+  font-size: 1.2rem;
+  color: #999;
+}
+
+.stat-total {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #666;
+}
+
+.stat-failed {
+  font-size: 0.8rem;
+  color: #dc3545;
+  font-weight: 600;
+}
+
+.stat-speed {
+  font-size: 0.8rem;
+  color: #007bff;
+  font-weight: 600;
+}
+
+/* Time Information */
+.time-info {
+  display: flex;
+  justify-content: space-around;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(40, 167, 69, 0.05);
+  border-radius: 8px;
+}
+
+.time-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.time-label {
+  font-size: 0.85rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.time-value {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #28a745;
+  font-family: 'Courier New', monospace;
+}
+
+/* Indexing Statistics */
+.indexing-statistics {
+  background: rgba(255, 255, 255, 0.9);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+}
+
+.indexing-statistics h4 {
+  margin: 0 0 1rem 0;
+  color: #333;
+  font-size: 1rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  border-left: 3px solid #28a745;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
+}
+
+.stat-card.success {
+  border-left-color: #20c997;
+}
+
+.stat-card.api {
+  border-left-color: #007bff;
+}
+
+.stat-card-label {
+  font-size: 0.8rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.stat-card-value {
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: #333;
+  font-family: 'Courier New', monospace;
+}
+
+/* Stop Button */
+.stop-button {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+}
+
+.stop-button:hover {
+  background: linear-gradient(135deg, #c82333, #bd2130);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+}
+
+/* Errors Section */
+.errors-section {
+  background: rgba(220, 53, 69, 0.1);
+  padding: 1rem;
+  border-radius: 8px;
+  border-left: 4px solid #dc3545;
+}
+
+.errors-section h4 {
+  margin: 0 0 0.75rem 0;
+  color: #dc3545;
+  font-size: 1rem;
+}
+
+.errors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.error-item {
+  padding: 0.5rem;
+  background: white;
+  border-radius: 6px;
+  color: #721c24;
+  font-size: 0.9rem;
+  border-left: 3px solid #dc3545;
+}
+
+.errors-more {
+  text-align: center;
+  padding: 0.5rem;
+  color: #dc3545;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* Warnings Section */
+.warnings-section {
+  background: rgba(255, 193, 7, 0.1);
+  padding: 1rem;
+  border-radius: 8px;
+  border-left: 4px solid #ffc107;
+}
+
+.warnings-section h4 {
+  margin: 0 0 0.75rem 0;
+  color: #856404;
+  font-size: 1rem;
+}
+
+.warnings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.warning-item {
+  padding: 0.5rem;
+  background: white;
+  border-radius: 6px;
+  color: #856404;
+  font-size: 0.9rem;
+  border-left: 3px solid #ffc107;
+}
+
+.warnings-more {
+  text-align: center;
+  padding: 0.5rem;
+  color: #856404;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .progress-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .progress-percentage {
+    font-size: 1.5rem;
+  }
+
+  .processing-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .time-info {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .time-item {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .processing-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-current {
+    font-size: 1.2rem;
+  }
+
+  .stat-total {
+    font-size: 1rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card-value {
+    font-size: 1.1rem;
+  }
+
+  .current-file {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

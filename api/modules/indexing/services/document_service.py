@@ -53,6 +53,20 @@ class DocumentService:
                 from chunking_vectors.config import get_config
                 
                 self._config = get_config()
+                
+                # FIX: Override DOCUMENTS_DIR to use absolute path
+                current_file = Path(__file__)
+                project_root = current_file.parent.parent.parent.parent.parent
+                markdown_dir = project_root / "rag_indexer" / "data" / "markdown"
+                
+                # Update config with correct path
+                self._config.DOCUMENTS_DIR = str(markdown_dir)
+                
+                logger.info(f"📁 Using markdown directory: {markdown_dir}")
+                
+                # Create directory if it doesn't exist
+                markdown_dir.mkdir(parents=True, exist_ok=True)
+                
                 self._db_manager = create_database_manager(
                     self._config.CONNECTION_STRING,
                     self._config.TABLE_NAME
@@ -576,7 +590,8 @@ class DocumentService:
             DocumentInfo: Uploaded document information
         """
         try:
-            # Save file to documents directory
+            # Get correct path from config
+            db_manager = self._get_db_manager()
             docs_dir = Path(self._config.DOCUMENTS_DIR)
             docs_dir.mkdir(parents=True, exist_ok=True)
             

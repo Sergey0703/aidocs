@@ -9,7 +9,7 @@
 .app-header {
   background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
   color: white;
-  padding: 2rem;
+  padding: 2rem 2rem 1rem 2rem;
   text-align: center;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
@@ -22,33 +22,9 @@
 }
 
 .app-subtitle {
-  margin: 0.5rem 0 0;
+  margin: 0.5rem 0 1rem;
   font-size: 1rem;
   opacity: 0.9;
-}
-
-.app-container {
-  flex: 1;
-  display: flex;
-  max-width: 1400px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 2rem;
-  gap: 2rem;
-}
-
-.sidebar {
-  flex: 0 0 350px;
-  position: sticky;
-  top: 2rem;
-  align-self: flex-start;
-  max-height: calc(100vh - 4rem);
-  overflow-y: auto;
-}
-
-.main-content {
-  flex: 1;
-  min-width: 0;
 }
 
 .app-footer {
@@ -65,250 +41,10 @@
   opacity: 0.9;
 }
 
-/* Error Message */
-.error-message {
-  background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
-  color: white;
-  padding: 2rem;
-  border-radius: 12px;
-  margin-bottom: 2rem;
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
-}
-
-.error-message h3 {
-  margin-top: 0;
-  margin-bottom: 1rem;
-}
-
-.clear-button {
-  margin-top: 1rem;
-  padding: 0.5rem 1rem;
-  background: white;
-  color: #ff6b6b;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: bold;
-  transition: all 0.3s;
-}
-
-.clear-button:hover {
-  background: #f8f9fa;
-  transform: translateY(-2px);
-}
-
-/* Loading Container */
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  text-align: center;
-}
-
-.loading-spinner {
-  width: 60px;
-  height: 60px;
-  border: 4px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.loading-container p {
-  margin-top: 1.5rem;
-  color: white;
-  font-size: 1.1rem;
-  font-weight: 500;
-}
-
-/* Clear Results Section */
-.clear-section {
-  display: flex;
-  justify-content: center;
-  margin-top: 2rem;
-  padding: 2rem;
-}
-
-.clear-results-button {
-  padding: 0.75rem 2rem;
-  background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
-}
-
-.clear-results-button:hover {
-  background: linear-gradient(135deg, #ee5a6f, #ff6b6b);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(255, 107, 107, 0.4);
-}
-
-/* Welcome Message */
-.welcome-message {
-  background: white;
-  padding: 2.5rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.welcome-message h2 {
-  margin-top: 0;
-  color: #333;
-  font-size: 1.8rem;
-}
-
-.welcome-message p {
-  color: #555;
-  line-height: 1.6;
-  margin: 1rem 0;
-}
-
-.welcome-message ul {
-  list-style: none;
-  padding: 0;
-  margin: 1.5rem 0;
-}
-
-.welcome-message li {
-  padding: 0.75rem 0;
-  color: #555;
-  font-size: 1.05rem;
-  border-bottom: 1px solid #eee;
-}
-
-.welcome-message li:last-child {
-  border-bottom: none;
-}
-
-/* Re-Ranking Explainer */
-.rerank-explainer {
-  margin: 2rem 0;
-  padding: 1.5rem;
-  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-  border-radius: 12px;
-  border: 1px solid #dee2e6;
-}
-
-.rerank-explainer h3 {
-  margin-top: 0;
-  margin-bottom: 0.75rem;
-  color: #333;
-  font-size: 1.2rem;
-}
-
-.explainer-intro {
-  margin-bottom: 1rem;
-  color: #555;
-  font-size: 0.95rem;
-}
-
-.explainer-intro strong {
-  color: #007bff;
-}
-
-.mode-card {
-  padding: 1rem;
-  margin: 0.75rem 0;
-  border-radius: 8px;
-  border-left: 4px solid;
-}
-
-.mode-card.smart {
-  background: linear-gradient(135deg, #d4edda, #c3e6cb);
-  border-left-color: #28a745;
-}
-
-.mode-card.full {
-  background: linear-gradient(135deg, #fff3cd, #ffeaa7);
-  border-left-color: #ffc107;
-}
-
-.mode-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.mode-icon {
-  font-size: 1.5rem;
-}
-
-.mode-name {
-  font-weight: 600;
-  font-size: 1.1rem;
-  color: #333;
-}
-
-.mode-card p {
-  margin: 0;
-  color: #555;
-  line-height: 1.6;
-  font-size: 0.95rem;
-}
-
-.example-query {
-  margin-top: 2rem;
-  padding: 1rem;
-  background: linear-gradient(135deg, #e7f3ff, #cfe2ff);
-  border-left: 4px solid #007bff;
-  border-radius: 6px;
-  color: #004085;
-  font-weight: 500;
-  font-style: italic;
-}
-
 /* Responsive Design - Mobile First */
-@media (max-width: 1024px) {
-  .app-container {
-    padding: 1.5rem;
-    gap: 1.5rem;
-  }
-  
-  .sidebar {
-    flex: 0 0 300px;
-  }
-}
-
 @media (max-width: 768px) {
-  /* CRITICAL: Change layout order for mobile */
-  .app-container {
-    flex-direction: column;
-    padding: 1rem;
-    gap: 1rem;
-  }
-  
-  /* Main content (search + results) goes FIRST */
-  .main-content {
-    order: 1;
-  }
-  
-  /* Sidebar (system status) goes SECOND */
-  .sidebar {
-    order: 2;
-    flex: 1 1 auto;
-    position: static;
-    max-height: none;
-    width: 100%;
-  }
-  
   .app-header {
-    padding: 1.5rem 1rem;
+    padding: 1.5rem 1rem 0.75rem 1rem;
   }
   
   .app-title {
@@ -316,48 +52,6 @@
   }
   
   .app-subtitle {
-    font-size: 0.9rem;
-  }
-  
-  .welcome-message {
-    padding: 1.5rem;
-  }
-  
-  .welcome-message h2 {
-    font-size: 1.5rem;
-  }
-  
-  .welcome-message li {
-    font-size: 0.95rem;
-    padding: 0.5rem 0;
-  }
-  
-  .rerank-explainer {
-    padding: 1rem;
-  }
-  
-  .rerank-explainer h3 {
-    font-size: 1.1rem;
-  }
-  
-  .mode-card {
-    padding: 0.75rem;
-  }
-  
-  .mode-header {
-    flex-direction: row;
-    align-items: center;
-  }
-  
-  .mode-icon {
-    font-size: 1.3rem;
-  }
-  
-  .mode-name {
-    font-size: 1rem;
-  }
-  
-  .mode-card p {
     font-size: 0.9rem;
   }
   
@@ -371,12 +65,8 @@
 }
 
 @media (max-width: 480px) {
-  .app-container {
-    padding: 0.75rem;
-  }
-  
   .app-header {
-    padding: 1rem 0.75rem;
+    padding: 1rem 0.75rem 0.5rem 0.75rem;
   }
   
   .app-title {
@@ -385,42 +75,5 @@
   
   .app-subtitle {
     font-size: 0.8rem;
-  }
-  
-  .welcome-message {
-    padding: 1rem;
-  }
-  
-  .welcome-message h2 {
-    font-size: 1.3rem;
-  }
-  
-  .welcome-message li {
-    font-size: 0.9rem;
-  }
-  
-  .rerank-explainer {
-    padding: 0.75rem;
-  }
-  
-  .explainer-intro {
-    font-size: 0.85rem;
-  }
-  
-  .mode-card {
-    padding: 0.6rem;
-  }
-  
-  .mode-name {
-    font-size: 0.95rem;
-  }
-  
-  .mode-card p {
-    font-size: 0.85rem;
-  }
-  
-  .example-query {
-    padding: 0.75rem;
-    font-size: 0.9rem;
   }
 }
