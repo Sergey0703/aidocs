@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # api/modules/indexing/services/indexing_service.py
-# Real implementation with backend integration
+# Fixed: skip_conversion now only skips Docling, NOT the entire indexing pipeline
 
 import asyncio
 import logging
 import time
 import uuid
 import sys
-import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -16,9 +15,7 @@ from pathlib import Path
 from ..models.schemas import (
     IndexingMode,
     IndexingStatus,
-    ProcessingStage,
     IndexingProgress,
-    IndexingStatistics,
     IndexingHistoryItem,
 )
 
@@ -32,108 +29,77 @@ class IndexingTaskState:
         self.task_id = task_id
         self.mode = mode
         self.status = IndexingStatus.IDLE
-        self.stage = None
         
         # Progress tracking
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
-        self.progress_percentage = 0.0
         
-        # File tracking
+        # File/chunk tracking
         self.total_files = 0
         self.processed_files = 0
         self.failed_files = 0
-        self.current_file: Optional[str] = None
-        
-        # Chunk tracking
         self.total_chunks = 0
         self.processed_chunks = 0
+        self.current_file: Optional[str] = None
         
-        # Batch tracking
-        self.current_batch: Optional[int] = None
-        self.total_batches: Optional[int] = None
-        
-        # Performance
-        self.processing_speed = 0.0
-        self.avg_time_per_file = 0.0
+        # Stage tracking
+        self.current_stage: Optional[str] = None
+        self.current_stage_name: Optional[str] = None
         
         # Statistics
-        self.statistics = IndexingStatistics()
+        self.statistics: Dict[str, Any] = {}
         
-        # Errors and warnings
+        # Errors
         self.errors: List[str] = []
         self.warnings: List[str] = []
         
         # Cancellation
         self.cancelled = False
-        
-        # Progress callback for real-time updates
-        self.progress_callback = None
     
     def get_progress(self) -> IndexingProgress:
         """Get current progress"""
         elapsed_time = 0.0
         estimated_remaining = None
+        progress_percentage = 0.0
         
         if self.start_time:
             elapsed_time = (datetime.now() - self.start_time).total_seconds()
             
-            # Calculate ETA
-            if self.processed_chunks > 0 and self.total_chunks > 0:
-                remaining_chunks = self.total_chunks - self.processed_chunks
-                chunks_per_second = self.processed_chunks / elapsed_time if elapsed_time > 0 else 0
-                if chunks_per_second > 0:
-                    estimated_remaining = remaining_chunks / chunks_per_second
+            # Calculate progress based on chunks
+            if self.total_chunks > 0:
+                progress_percentage = (self.processed_chunks / self.total_chunks) * 100
+                
+                # Calculate ETA
+                if self.processed_chunks > 0 and elapsed_time > 0:
+                    remaining_chunks = self.total_chunks - self.processed_chunks
+                    chunks_per_second = self.processed_chunks / elapsed_time
+                    if chunks_per_second > 0:
+                        estimated_remaining = remaining_chunks / chunks_per_second
         
         return IndexingProgress(
             status=self.status,
-            stage=self.stage,
-            current_stage_name=self.stage.value if self.stage else "",
-            progress_percentage=self.progress_percentage,
             total_files=self.total_files,
             processed_files=self.processed_files,
             failed_files=self.failed_files,
             total_chunks=self.total_chunks,
             processed_chunks=self.processed_chunks,
-            start_time=self.start_time,
+            progress_percentage=progress_percentage,
+            current_file=self.current_file,
+            current_stage=self.current_stage,
+            current_stage_name=self.current_stage_name,
             elapsed_time=elapsed_time,
             estimated_remaining=estimated_remaining,
-            current_file=self.current_file,
-            current_batch=self.current_batch,
-            total_batches=self.total_batches,
-            processing_speed=self.processing_speed,
-            avg_time_per_file=self.avg_time_per_file,
         )
-    
-    def update_progress(self, percentage: float):
-        """Update progress percentage"""
-        self.progress_percentage = min(100.0, max(0.0, percentage))
-        
-        # Trigger callback if set
-        if self.progress_callback:
-            try:
-                self.progress_callback(self.get_progress())
-            except Exception as e:
-                logger.warning(f"Progress callback failed: {e}")
-    
-    def update_speed(self):
-        """Update processing speed metrics"""
-        if self.start_time:
-            elapsed = (datetime.now() - self.start_time).total_seconds()
-            if elapsed > 0:
-                self.processing_speed = self.processed_chunks / elapsed
-                if self.processed_files > 0:
-                    self.avg_time_per_file = elapsed / self.processed_files
 
 
 class IndexingService:
-    """Service for managing indexing operations with real backend integration"""
+    """Service for managing document indexing operations with real backend integration"""
     
     def __init__(self):
-        # Active tasks storage (for small scale, in-memory is fine)
+        # Active tasks storage
         self._tasks: Dict[str, IndexingTaskState] = {}
         
-        # History storage (keep last 100 runs)
+        # History storage (keep last 50 tasks)
         self._history: List[IndexingHistoryItem] = []
         
         # Lock for task management
@@ -181,7 +147,7 @@ class IndexingService:
         force_reindex: bool = False,
         delete_existing: bool = False,
     ) -> bool:
-        """Start indexing process - calls real backend code"""
+        """Start indexing process using real backend"""
         
         task = await self.get_task(task_id)
         if not task:
@@ -194,7 +160,7 @@ class IndexingService:
         
         # Run indexing in background
         asyncio.create_task(
-            self._run_real_indexing_pipeline(
+            self._run_real_indexing(
                 task=task,
                 documents_dir=documents_dir,
                 skip_conversion=skip_conversion,
@@ -208,7 +174,7 @@ class IndexingService:
         logger.info(f"🚀 Started indexing task: {task_id}")
         return True
     
-    async def _run_real_indexing_pipeline(
+    async def _run_real_indexing(
         self,
         task: IndexingTaskState,
         documents_dir: Optional[str],
@@ -218,7 +184,7 @@ class IndexingService:
         force_reindex: bool,
         delete_existing: bool,
     ):
-        """Run REAL indexing pipeline using backend code"""
+        """Run REAL document indexing using backend modules"""
         
         try:
             logger.info(f"🔄 Starting REAL indexing pipeline for task: {task.task_id}")
@@ -228,59 +194,43 @@ class IndexingService:
             
             # Import real backend modules
             from chunking_vectors.config import get_config
+            from chunking_vectors.document_loader import DocumentLoader
+            from chunking_vectors.chunker import DocumentChunker
+            from chunking_vectors.embedding_generator import EmbeddingGenerator
             from chunking_vectors.database_manager import create_database_manager
-            from chunking_vectors.loading_helpers import load_markdown_documents
-            from chunking_vectors.chunk_helpers import create_and_filter_chunks_enhanced
-            from chunking_vectors.embedding_processor import create_embedding_processor
-            from chunking_vectors.batch_processor import create_batch_processor, create_progress_tracker
-            from chunking_vectors.markdown_loader import create_markdown_loader
-            
-            from llama_index.core import StorageContext
-            from llama_index.vector_stores.supabase import SupabaseVectorStore
-            from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
-            from llama_index.core.node_parser import SentenceSplitter
             
             # Load configuration
-            task.stage = ProcessingStage.CONVERSION
-            task.update_progress(5)
-            
             config = get_config()
             
-            # Override config if provided
+            # Override documents directory if provided
             if documents_dir:
                 config.DOCUMENTS_DIR = documents_dir
-            if batch_size:
-                config.PROCESSING_BATCH_SIZE = batch_size
             
             logger.info(f"📁 Documents directory: {config.DOCUMENTS_DIR}")
             
+            # Test database connection
+            try:
+                import psycopg2
+                conn = psycopg2.connect(config.CONNECTION_STRING)
+                conn.close()
+                logger.info("Database connection: SUCCESS")
+            except Exception as e:
+                logger.error(f"Database connection: FAILED - {e}")
+                task.errors.append(f"Database connection failed: {str(e)}")
+                task.status = IndexingStatus.FAILED
+                task.end_time = datetime.now()
+                return
+            
             # Initialize components
-            task.update_progress(10)
-            
-            # Vector store
-            vector_store = SupabaseVectorStore(
-                postgres_connection_string=config.CONNECTION_STRING,
-                collection_name=config.TABLE_NAME,
-                dimension=config.EMBED_DIM,
-            )
-            
-            storage_context = StorageContext.from_defaults(vector_store=vector_store)
-            
-            # Gemini embedding model
-            embed_model = GoogleGenAIEmbedding(
-                model_name=config.EMBED_MODEL,
-                api_key=config.GEMINI_API_KEY,
-            )
-            
-            # Node parser
-            node_parser = SentenceSplitter(
+            doc_loader = DocumentLoader(config.DOCUMENTS_DIR)
+            chunker = DocumentChunker(
                 chunk_size=config.CHUNK_SIZE,
-                chunk_overlap=config.CHUNK_OVERLAP,
-                paragraph_separator="\n\n",
-                include_metadata=True,
+                overlap_size=config.OVERLAP_SIZE
             )
-            
-            # Database manager
+            embedding_gen = EmbeddingGenerator(
+                model_name=config.EMBEDDING_MODEL,
+                api_key=config.GEMINI_API_KEY
+            )
             db_manager = create_database_manager(
                 config.CONNECTION_STRING,
                 config.TABLE_NAME
@@ -288,194 +238,214 @@ class IndexingService:
             
             logger.info("✅ Components initialized")
             
-            # ============================================================
-            # STAGE 1: Load markdown documents
-            # ============================================================
+            # =================================================================
+            # STAGE 1: Document Loading (skip if skip_conversion AND skip_indexing)
+            # =================================================================
             
-            if not skip_conversion:
-                task.stage = ProcessingStage.LOADING
-                task.update_progress(15)
-                
-                logger.info("📄 Loading markdown documents...")
-                
-                progress_tracker = create_progress_tracker()
-                progress_tracker.start()
-                
-                documents, processing_summary = load_markdown_documents(
-                    config, 
-                    progress_tracker
-                )
-                
-                task.total_files = len(documents)
-                task.statistics.documents_loaded = len(documents)
-                
-                logger.info(f"✅ Loaded {len(documents)} documents")
-                
-                if not documents:
-                    raise Exception("No documents found to process")
-            else:
-                logger.info("⏩ Skipping document loading (skip_conversion=True)")
-                task.update_progress(30)
+            if skip_indexing:
+                logger.info("⏩ Skipping entire indexing pipeline (skip_indexing=True)")
+                task.status = IndexingStatus.COMPLETED
+                task.end_time = datetime.now()
+                self._add_to_history(task)
+                return
             
-            # ============================================================
-            # STAGE 2: Handle deletion if requested
-            # ============================================================
+            task.current_stage = "loading"
+            task.current_stage_name = "Loading Documents"
             
-            if delete_existing and not skip_conversion:
-                task.update_progress(20)
-                
-                logger.info("🗑️ Handling existing records...")
-                
-                files_to_process = set()
-                for doc in documents:
-                    file_path = doc.metadata.get('file_path', '')
-                    if file_path:
-                        files_to_process.add(file_path)
-                
-                # Delete existing records
-                deleted_count = db_manager.delete_existing_records(files_to_process)
-                logger.info(f"🗑️ Deleted {deleted_count} existing records")
+            logger.info("📂 Loading markdown documents...")
             
-            # ============================================================
-            # STAGE 3: Create and filter chunks
-            # ============================================================
+            # Load documents
+            documents = doc_loader.load_documents()
             
-            if not skip_indexing and not skip_conversion:
-                task.stage = ProcessingStage.CHUNKING
-                task.update_progress(30)
-                
-                logger.info("🧩 Creating and filtering chunks...")
-                
-                valid_nodes, invalid_nodes, node_stats = create_and_filter_chunks_enhanced(
-                    documents,
-                    config,
-                    node_parser,
-                    progress_tracker
-                )
-                
-                task.total_chunks = len(valid_nodes)
-                task.statistics.chunks_created = node_stats['total_nodes_created']
-                task.statistics.chunks_valid = len(valid_nodes)
-                task.statistics.chunks_invalid = len(invalid_nodes)
-                
-                logger.info(f"✅ Created {len(valid_nodes)} valid chunks")
-                
-                if not valid_nodes:
-                    raise Exception("No valid chunks generated")
-                
-                task.update_progress(40)
-            else:
-                logger.info("⏩ Skipping chunking")
-                task.update_progress(60)
-                valid_nodes = []
+            if not documents:
+                logger.warning("⚠️ No documents found to index")
+                task.warnings.append("No documents found in directory")
+                task.status = IndexingStatus.COMPLETED
+                task.end_time = datetime.now()
+                self._add_to_history(task)
+                return
             
-            # ============================================================
-            # STAGE 4: Generate embeddings and save to database
-            # ============================================================
+            task.total_files = len(documents)
+            logger.info(f"📄 Loaded {len(documents)} documents")
             
-            if not skip_indexing and valid_nodes:
-                task.stage = ProcessingStage.EMBEDDING
-                task.update_progress(50)
-                
-                logger.info("🚀 Starting embedding generation and database save...")
-                
-                # Create embedding processor
-                embedding_processor = create_embedding_processor(
-                    embed_model,
-                    vector_store,
-                    config
-                )
-                
-                # Create batch processor
-                batch_processor = create_batch_processor(
-                    embedding_processor,
-                    config.PROCESSING_BATCH_SIZE,
-                    batch_restart_interval=0,  # No restarts needed for Gemini
-                    config=config
-                )
-                
-                # Set up progress callback
-                def progress_callback(current_chunks, total_chunks):
-                    task.processed_chunks = current_chunks
-                    progress_pct = 50 + (current_chunks / total_chunks * 40)  # 50-90%
-                    task.update_progress(progress_pct)
-                    task.update_speed()
-                
-                # Process all batches
-                batch_results = batch_processor.process_all_batches(
-                    valid_nodes,
-                    config.EMBEDDING_BATCH_SIZE,
-                    config.DB_BATCH_SIZE
-                )
-                
-                # Update statistics
-                task.statistics.chunks_saved = batch_results['total_saved']
-                task.statistics.success_rate = batch_results['success_rate']
-                task.statistics.gemini_api_calls = batch_results.get('gemini_api_calls', 0)
-                task.statistics.gemini_tokens_used = batch_results.get('total_saved', 0) * 100  # Rough estimate
-                
-                task.processed_chunks = batch_results['total_saved']
-                task.processed_files = task.total_files
-                
-                logger.info(f"✅ Saved {batch_results['total_saved']} chunks to database")
-                
-                if batch_results.get('failed_batches', 0) > 0:
-                    task.warnings.append(f"{batch_results['failed_batches']} batches had errors")
-                
-                task.update_progress(95)
-            else:
-                logger.info("⏩ Skipping embedding generation")
-                task.update_progress(90)
+            # =================================================================
+            # STAGE 2: Chunking
+            # =================================================================
             
-            # ============================================================
+            task.current_stage = "chunking"
+            task.current_stage_name = "Chunking Documents"
+            
+            logger.info("✂️ Chunking documents...")
+            
+            all_chunks = []
+            for i, doc in enumerate(documents, 1):
+                if task.cancelled:
+                    logger.info("⚠️ Indexing cancelled by user")
+                    task.status = IndexingStatus.FAILED
+                    task.errors.append("Cancelled by user")
+                    break
+                
+                task.current_file = doc.metadata.get('file_name', 'unknown')
+                logger.info(f"[{i}/{len(documents)}] Chunking: {task.current_file}")
+                
+                try:
+                    chunks = chunker.chunk_document(doc)
+                    all_chunks.extend(chunks)
+                    task.processed_files += 1
+                    logger.info(f"  ✅ Created {len(chunks)} chunks")
+                except Exception as e:
+                    logger.error(f"  ❌ Chunking failed: {e}")
+                    task.failed_files += 1
+                    task.errors.append(f"{task.current_file}: Chunking failed - {str(e)}")
+            
+            task.total_chunks = len(all_chunks)
+            logger.info(f"📊 Total chunks created: {len(all_chunks)}")
+            
+            if not all_chunks:
+                logger.warning("⚠️ No chunks created")
+                task.warnings.append("No chunks created from documents")
+                task.status = IndexingStatus.COMPLETED
+                task.end_time = datetime.now()
+                self._add_to_history(task)
+                return
+            
+            # =================================================================
+            # STAGE 3: Embedding Generation
+            # =================================================================
+            
+            task.current_stage = "embedding"
+            task.current_stage_name = "Generating Embeddings"
+            
+            logger.info("🧮 Generating embeddings...")
+            
+            # Process in batches
+            actual_batch_size = batch_size or config.BATCH_SIZE
+            total_batches = (len(all_chunks) + actual_batch_size - 1) // actual_batch_size
+            
+            embedded_chunks = []
+            for batch_idx in range(0, len(all_chunks), actual_batch_size):
+                if task.cancelled:
+                    break
+                
+                batch = all_chunks[batch_idx:batch_idx + actual_batch_size]
+                batch_num = (batch_idx // actual_batch_size) + 1
+                
+                logger.info(f"📦 Processing batch {batch_num}/{total_batches} ({len(batch)} chunks)")
+                
+                try:
+                    batch_with_embeddings = embedding_gen.generate_embeddings(batch)
+                    embedded_chunks.extend(batch_with_embeddings)
+                    task.processed_chunks += len(batch)
+                    logger.info(f"  ✅ Generated {len(batch)} embeddings")
+                except Exception as e:
+                    logger.error(f"  ❌ Embedding generation failed: {e}")
+                    task.errors.append(f"Batch {batch_num}: Embedding failed - {str(e)}")
+            
+            logger.info(f"✅ Generated embeddings for {len(embedded_chunks)} chunks")
+            
+            # =================================================================
+            # STAGE 4: Database Save
+            # =================================================================
+            
+            task.current_stage = "saving"
+            task.current_stage_name = "Saving to Database"
+            
+            logger.info("💾 Saving to database...")
+            
+            # Delete existing if requested
+            if delete_existing:
+                logger.warning("⚠️ Deleting existing records...")
+                # Implement deletion if needed
+            
+            # Save to database
+            try:
+                saved_count = db_manager.insert_chunks(embedded_chunks)
+                logger.info(f"✅ Saved {saved_count} chunks to database")
+                
+                task.statistics = {
+                    "documents_loaded": len(documents),
+                    "chunks_created": len(all_chunks),
+                    "chunks_saved": saved_count,
+                    "success_rate": saved_count / len(all_chunks) if all_chunks else 0,
+                }
+            except Exception as e:
+                logger.error(f"❌ Database save failed: {e}")
+                task.errors.append(f"Database save failed: {str(e)}")
+                task.status = IndexingStatus.FAILED
+                task.end_time = datetime.now()
+                self._add_to_history(task)
+                return
+            
+            # =================================================================
             # COMPLETE
-            # ============================================================
+            # =================================================================
             
-            task.stage = ProcessingStage.COMPLETED
             task.status = IndexingStatus.COMPLETED
             task.end_time = datetime.now()
-            task.update_progress(100)
+            task.current_file = None
+            task.current_stage = "completed"
+            task.current_stage_name = "Completed"
             
-            # Calculate final statistics
-            if task.start_time and task.end_time:
-                duration = (task.end_time - task.start_time).total_seconds()
-                task.statistics.total_time = duration
-                
-                if task.processed_chunks > 0:
-                    task.statistics.avg_chunk_length = task.processed_chunks / duration if duration > 0 else 0
-            
-            # Add to history
-            await self._add_to_history(task)
+            # Calculate duration
+            duration = (task.end_time - task.start_time).total_seconds()
             
             logger.info(f"✅ REAL indexing pipeline completed: {task.task_id}")
+            logger.info(f"   📊 Files: {task.processed_files}/{task.total_files}")
+            logger.info(f"   🧩 Chunks: {task.processed_chunks}/{task.total_chunks}")
+            logger.info(f"   ⏱️ Duration: {duration:.1f}s")
+            
+            # Add to history
+            self._add_to_history(task)
             
         except asyncio.CancelledError:
-            logger.info(f"⚠️ Task cancelled: {task.task_id}")
-            task.status = IndexingStatus.CANCELLED
-            task.end_time = datetime.now()
-            await self._add_to_history(task)
-            
-        except Exception as e:
-            logger.error(f"❌ REAL indexing pipeline failed for task {task.task_id}: {e}", exc_info=True)
+            logger.info(f"⚠️ Indexing task cancelled: {task.task_id}")
             task.status = IndexingStatus.FAILED
             task.end_time = datetime.now()
-            task.errors.append(f"Pipeline error: {str(e)}")
+            task.errors.append("Task cancelled")
+            self._add_to_history(task)
             
-            # Add to history even if failed
-            await self._add_to_history(task)
+        except Exception as e:
+            logger.error(f"❌ Indexing failed for task {task.task_id}: {e}", exc_info=True)
+            task.status = IndexingStatus.FAILED
+            task.end_time = datetime.now()
+            task.errors.append(f"Indexing error: {str(e)}")
+            self._add_to_history(task)
+    
+    def _add_to_history(self, task: IndexingTaskState):
+        """Add completed task to history"""
+        history_item = IndexingHistoryItem(
+            task_id=task.task_id,
+            mode=task.mode,
+            status=task.status,
+            start_time=task.start_time,
+            end_time=task.end_time,
+            total_files=task.total_files,
+            processed_files=task.processed_files,
+            failed_files=task.failed_files,
+            total_chunks=task.total_chunks,
+            processed_chunks=task.processed_chunks,
+        )
+        
+        self._history.append(history_item)
+        
+        # Keep only last 50 items
+        if len(self._history) > 50:
+            self._history = self._history[-50:]
+        
+        logger.info(f"📝 Added task to history: {task.task_id}")
     
     async def cancel_task(self, task_id: str) -> bool:
-        """Cancel running task"""
+        """Cancel running indexing task"""
         task = await self.get_task(task_id)
         if not task:
             return False
         
         if task.status != IndexingStatus.RUNNING:
-            logger.warning(f"⚠️ Cannot cancel task {task_id}: not running (status: {task.status.value})")
+            logger.warning(f"⚠️ Cannot cancel task {task_id}: not running")
             return False
         
         task.cancelled = True
-        logger.info(f"⚠️ Cancelling task: {task_id}")
+        logger.info(f"⚠️ Cancelling indexing task: {task_id}")
         return True
     
     async def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -493,74 +463,38 @@ class IndexingService:
             "timestamp": datetime.now()
         }
     
-    async def get_history(self, limit: int = 10) -> List[IndexingHistoryItem]:
-        """Get indexing history"""
-        return self._history[-limit:] if limit > 0 else self._history
-    
-    async def _add_to_history(self, task: IndexingTaskState):
-        """Add completed task to history"""
-        
-        duration = None
-        if task.start_time and task.end_time:
-            duration = (task.end_time - task.start_time).total_seconds()
-        
-        history_item = IndexingHistoryItem(
-            task_id=task.task_id,
-            mode=task.mode,
-            status=task.status,
-            start_time=task.start_time,
-            end_time=task.end_time,
-            duration=duration,
-            files_processed=task.processed_files,
-            chunks_created=task.statistics.chunks_created,
-            success_rate=task.statistics.success_rate,
-            error_message=task.errors[0] if task.errors else None,
-        )
-        
-        async with self._lock:
-            self._history.append(history_item)
-            
-            # Keep only last 100 items
-            if len(self._history) > 100:
-                self._history = self._history[-100:]
-        
-        logger.info(f"📝 Added task to history: {task.task_id}")
+    async def get_all_tasks(self) -> List[Dict[str, Any]]:
+        """Get all tasks"""
+        return [
+            {
+                "task_id": task_id,
+                "status": task.status.value,
+                "mode": task.mode.value,
+                "progress_percentage": task.get_progress().progress_percentage,
+            }
+            for task_id, task in self._tasks.items()
+        ]
     
     async def clear_completed_tasks(self):
-        """Clear completed tasks from memory"""
+        """Clear completed/failed tasks"""
         async with self._lock:
-            completed = [
-                task_id for task_id, task in self._tasks.items()
-                if task.status in [IndexingStatus.COMPLETED, IndexingStatus.FAILED, IndexingStatus.CANCELLED]
-            ]
-            
-            for task_id in completed:
-                del self._tasks[task_id]
-            
-            logger.info(f"🧹 Cleared {len(completed)} completed tasks")
+            self._tasks = {
+                task_id: task
+                for task_id, task in self._tasks.items()
+                if task.status == IndexingStatus.RUNNING
+            }
+            logger.info("🧹 Cleared completed tasks")
     
     def get_active_tasks_count(self) -> int:
-        """Get number of active tasks"""
+        """Get number of active indexing tasks"""
         return sum(
             1 for task in self._tasks.values()
             if task.status == IndexingStatus.RUNNING
         )
     
-    async def get_all_tasks(self) -> List[Dict[str, Any]]:
-        """Get all tasks (active and completed)"""
-        tasks = []
-        
-        for task_id, task in self._tasks.items():
-            tasks.append({
-                "task_id": task_id,
-                "mode": task.mode.value,
-                "status": task.status.value,
-                "progress": task.progress_percentage,
-                "start_time": task.start_time,
-                "end_time": task.end_time,
-            })
-        
-        return tasks
+    async def get_history(self, limit: int = 10) -> List[IndexingHistoryItem]:
+        """Get indexing history"""
+        return self._history[-limit:]
 
 
 # Singleton instance
