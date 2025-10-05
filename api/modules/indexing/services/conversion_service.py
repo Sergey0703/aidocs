@@ -189,11 +189,22 @@ class ConversionService:
             # Load Docling configuration
             config = get_docling_config()
             
+            # --- FIX: Resolve relative paths to absolute paths ---
+            current_file = Path(__file__)
+            project_root = current_file.parent.parent.parent.parent.parent
+            
+            # Default raw documents directory
+            default_raw_dir = project_root / "rag_indexer" / "data" / "raw"
+            default_raw_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Default markdown output directory
+            default_md_dir = project_root / "rag_indexer" / "data" / "markdown"
+            default_md_dir.mkdir(parents=True, exist_ok=True)
+            
             # Override config if provided
-            if input_dir:
-                config.RAW_DOCUMENTS_DIR = input_dir
-            if output_dir:
-                config.MARKDOWN_OUTPUT_DIR = output_dir
+            config.RAW_DOCUMENTS_DIR = input_dir if input_dir else str(default_raw_dir)
+            config.MARKDOWN_OUTPUT_DIR = output_dir if output_dir else str(default_md_dir)
+            
             if enable_ocr is not None:
                 config.ENABLE_OCR = enable_ocr
             if max_file_size_mb is not None:

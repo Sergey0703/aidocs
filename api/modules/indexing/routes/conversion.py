@@ -563,32 +563,24 @@ async def get_conversion_history(limit: int = 10):
         
         logger.info(f"Retrieved {len(history)} conversion history items")
         
-        # Convert history items to ConversionStatusResponse format
-        response_list = []
-        for item in history:
-            # Create progress from history item
-            progress = ConversionProgress(
-                status=ConversionStatus(item['status']),
-                total_files=item['total_files'],
-                converted_files=item['converted_files'],
-                failed_files=item['failed_files'],
-                skipped_files=0,
-                progress_percentage=100.0 if item['status'] == 'completed' else 0.0,
-                current_file=None,
-                elapsed_time=item.get('duration', 0) or 0,
-                estimated_remaining=None,
-            )
-            
-            response_list.append(
-                ConversionStatusResponse(
-                    task_id=item['task_id'],
-                    progress=progress,
-                    results=[],
-                )
-            )
-        
-        return response_list
-        
+        # Convert history items to the expected ConversionStatusResponse format
+        return [
+            ConversionStatusResponse(
+                task_id=item['task_id'],
+                progress=ConversionProgress(
+                    status=ConversionStatus(item['status']),
+                    total_files=item['total_files'],
+                    converted_files=item['converted_files'],
+                    failed_files=item['failed_files'],
+                    skipped_files=0,
+                    progress_percentage=100.0,
+                    current_file=None,
+                    elapsed_time=item.get('duration', 0) or 0,
+                    estimated_remaining=None,
+                ),
+                results=[],  # Results are not typically needed for history view
+            ) for item in history
+        ]
     except HTTPException:
         raise
     except Exception as e:
