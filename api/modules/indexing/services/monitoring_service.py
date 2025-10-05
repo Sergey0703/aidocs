@@ -26,9 +26,6 @@ class MonitoringService:
     """Service for monitoring indexing operations with real metrics"""
     
     def __init__(self):
-        # Add backend path to sys.path
-        self._setup_backend_path()
-        
         # Cache for metrics
         self._metrics_cache = {}
         self._cache_timeout = 10  # seconds
@@ -53,6 +50,9 @@ class MonitoringService:
     def _get_config(self):
         """Get configuration"""
         try:
+            # Add backend path to sys.path just-in-time
+            self._setup_backend_path()
+            
             from chunking_vectors.config import get_config
             return get_config()
         except Exception as e:
@@ -62,6 +62,9 @@ class MonitoringService:
     def _get_db_connection(self):
         """Get database connection"""
         try:
+            # Add backend path to sys.path just-in-time
+            self._setup_backend_path()
+            
             import psycopg2
             config = self._get_config()
             if config:

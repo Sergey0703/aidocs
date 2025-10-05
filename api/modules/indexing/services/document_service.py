@@ -25,9 +25,6 @@ class DocumentService:
         self._db_manager = None
         self._config = None
         
-        # Add backend path to sys.path
-        self._setup_backend_path()
-        
         logger.info("✅ DocumentService initialized")
     
     def _setup_backend_path(self):
@@ -48,6 +45,9 @@ class DocumentService:
     def _get_db_manager(self):
         """Lazy initialization of database manager"""
         if self._db_manager is None:
+            # Add backend path to sys.path just-in-time
+            self._setup_backend_path()
+            
             try:
                 from chunking_vectors.database_manager import create_database_manager
                 from chunking_vectors.config import get_config

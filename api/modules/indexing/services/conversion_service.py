@@ -92,9 +92,6 @@ class ConversionService:
         # Lock for task management
         self._lock = asyncio.Lock()
         
-        # Add backend path to sys.path
-        self._setup_backend_path()
-        
         logger.info("✅ ConversionService initialized with Docling integration")
     
     def _setup_backend_path(self):
@@ -178,6 +175,9 @@ class ConversionService:
         
         try:
             logger.info(f"🔄 Starting REAL conversion for task: {task.task_id}")
+            
+            # Add backend path to sys.path just-in-time
+            self._setup_backend_path()
             
             # Import real Docling modules
             from docling_processor import (

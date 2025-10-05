@@ -139,9 +139,6 @@ class IndexingService:
         # Lock for task management
         self._lock = asyncio.Lock()
         
-        # Add backend path to sys.path
-        self._setup_backend_path()
-        
         logger.info("✅ IndexingService initialized with backend integration")
     
     def _setup_backend_path(self):
@@ -225,6 +222,9 @@ class IndexingService:
         
         try:
             logger.info(f"🔄 Starting REAL indexing pipeline for task: {task.task_id}")
+            
+            # Add backend path to sys.path just-in-time
+            self._setup_backend_path()
             
             # Import real backend modules
             from chunking_vectors.config import get_config
