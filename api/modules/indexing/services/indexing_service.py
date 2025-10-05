@@ -1,10 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # api/modules/indexing/services/indexing_service.py
-# Business logic for indexing operations
+# Real implementation with backend integration
 
 import asyncio
 import logging
 import time
 import uuid
+import sys
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -62,6 +66,9 @@ class IndexingTaskState:
         
         # Cancellation
         self.cancelled = False
+        
+        # Progress callback for real-time updates
+        self.progress_callback = None
     
     def get_progress(self) -> IndexingProgress:
         """Get current progress"""
@@ -101,6 +108,13 @@ class IndexingTaskState:
     def update_progress(self, percentage: float):
         """Update progress percentage"""
         self.progress_percentage = min(100.0, max(0.0, percentage))
+        
+        # Trigger callback if set
+        if self.progress_callback:
+            try:
+                self.progress_callback(self.get_progress())
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
     
     def update_speed(self):
         """Update processing speed metrics"""
@@ -113,19 +127,38 @@ class IndexingTaskState:
 
 
 class IndexingService:
-    """Service for managing indexing operations"""
+    """Service for managing indexing operations with real backend integration"""
     
     def __init__(self):
-        # Active tasks storage (in production, use Redis or database)
+        # Active tasks storage (for small scale, in-memory is fine)
         self._tasks: Dict[str, IndexingTaskState] = {}
         
-        # History storage (in production, use database)
+        # History storage (keep last 100 runs)
         self._history: List[IndexingHistoryItem] = []
         
         # Lock for task management
         self._lock = asyncio.Lock()
         
-        logger.info("✅ IndexingService initialized")
+        # Add backend path to sys.path
+        self._setup_backend_path()
+        
+        logger.info("✅ IndexingService initialized with backend integration")
+    
+    def _setup_backend_path(self):
+        """Add rag_indexer to Python path"""
+        try:
+            # Get path to rag_indexer directory
+            current_file = Path(__file__)
+            project_root = current_file.parent.parent.parent.parent.parent
+            backend_path = project_root / "rag_indexer"
+            
+            if backend_path.exists():
+                sys.path.insert(0, str(backend_path))
+                logger.info(f"Added backend path: {backend_path}")
+            else:
+                logger.warning(f"Backend path not found: {backend_path}")
+        except Exception as e:
+            logger.error(f"Failed to setup backend path: {e}")
     
     async def create_task(self, mode: IndexingMode) -> str:
         """Create new indexing task"""
@@ -151,7 +184,7 @@ class IndexingService:
         force_reindex: bool = False,
         delete_existing: bool = False,
     ) -> bool:
-        """Start indexing process in background"""
+        """Start indexing process - calls real backend code"""
         
         task = await self.get_task(task_id)
         if not task:
@@ -164,7 +197,7 @@ class IndexingService:
         
         # Run indexing in background
         asyncio.create_task(
-            self._run_indexing_pipeline(
+            self._run_real_indexing_pipeline(
                 task=task,
                 documents_dir=documents_dir,
                 skip_conversion=skip_conversion,
@@ -178,7 +211,7 @@ class IndexingService:
         logger.info(f"🚀 Started indexing task: {task_id}")
         return True
     
-    async def _run_indexing_pipeline(
+    async def _run_real_indexing_pipeline(
         self,
         task: IndexingTaskState,
         documents_dir: Optional[str],
@@ -188,158 +221,248 @@ class IndexingService:
         force_reindex: bool,
         delete_existing: bool,
     ):
-        """Run complete indexing pipeline"""
+        """Run REAL indexing pipeline using backend code"""
         
         try:
-            logger.info(f"🔄 Starting indexing pipeline for task: {task.task_id}")
+            logger.info(f"🔄 Starting REAL indexing pipeline for task: {task.task_id}")
             
-            # Import rag_indexer modules
-            import sys
-            from pathlib import Path as PathLib
+            # Import real backend modules
+            from chunking_vectors.config import get_config
+            from chunking_vectors.database_manager import create_database_manager
+            from chunking_vectors.loading_helpers import load_markdown_documents
+            from chunking_vectors.chunk_helpers import create_and_filter_chunks_enhanced
+            from chunking_vectors.embedding_processor import create_embedding_processor
+            from chunking_vectors.batch_processor import create_batch_processor, create_progress_tracker
+            from chunking_vectors.markdown_loader import create_markdown_loader
             
-            # Add rag_indexer to path
-            indexer_path = PathLib(__file__).parent.parent.parent.parent.parent / "rag_indexer"
-            if str(indexer_path) not in sys.path:
-                sys.path.insert(0, str(indexer_path))
+            from llama_index.core import StorageContext
+            from llama_index.vector_stores.supabase import SupabaseVectorStore
+            from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+            from llama_index.core.node_parser import SentenceSplitter
             
-            # Stage 1: Document Conversion (if not skipped)
+            # Load configuration
+            task.stage = ProcessingStage.CONVERSION
+            task.update_progress(5)
+            
+            config = get_config()
+            
+            # Override config if provided
+            if documents_dir:
+                config.DOCUMENTS_DIR = documents_dir
+            if batch_size:
+                config.PROCESSING_BATCH_SIZE = batch_size
+            
+            logger.info(f"📁 Documents directory: {config.DOCUMENTS_DIR}")
+            
+            # Initialize components
+            task.update_progress(10)
+            
+            # Vector store
+            vector_store = SupabaseVectorStore(
+                postgres_connection_string=config.CONNECTION_STRING,
+                collection_name=config.TABLE_NAME,
+                dimension=config.EMBED_DIM,
+            )
+            
+            storage_context = StorageContext.from_defaults(vector_store=vector_store)
+            
+            # Gemini embedding model
+            embed_model = GoogleGenAIEmbedding(
+                model_name=config.EMBED_MODEL,
+                api_key=config.GEMINI_API_KEY,
+            )
+            
+            # Node parser
+            node_parser = SentenceSplitter(
+                chunk_size=config.CHUNK_SIZE,
+                chunk_overlap=config.CHUNK_OVERLAP,
+                paragraph_separator="\n\n",
+                include_metadata=True,
+            )
+            
+            # Database manager
+            db_manager = create_database_manager(
+                config.CONNECTION_STRING,
+                config.TABLE_NAME
+            )
+            
+            logger.info("✅ Components initialized")
+            
+            # ============================================================
+            # STAGE 1: Load markdown documents
+            # ============================================================
+            
             if not skip_conversion:
-                await self._run_conversion_stage(task, documents_dir)
+                task.stage = ProcessingStage.LOADING
+                task.update_progress(15)
                 
-                if task.cancelled:
-                    logger.info(f"⚠️ Task cancelled during conversion: {task.task_id}")
-                    task.status = IndexingStatus.CANCELLED
-                    return
-            
-            # Stage 2: Vector Indexing (if not skipped)
-            if not skip_indexing:
-                await self._run_indexing_stage(
-                    task=task,
-                    documents_dir=documents_dir,
-                    batch_size=batch_size,
-                    force_reindex=force_reindex,
-                    delete_existing=delete_existing,
+                logger.info("📄 Loading markdown documents...")
+                
+                progress_tracker = create_progress_tracker()
+                progress_tracker.start()
+                
+                documents, processing_summary = load_markdown_documents(
+                    config, 
+                    progress_tracker
                 )
                 
-                if task.cancelled:
-                    logger.info(f"⚠️ Task cancelled during indexing: {task.task_id}")
-                    task.status = IndexingStatus.CANCELLED
-                    return
+                task.total_files = len(documents)
+                task.statistics.documents_loaded = len(documents)
+                
+                logger.info(f"✅ Loaded {len(documents)} documents")
+                
+                if not documents:
+                    raise Exception("No documents found to process")
+            else:
+                logger.info("⏩ Skipping document loading (skip_conversion=True)")
+                task.update_progress(30)
             
-            # Complete task
+            # ============================================================
+            # STAGE 2: Handle deletion if requested
+            # ============================================================
+            
+            if delete_existing and not skip_conversion:
+                task.update_progress(20)
+                
+                logger.info("🗑️ Handling existing records...")
+                
+                files_to_process = set()
+                for doc in documents:
+                    file_path = doc.metadata.get('file_path', '')
+                    if file_path:
+                        files_to_process.add(file_path)
+                
+                # Delete existing records
+                deleted_count = db_manager.delete_existing_records(files_to_process)
+                logger.info(f"🗑️ Deleted {deleted_count} existing records")
+            
+            # ============================================================
+            # STAGE 3: Create and filter chunks
+            # ============================================================
+            
+            if not skip_indexing and not skip_conversion:
+                task.stage = ProcessingStage.CHUNKING
+                task.update_progress(30)
+                
+                logger.info("🧩 Creating and filtering chunks...")
+                
+                valid_nodes, invalid_nodes, node_stats = create_and_filter_chunks_enhanced(
+                    documents,
+                    config,
+                    node_parser,
+                    progress_tracker
+                )
+                
+                task.total_chunks = len(valid_nodes)
+                task.statistics.chunks_created = node_stats['total_nodes_created']
+                task.statistics.chunks_valid = len(valid_nodes)
+                task.statistics.chunks_invalid = len(invalid_nodes)
+                
+                logger.info(f"✅ Created {len(valid_nodes)} valid chunks")
+                
+                if not valid_nodes:
+                    raise Exception("No valid chunks generated")
+                
+                task.update_progress(40)
+            else:
+                logger.info("⏩ Skipping chunking")
+                task.update_progress(60)
+                valid_nodes = []
+            
+            # ============================================================
+            # STAGE 4: Generate embeddings and save to database
+            # ============================================================
+            
+            if not skip_indexing and valid_nodes:
+                task.stage = ProcessingStage.EMBEDDING
+                task.update_progress(50)
+                
+                logger.info("🚀 Starting embedding generation and database save...")
+                
+                # Create embedding processor
+                embedding_processor = create_embedding_processor(
+                    embed_model,
+                    vector_store,
+                    config
+                )
+                
+                # Create batch processor
+                batch_processor = create_batch_processor(
+                    embedding_processor,
+                    config.PROCESSING_BATCH_SIZE,
+                    batch_restart_interval=0,  # No restarts needed for Gemini
+                    config=config
+                )
+                
+                # Set up progress callback
+                def progress_callback(current_chunks, total_chunks):
+                    task.processed_chunks = current_chunks
+                    progress_pct = 50 + (current_chunks / total_chunks * 40)  # 50-90%
+                    task.update_progress(progress_pct)
+                    task.update_speed()
+                
+                # Process all batches
+                batch_results = batch_processor.process_all_batches(
+                    valid_nodes,
+                    config.EMBEDDING_BATCH_SIZE,
+                    config.DB_BATCH_SIZE
+                )
+                
+                # Update statistics
+                task.statistics.chunks_saved = batch_results['total_saved']
+                task.statistics.success_rate = batch_results['success_rate']
+                task.statistics.gemini_api_calls = batch_results.get('gemini_api_calls', 0)
+                task.statistics.gemini_tokens_used = batch_results.get('total_saved', 0) * 100  # Rough estimate
+                
+                task.processed_chunks = batch_results['total_saved']
+                task.processed_files = task.total_files
+                
+                logger.info(f"✅ Saved {batch_results['total_saved']} chunks to database")
+                
+                if batch_results.get('failed_batches', 0) > 0:
+                    task.warnings.append(f"{batch_results['failed_batches']} batches had errors")
+                
+                task.update_progress(95)
+            else:
+                logger.info("⏩ Skipping embedding generation")
+                task.update_progress(90)
+            
+            # ============================================================
+            # COMPLETE
+            # ============================================================
+            
+            task.stage = ProcessingStage.COMPLETED
             task.status = IndexingStatus.COMPLETED
             task.end_time = datetime.now()
-            task.progress_percentage = 100.0
+            task.update_progress(100)
+            
+            # Calculate final statistics
+            if task.start_time and task.end_time:
+                duration = (task.end_time - task.start_time).total_seconds()
+                task.statistics.total_time = duration
+                
+                if task.processed_chunks > 0:
+                    task.statistics.avg_chunk_length = task.processed_chunks / duration if duration > 0 else 0
             
             # Add to history
             await self._add_to_history(task)
             
-            logger.info(f"✅ Indexing pipeline completed: {task.task_id}")
+            logger.info(f"✅ REAL indexing pipeline completed: {task.task_id}")
+            
+        except asyncio.CancelledError:
+            logger.info(f"⚠️ Task cancelled: {task.task_id}")
+            task.status = IndexingStatus.CANCELLED
+            task.end_time = datetime.now()
+            await self._add_to_history(task)
             
         except Exception as e:
-            logger.error(f"❌ Indexing pipeline failed for task {task.task_id}: {e}", exc_info=True)
+            logger.error(f"❌ REAL indexing pipeline failed for task {task.task_id}: {e}", exc_info=True)
             task.status = IndexingStatus.FAILED
             task.end_time = datetime.now()
             task.errors.append(f"Pipeline error: {str(e)}")
             
             # Add to history even if failed
             await self._add_to_history(task)
-    
-    async def _run_conversion_stage(self, task: IndexingTaskState, documents_dir: Optional[str]):
-        """Run document conversion stage (Part 1) - Real Docling integration"""
-        
-        task.stage = ProcessingStage.CONVERSION
-        logger.info(f"📄 Stage 1: Document Conversion - Task {task.task_id}")
-        
-        try:
-            # Import Docling processor modules
-            from docling_processor import (
-                get_docling_config,
-                create_document_scanner,
-                create_document_converter
-            )
-            
-            # Get configuration
-            config = get_docling_config()
-            if documents_dir:
-                config.RAW_DOCUMENTS_DIR = documents_dir
-            
-            logger.info(f"📂 Scanning documents in: {config.RAW_DOCUMENTS_DIR}")
-            
-            # Scan for documents
-            scanner = create_document_scanner(config)
-            files_to_process = scanner.scan_directory()
-            
-            task.total_files = len(files_to_process)
-            logger.info(f"📄 Found {task.total_files} files to convert")
-            
-            if task.total_files == 0:
-                logger.info("No files to convert")
-                return
-            
-            # Filter already converted (incremental mode)
-            if task.mode == IndexingMode.INCREMENTAL:
-                files_to_process = scanner.filter_already_converted(
-                    files_to_process,
-                    incremental=True
-                )
-                task.total_files = len(files_to_process)
-                logger.info(f"🔄 Incremental mode: {task.total_files} new/modified files")
-            
-            if task.total_files == 0:
-                logger.info("All files already converted")
-                return
-            
-            # Create converter
-            converter = create_document_converter(config)
-            
-            # Convert documents
-            logger.info(f"🔄 Starting conversion of {task.total_files} files...")
-            results = converter.convert_batch(files_to_process)
-            
-            # Update task statistics
-            task.processed_files = results['successful']
-            task.failed_files = results['failed']
-            task.statistics.documents_converted = results['successful']
-            
-            logger.info(f"✅ Conversion completed: {task.processed_files}/{task.total_files} files")
-            
-            if results['failed'] > 0:
-                task.warnings.append(f"{results['failed']} files failed conversion")
-            
-        except Exception as e:
-            logger.error(f"❌ Conversion stage failed: {e}", exc_info=True)
-            task.errors.append(f"Conversion stage error: {str(e)}")
-            raise
-    
-    async def _run_indexing_stage(
-        self,
-        task: IndexingTaskState,
-        documents_dir: Optional[str],
-        batch_size: Optional[int],
-        force_reindex: bool,
-        delete_existing: bool,
-    ):
-        """Run vector indexing stage (Part 2)"""
-        
-        task.stage = ProcessingStage.LOADING
-        logger.info(f"🧩 Stage 2: Vector Indexing - Task {task.task_id}")
-        
-        try:
-            # TODO: Import and run vector indexing
-            # This is a placeholder - needs actual implementation
-            
-            task.total_chunks = 100  # Placeholder
-            task.processed_chunks = 100  # Placeholder
-            task.statistics.chunks_saved = 100
-            
-            task.stage = ProcessingStage.COMPLETED
-            logger.info(f"✅ Indexing stage completed: {task.statistics.chunks_saved} chunks saved")
-            
-        except Exception as e:
-            logger.error(f"❌ Indexing stage failed: {e}", exc_info=True)
-            task.errors.append(f"Indexing stage error: {str(e)}")
-            raise
     
     async def cancel_task(self, task_id: str) -> bool:
         """Cancel running task"""
@@ -367,6 +490,7 @@ class IndexingService:
             "statistics": task.statistics,
             "errors": task.errors,
             "warnings": task.warnings,
+            "timestamp": datetime.now()
         }
     
     async def get_history(self, limit: int = 10) -> List[IndexingHistoryItem]:
@@ -421,6 +545,22 @@ class IndexingService:
             1 for task in self._tasks.values()
             if task.status == IndexingStatus.RUNNING
         )
+    
+    async def get_all_tasks(self) -> List[Dict[str, Any]]:
+        """Get all tasks (active and completed)"""
+        tasks = []
+        
+        for task_id, task in self._tasks.items():
+            tasks.append({
+                "task_id": task_id,
+                "mode": task.mode.value,
+                "status": task.status.value,
+                "progress": task.progress_percentage,
+                "start_time": task.start_time,
+                "end_time": task.end_time,
+            })
+        
+        return tasks
 
 
 # Singleton instance

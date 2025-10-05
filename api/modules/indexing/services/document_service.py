@@ -1,7 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # api/modules/indexing/services/document_service.py
-# Business logic for document management operations
+# Complete implementation with database integration
 
 import logging
+import sys
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 from pathlib import Path
@@ -16,24 +19,49 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentService:
-    """Service for managing document operations"""
+    """Service for managing document operations with full database integration"""
     
     def __init__(self):
         self._db_manager = None
         self._config = None
+        
+        # Add backend path to sys.path
+        self._setup_backend_path()
+        
         logger.info("✅ DocumentService initialized")
+    
+    def _setup_backend_path(self):
+        """Add rag_indexer to Python path"""
+        try:
+            current_file = Path(__file__)
+            project_root = current_file.parent.parent.parent.parent.parent
+            backend_path = project_root / "rag_indexer"
+            
+            if backend_path.exists():
+                sys.path.insert(0, str(backend_path))
+                logger.info(f"Added backend path: {backend_path}")
+            else:
+                logger.warning(f"Backend path not found: {backend_path}")
+        except Exception as e:
+            logger.error(f"Failed to setup backend path: {e}")
     
     def _get_db_manager(self):
         """Lazy initialization of database manager"""
         if self._db_manager is None:
-            from chunking_vectors.database_manager import create_database_manager
-            from chunking_vectors.config import get_config
-            
-            self._config = get_config()
-            self._db_manager = create_database_manager(
-                self._config.CONNECTION_STRING,
-                self._config.TABLE_NAME
-            )
+            try:
+                from chunking_vectors.database_manager import create_database_manager
+                from chunking_vectors.config import get_config
+                
+                self._config = get_config()
+                self._db_manager = create_database_manager(
+                    self._config.CONNECTION_STRING,
+                    self._config.TABLE_NAME
+                )
+                
+                logger.info("✅ Database manager initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize database manager: {e}")
+                raise
         
         return self._db_manager
     
@@ -53,8 +81,22 @@ class DocumentService:
         try:
             db_manager = self._get_db_manager()
             
+            import psycopg2
+            conn = psycopg2.connect(self._config.CONNECTION_STRING)
+            cur = conn.cursor()
+            
+            # Build ORDER BY clause
+            valid_sort_columns = {
+                'indexed_at': "MAX(metadata->>'indexed_at')",
+                'file_name': "metadata->>'file_name'",
+                'total_chunks': "COUNT(*)",
+                'total_characters': "SUM(LENGTH(metadata->>'text'))"
+            }
+            
+            sort_column = valid_sort_columns.get(sort_by, valid_sort_columns['indexed_at'])
+            order_direction = 'DESC' if order.lower() == 'desc' else 'ASC'
+            
             # Query database for documents
-            # Use database_manager methods to get document list
             query = f"""
                 SELECT 
                     metadata->>'file_name' as filename,
@@ -65,16 +107,11 @@ class DocumentService:
                 FROM vecs.{self._config.TABLE_NAME}
                 WHERE metadata->>'file_name' IS NOT NULL
                 GROUP BY metadata->>'file_name', metadata->>'file_type'
-                ORDER BY {sort_by} {order}
-                LIMIT {limit} OFFSET {offset}
+                ORDER BY {sort_column} {order_direction}
+                LIMIT %s OFFSET %s
             """
             
-            # Execute query through database connection
-            import psycopg2
-            conn = psycopg2.connect(self._config.CONNECTION_STRING)
-            cur = conn.cursor()
-            
-            cur.execute(query)
+            cur.execute(query, (limit, offset))
             rows = cur.fetchall()
             
             documents = []
@@ -107,11 +144,12 @@ class DocumentService:
             cur.close()
             conn.close()
             
+            logger.info(f"Retrieved {len(documents)} documents (total: {total_documents})")
+            
             return documents, total_documents, total_chunks, total_characters
             
         except Exception as e:
             logger.error(f"Failed to get documents: {e}", exc_info=True)
-            # Return empty results on error
             return [], 0, 0, 0
     
     async def get_document_by_filename(
@@ -152,19 +190,21 @@ class DocumentService:
             if not row:
                 cur.close()
                 conn.close()
+                logger.warning(f"Document not found: {filename}")
                 return None
             
             fname, file_path, file_type, total_chunks, total_chars, avg_len, indexed_at = row
             
             # Get chunk indices
             cur.execute(f"""
-                SELECT metadata->>'chunk_index'
+                SELECT (metadata->>'chunk_index')::int
                 FROM vecs.{self._config.TABLE_NAME}
                 WHERE metadata->>'file_name' = %s
+                  AND metadata->>'chunk_index' IS NOT NULL
                 ORDER BY (metadata->>'chunk_index')::int
             """, (filename,))
             
-            chunk_indices = [int(row[0]) for row in cur.fetchall() if row[0]]
+            chunk_indices = [row[0] for row in cur.fetchall() if row[0] is not None]
             
             document = DocumentInfo(
                 filename=fname,
@@ -181,12 +221,12 @@ class DocumentService:
             if include_chunks:
                 cur.execute(f"""
                     SELECT 
-                        metadata->>'chunk_index' as chunk_index,
+                        COALESCE((metadata->>'chunk_index')::int, 0) as chunk_index,
                         metadata->>'text' as content,
                         metadata
                     FROM vecs.{self._config.TABLE_NAME}
                     WHERE metadata->>'file_name' = %s
-                    ORDER BY (metadata->>'chunk_index')::int
+                    ORDER BY COALESCE((metadata->>'chunk_index')::int, 0)
                 """, (filename,))
                 
                 chunks = []
@@ -194,12 +234,14 @@ class DocumentService:
                     chunk_idx, content, metadata = row
                     
                     chunk = DocumentChunk(
-                        chunk_index=int(chunk_idx) if chunk_idx else 0,
+                        chunk_index=chunk_idx if chunk_idx is not None else 0,
                         content=content or "",
                         content_length=len(content) if content else 0,
                         metadata=metadata or {},
                     )
                     chunks.append(chunk)
+                
+                logger.info(f"Retrieved {len(chunks)} chunks for {filename}")
             
             cur.close()
             conn.close()
@@ -253,10 +295,10 @@ class DocumentService:
             # File types distribution
             cur.execute(f"""
                 SELECT 
-                    metadata->>'file_type' as file_type,
+                    COALESCE(metadata->>'file_type', 'unknown') as file_type,
                     COUNT(DISTINCT metadata->>'file_name') as count
                 FROM vecs.{self._config.TABLE_NAME}
-                WHERE metadata->>'file_type' IS NOT NULL
+                WHERE metadata->>'file_name' IS NOT NULL
                 GROUP BY metadata->>'file_type'
             """)
             file_types = {row[0]: row[1] for row in cur.fetchall()}
@@ -298,6 +340,8 @@ class DocumentService:
                 "size_distribution": size_distribution
             }
             
+            logger.info(f"Retrieved stats: {total_docs} documents, {total_chunks} chunks")
+            
             return stats
             
         except Exception as e:
@@ -337,7 +381,7 @@ class DocumentService:
             params = []
             
             if filename_pattern:
-                where_conditions.append("metadata->>'file_name' LIKE %s")
+                where_conditions.append("metadata->>'file_name' ILIKE %s")
                 params.append(f"%{filename_pattern}%")
             
             if indexed_after:
@@ -396,6 +440,8 @@ class DocumentService:
             cur.close()
             conn.close()
             
+            logger.info(f"Search found {len(documents)} documents")
+            
             return documents, len(documents), total_chunks, total_characters
             
         except Exception as e:
@@ -432,9 +478,11 @@ class DocumentService:
             if count == 0:
                 cur.close()
                 conn.close()
+                logger.warning(f"Document not found: {filename}")
                 return False, 0
             
             # Delete document
+            chunks_deleted = 0
             if delete_chunks:
                 cur.execute(f"""
                     DELETE FROM vecs.{self._config.TABLE_NAME}
@@ -443,13 +491,11 @@ class DocumentService:
                 
                 chunks_deleted = cur.rowcount
                 conn.commit()
-            else:
-                chunks_deleted = 0
+                
+                logger.info(f"Deleted document {filename}: {chunks_deleted} chunks removed")
             
             cur.close()
             conn.close()
-            
-            logger.info(f"Deleted document {filename}: {chunks_deleted} chunks removed")
             
             return True, chunks_deleted
             
@@ -464,25 +510,54 @@ class DocumentService:
         offset: int = 0
     ) -> Optional[tuple[DocumentInfo, List[DocumentChunk]]]:
         """
-        Get chunks for a specific document
+        Get chunks for a specific document with pagination
         
         Returns:
             tuple: (document_info, chunks) or None if not found
         """
         try:
-            # Reuse get_document_by_filename with include_chunks=True
-            result = await self.get_document_by_filename(filename, include_chunks=True)
+            # Get document info first
+            result = await self.get_document_by_filename(filename, include_chunks=False)
             
             if result is None:
                 return None
             
-            document_info, chunks = result
+            document_info, _ = result
             
-            # Apply pagination to chunks
-            if chunks:
-                chunks = chunks[offset:offset + limit]
+            # Get chunks with pagination
+            import psycopg2
+            conn = psycopg2.connect(self._config.CONNECTION_STRING)
+            cur = conn.cursor()
             
-            return document_info, chunks or []
+            cur.execute(f"""
+                SELECT 
+                    COALESCE((metadata->>'chunk_index')::int, 0) as chunk_index,
+                    metadata->>'text' as content,
+                    metadata
+                FROM vecs.{self._config.TABLE_NAME}
+                WHERE metadata->>'file_name' = %s
+                ORDER BY COALESCE((metadata->>'chunk_index')::int, 0)
+                LIMIT %s OFFSET %s
+            """, (filename, limit, offset))
+            
+            chunks = []
+            for row in cur.fetchall():
+                chunk_idx, content, metadata = row
+                
+                chunk = DocumentChunk(
+                    chunk_index=chunk_idx if chunk_idx is not None else 0,
+                    content=content or "",
+                    content_length=len(content) if content else 0,
+                    metadata=metadata or {},
+                )
+                chunks.append(chunk)
+            
+            cur.close()
+            conn.close()
+            
+            logger.info(f"Retrieved {len(chunks)} chunks for {filename} (offset: {offset})")
+            
+            return document_info, chunks
             
         except Exception as e:
             logger.error(f"Failed to get chunks for {filename}: {e}", exc_info=True)
@@ -495,21 +570,14 @@ class DocumentService:
         auto_index: bool = True
     ) -> DocumentInfo:
         """
-        Upload new document
+        Upload new document and optionally trigger indexing
         
         Returns:
             DocumentInfo: Uploaded document information
         """
         try:
-            from pathlib import Path as PathLib
-            
-            # Get documents directory from config
-            if self._config is None:
-                from chunking_vectors.config import get_config
-                self._config = get_config()
-            
             # Save file to documents directory
-            docs_dir = PathLib(self._config.DOCUMENTS_DIR)
+            docs_dir = Path(self._config.DOCUMENTS_DIR)
             docs_dir.mkdir(parents=True, exist_ok=True)
             
             file_path = docs_dir / filename
@@ -519,9 +587,6 @@ class DocumentService:
                 f.write(content)
             
             logger.info(f"Uploaded document: {filename} ({len(content)} bytes)")
-            
-            # TODO: Optionally trigger indexing if auto_index=True
-            # This could call IndexingService to queue the file
             
             # Return document info
             document = DocumentInfo(
@@ -534,6 +599,11 @@ class DocumentService:
                 avg_chunk_length=0.0,
                 indexed_at=None,  # Not indexed yet
             )
+            
+            # TODO: Optionally trigger indexing if auto_index=True
+            if auto_index:
+                logger.info(f"Auto-indexing requested for {filename}")
+                # This could call IndexingService to queue the file
             
             return document
             
@@ -564,6 +634,8 @@ class DocumentService:
             total_in_directory = analysis_results['total_files_in_directory']
             total_in_database = analysis_results['files_successfully_in_db']
             success_rate = analysis_results['success_rate']
+            
+            logger.info(f"Missing files analysis: {total_missing} missing out of {total_in_directory}")
             
             return (
                 missing_files,
