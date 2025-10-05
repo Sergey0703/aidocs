@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # api/main.py
-# Main FastAPI application entry point
-# Unified API for Document Intelligence Platform
+# Main FastAPI application with production-ready CORS configuration
 
 import logging
 import sys
+import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -32,7 +34,9 @@ async def lifespan(app: FastAPI):
     Application lifespan manager
     Handles startup and shutdown events
     """
-    # Startup
+    # ============================================================================
+    # STARTUP
+    # ============================================================================
     logger.info("🚀 Starting Document Intelligence Platform API...")
     logger.info("📁 Backend path: %s", backend_path)
     
@@ -46,8 +50,31 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown
+    # ============================================================================
+    # SHUTDOWN
+    # ============================================================================
     logger.info("🛑 Shutting down Document Intelligence Platform API...")
+    
+    # Cleanup tasks
+    try:
+        # Import services for cleanup
+        from api.modules.indexing.services.indexing_service import get_indexing_service
+        from api.modules.indexing.services.conversion_service import get_conversion_service
+        
+        # Clean up indexing tasks
+        logger.info("🧹 Cleaning up indexing tasks...")
+        indexing_service = get_indexing_service()
+        await indexing_service.clear_completed_tasks()
+        
+        # Clean up conversion tasks
+        logger.info("🧹 Cleaning up conversion tasks...")
+        conversion_service = get_conversion_service()
+        # Conversion service cleanup if needed
+        
+        logger.info("✅ Cleanup completed successfully")
+        
+    except Exception as e:
+        logger.error("⚠️ Error during cleanup: %s", e)
 
 
 # Create FastAPI application
@@ -62,17 +89,59 @@ app = FastAPI(
 )
 
 
-# CORS middleware
+# ============================================================================
+# CORS CONFIGURATION - Production Ready
+# ============================================================================
+
+# Get allowed origins from environment variable
+# Format: comma-separated list of origins
+# Example: "http://localhost:3000,https://app.example.com,https://www.example.com"
+ALLOWED_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS", "")
+
+if ALLOWED_ORIGINS_ENV:
+    # Production: Use specific origins from environment
+    allowed_origins = [origin.strip() for origin in ALLOWED_ORIGINS_ENV.split(",") if origin.strip()]
+    logger.info(f"🔒 CORS: Using specific origins from environment")
+    logger.info(f"   Allowed origins: {allowed_origins}")
+else:
+    # Development: Allow common development origins
+    allowed_origins = [
+        "http://localhost:3000",      # React default
+        "http://localhost:8501",      # Streamlit default
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8501",
+    ]
+    logger.warning("⚠️ CORS: Using development origins (localhost only)")
+    logger.warning("   Set ALLOWED_ORIGINS environment variable for production")
+
+# Apply CORS middleware with production-safe settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production: specify your frontend domains
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins,           # Specific origins only
+    allow_credentials=True,                   # Allow cookies/auth headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],  # Specific methods
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "User-Agent",
+        "DNT",
+        "Cache-Control",
+        "X-Requested-With",
+    ],
+    expose_headers=["Content-Length", "X-Request-ID"],
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
+logger.info("✅ CORS middleware configured")
 
-# Include routers from search module
+
+# ============================================================================
+# ROUTERS
+# ============================================================================
+
+# Include search module routers
 app.include_router(
     search.search_router,
     prefix="/api/search",
@@ -85,8 +154,7 @@ app.include_router(
     tags=["System"]
 )
 
-
-# Include routers from indexing module
+# Include indexing module routers
 app.include_router(
     indexing.indexing_router,
     prefix="/api/indexing",
@@ -112,7 +180,10 @@ app.include_router(
 )
 
 
-# Root endpoint
+# ============================================================================
+# ROOT ENDPOINTS
+# ============================================================================
+
 @app.get("/", tags=["Root"])
 async def root():
     """
@@ -136,11 +207,14 @@ async def root():
             "swagger": "/docs",
             "redoc": "/redoc",
             "openapi": "/openapi.json"
+        },
+        "cors": {
+            "allowed_origins": allowed_origins if ALLOWED_ORIGINS_ENV else "development_mode",
+            "allow_credentials": True
         }
     }
 
 
-# Health check endpoint
 @app.get("/health", tags=["Root"])
 async def health_check():
     """
@@ -157,7 +231,10 @@ async def health_check():
     }
 
 
-# Global exception handler
+# ============================================================================
+# ERROR HANDLERS
+# ============================================================================
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     """
@@ -175,7 +252,10 @@ async def global_exception_handler(request, exc):
     )
 
 
-# Startup message
+# ============================================================================
+# STARTUP MESSAGE
+# ============================================================================
+
 @app.on_event("startup")
 async def startup_message():
     """
@@ -194,6 +274,15 @@ async def startup_message():
     logger.info("📊 Monitoring endpoints: http://localhost:8000/api/monitoring")
     logger.info("")
     logger.info("❤️  Health check: http://localhost:8000/health")
+    logger.info("")
+    logger.info("🔒 CORS Configuration:")
+    if ALLOWED_ORIGINS_ENV:
+        logger.info("   Mode: PRODUCTION (specific origins)")
+        for origin in allowed_origins:
+            logger.info(f"   - {origin}")
+    else:
+        logger.info("   Mode: DEVELOPMENT (localhost only)")
+        logger.info("   ⚠️  Set ALLOWED_ORIGINS env var for production")
     logger.info("=" * 70)
 
 

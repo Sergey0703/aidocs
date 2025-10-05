@@ -1,8 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # api/modules/indexing/routes/documents.py
-# Document management endpoints
+# Real implementation with DocumentService integration
 
 import logging
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import Optional
 
 from ..models.schemas import (
@@ -17,6 +19,7 @@ from ..models.schemas import (
     DocumentChunk,
     ErrorResponse,
 )
+from ..services.document_service import get_document_service
 
 logger = logging.getLogger(__name__)
 
@@ -33,24 +36,62 @@ async def list_documents(
     """
     Get list of all indexed documents.
     
-    Returns:
-    - Document filename
-    - Number of chunks
-    - Total characters
+    Returns document metadata including:
+    - Filename and file type
+    - Number of chunks and characters
     - Indexing timestamp
-    - File type
     
     Supports pagination and sorting.
+    
+    **Sort options:**
+    - `indexed_at` - Sort by indexing date (default)
+    - `file_name` - Sort alphabetically
+    - `total_chunks` - Sort by chunk count
+    - `total_characters` - Sort by content size
+    
+    **Order:**
+    - `desc` - Descending (default)
+    - `asc` - Ascending
     """
     try:
-        # TODO: Implement database query
-        # This should use database_manager to get documents list
+        # Validate parameters
+        if limit < 1 or limit > 1000:
+            raise HTTPException(
+                status_code=400,
+                detail="Limit must be between 1 and 1000"
+            )
         
-        # Placeholder response
-        documents = []
-        total_documents = 0
-        total_chunks = 0
-        total_characters = 0
+        if offset < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Offset must be non-negative"
+            )
+        
+        valid_sort_columns = ['indexed_at', 'file_name', 'total_chunks', 'total_characters']
+        if sort_by not in valid_sort_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid sort_by. Must be one of: {', '.join(valid_sort_columns)}"
+            )
+        
+        if order.lower() not in ['asc', 'desc']:
+            raise HTTPException(
+                status_code=400,
+                detail="Order must be 'asc' or 'desc'"
+            )
+        
+        # Get document service
+        doc_service = get_document_service()
+        
+        # Fetch documents
+        documents, total_documents, total_chunks, total_characters = await doc_service.get_documents(
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            order=order
+        )
+        
+        logger.info(f"Retrieved {len(documents)} documents (offset: {offset}, limit: {limit})")
         
         return DocumentListResponse(
             documents=documents,
@@ -59,9 +100,14 @@ async def list_documents(
             total_characters=total_characters,
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to list documents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list documents: {str(e)}"
+        )
 
 
 @router.get("/{filename}", response_model=DocumentDetailResponse, responses={404: {"model": ErrorResponse}})
@@ -73,32 +119,43 @@ async def get_document(
     Get detailed information about a specific document.
     
     Returns:
-    - Full document metadata
-    - Chunk statistics
+    - Complete document metadata
+    - Chunk statistics and indices
     - Quality metrics
-    - Optionally: all document chunks
+    - Optionally: all document chunks with content
+    
+    **Parameters:**
+    - `filename` - Document filename (URL encoded if contains special chars)
+    - `include_chunks` - Include full chunk content (default: false)
+    
+    **Warning:** Setting `include_chunks=true` for large documents may result in large responses
     """
     try:
-        # TODO: Implement database query for specific document
-        # This should use database_manager to get document details
+        if not filename or not filename.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Filename cannot be empty"
+            )
         
-        # Check if document exists
-        # if not found:
-        #     raise HTTPException(status_code=404, detail=f"Document not found: {filename}")
+        # Get document service
+        doc_service = get_document_service()
         
-        # Placeholder response
-        document = DocumentInfo(
+        # Fetch document
+        result = await doc_service.get_document_by_filename(
             filename=filename,
-            file_type="md",
-            total_chunks=0,
-            chunk_indices=[],
-            total_characters=0,
-            avg_chunk_length=0.0,
+            include_chunks=include_chunks
         )
         
-        chunks = None
-        if include_chunks:
-            chunks = []
+        if result is None:
+            logger.warning(f"Document not found: {filename}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document not found: {filename}"
+            )
+        
+        document, chunks = result
+        
+        logger.info(f"Retrieved document: {filename} (chunks: {document.total_chunks})")
         
         return DocumentDetailResponse(
             document=document,
@@ -108,8 +165,11 @@ async def get_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get document: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to get document {filename}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get document: {str(e)}"
+        )
 
 
 @router.get("/stats/overview", response_model=DocumentStatsResponse)
@@ -117,65 +177,85 @@ async def get_document_stats():
     """
     Get comprehensive document statistics.
     
-    Returns:
-    - Total documents and chunks
-    - Size distribution
+    Returns detailed analytics including:
+    - Total documents, chunks, and characters
+    - Chunk distribution (min, max, average)
     - File type breakdown
+    - Size distribution categories
     - Quality metrics
+    
+    Useful for monitoring index health and data distribution.
     """
     try:
-        # TODO: Implement statistics calculation
-        # This should aggregate data from database
+        # Get document service
+        doc_service = get_document_service()
         
-        # Placeholder response
-        return DocumentStatsResponse(
-            total_documents=0,
-            total_chunks=0,
-            total_characters=0,
-            avg_chunks_per_document=0.0,
-            min_chunks=0,
-            max_chunks=0,
-            file_types={},
-            size_distribution={
-                "small": 0,
-                "medium": 0,
-                "large": 0,
-                "very_large": 0
-            },
-        )
+        # Fetch statistics
+        stats = await doc_service.get_document_stats()
+        
+        logger.info(f"Retrieved stats: {stats['total_documents']} documents")
+        
+        return DocumentStatsResponse(**stats)
         
     except Exception as e:
         logger.error(f"Failed to get stats: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get statistics: {str(e)}"
+        )
 
 
 @router.post("/search", response_model=DocumentListResponse)
 async def search_documents(request: DocumentSearchRequest):
     """
-    Search documents by metadata.
+    Search documents by metadata criteria.
     
-    Search criteria:
-    - Filename pattern (supports wildcards)
-    - Minimum/maximum chunks
-    - Indexed after date
+    **Search filters:**
+    - `filename_pattern` - Filename pattern with wildcards (%, _)
+    - `min_chunks` - Minimum number of chunks
+    - `max_chunks` - Maximum number of chunks
+    - `indexed_after` - Filter by indexing date
+    - `limit` - Maximum results (1-1000)
+    
+    **Examples:**
+    ```json
+    {
+      "filename_pattern": "report%",
+      "min_chunks": 10,
+      "limit": 50
+    }
+    ```
     
     Returns matching documents with metadata.
     """
     try:
-        # TODO: Implement document search
-        # This should query database with filters
+        # Get document service
+        doc_service = get_document_service()
         
-        # Placeholder response
+        # Search documents
+        documents, total_documents, total_chunks, total_characters = await doc_service.search_documents(
+            filename_pattern=request.filename_pattern,
+            min_chunks=request.min_chunks,
+            max_chunks=request.max_chunks,
+            indexed_after=request.indexed_after,
+            limit=request.limit
+        )
+        
+        logger.info(f"Search found {len(documents)} documents (pattern: {request.filename_pattern})")
+        
         return DocumentListResponse(
-            documents=[],
-            total_documents=0,
-            total_chunks=0,
-            total_characters=0,
+            documents=documents,
+            total_documents=total_documents,
+            total_chunks=total_chunks,
+            total_characters=total_characters,
         )
         
     except Exception as e:
         logger.error(f"Failed to search documents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Search failed: {str(e)}"
+        )
 
 
 @router.delete("/{filename}", response_model=DeleteDocumentResponse, responses={404: {"model": ErrorResponse}})
@@ -186,33 +266,61 @@ async def delete_document(
     """
     Delete document from index.
     
-    - Removes document metadata
-    - Optionally removes all associated chunks
-    - Cannot be undone
+    **⚠️ WARNING:** This permanently deletes the document from the vector database!
     
-    ⚠️ WARNING: This permanently deletes the document from the index!
+    **Process:**
+    1. Checks if document exists
+    2. Deletes document metadata
+    3. Optionally removes all associated chunks and embeddings
+    
+    **Parameters:**
+    - `filename` - Document filename to delete
+    - `delete_chunks` - Also delete chunks (default: true, recommended)
+    
+    **Note:** This does NOT delete the source markdown file, only database records.
+    
+    Cannot be undone. Use with caution.
     """
     try:
-        # TODO: Implement document deletion
-        # This should use database_manager to delete document
+        if not filename or not filename.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Filename cannot be empty"
+            )
         
-        # Check if document exists
-        # if not found:
-        #     raise HTTPException(status_code=404, detail=f"Document not found: {filename}")
+        # Get document service
+        doc_service = get_document_service()
         
-        # Placeholder response
+        # Delete document
+        success, chunks_deleted = await doc_service.delete_document(
+            filename=filename,
+            delete_chunks=delete_chunks
+        )
+        
+        if not success:
+            logger.warning(f"Document not found for deletion: {filename}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document not found: {filename}"
+            )
+        
+        logger.info(f"Deleted document: {filename} ({chunks_deleted} chunks removed)")
+        
         return DeleteDocumentResponse(
             success=True,
             filename=filename,
-            chunks_deleted=0,
-            message=f"Document {filename} deleted successfully",
+            chunks_deleted=chunks_deleted,
+            message=f"Document '{filename}' deleted successfully ({chunks_deleted} chunks removed)",
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to delete document: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to delete document {filename}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Delete failed: {str(e)}"
+        )
 
 
 @router.get("/{filename}/chunks", response_model=DocumentDetailResponse, responses={404: {"model": ErrorResponse}})
@@ -222,82 +330,136 @@ async def get_document_chunks(
     offset: int = 0
 ):
     """
-    Get chunks for a specific document.
+    Get chunks for a specific document with pagination.
     
     Returns:
     - Document metadata
-    - All chunks with content
-    - Pagination support
+    - Paginated list of chunks with content
+    - Chunk indices and metadata
     
-    Useful for debugging or content review.
+    **Pagination:**
+    - `limit` - Chunks per page (1-1000, default: 100)
+    - `offset` - Starting position (default: 0)
+    
+    Useful for reviewing document content and debugging chunking quality.
     """
     try:
-        # TODO: Implement chunks retrieval
-        # This should query database for document chunks
+        if not filename or not filename.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Filename cannot be empty"
+            )
         
-        # Check if document exists
-        # if not found:
-        #     raise HTTPException(status_code=404, detail=f"Document not found: {filename}")
+        if limit < 1 or limit > 1000:
+            raise HTTPException(
+                status_code=400,
+                detail="Limit must be between 1 and 1000"
+            )
         
-        # Placeholder response
-        document = DocumentInfo(
+        if offset < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Offset must be non-negative"
+            )
+        
+        # Get document service
+        doc_service = get_document_service()
+        
+        # Fetch chunks
+        result = await doc_service.get_document_chunks(
             filename=filename,
-            file_type="md",
-            total_chunks=0,
-            chunk_indices=[],
-            total_characters=0,
-            avg_chunk_length=0.0,
+            limit=limit,
+            offset=offset
         )
         
+        if result is None:
+            logger.warning(f"Document not found: {filename}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document not found: {filename}"
+            )
+        
+        document_info, chunks = result
+        
+        logger.info(f"Retrieved {len(chunks)} chunks for {filename} (offset: {offset})")
+        
         return DocumentDetailResponse(
-            document=document,
-            chunks=[],
+            document=document_info,
+            chunks=chunks,
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get chunks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to get chunks for {filename}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get chunks: {str(e)}"
+        )
 
 
 @router.post("/upload", response_model=DocumentDetailResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    auto_index: bool = True
+    auto_index: bool = Form(True)
 ):
     """
-    Upload a new document for indexing.
+    Upload a new markdown document for indexing.
     
-    - Accepts markdown files
-    - Optionally triggers automatic indexing
-    - Returns document metadata
+    **Process:**
+    1. Validates file is markdown (.md)
+    2. Saves to documents directory
+    3. Optionally triggers automatic indexing
     
-    Supported formats: .md
+    **Supported formats:** .md (markdown only)
+    
+    **Parameters:**
+    - `file` - Markdown file to upload
+    - `auto_index` - Automatically index after upload (default: true)
+    
+    **Example:**
+    ```bash
+    curl -X POST "http://localhost:8000/api/documents/upload" \\
+         -F "file=@document.md" \\
+         -F "auto_index=true"
+    ```
+    
+    Returns document metadata. Check indexing status via `/api/indexing/status`.
     """
     try:
         # Validate file type
+        if not file.filename:
+            raise HTTPException(
+                status_code=400,
+                detail="No filename provided"
+            )
+        
         if not file.filename.endswith('.md'):
             raise HTTPException(
                 status_code=400,
                 detail="Only markdown files (.md) are supported"
             )
         
-        # TODO: Implement file upload
-        # This should:
-        # 1. Save file to documents directory
-        # 2. Optionally trigger indexing
-        # 3. Return document metadata
+        # Read file content
+        content = await file.read()
         
-        # Placeholder response
-        document = DocumentInfo(
+        if not content:
+            raise HTTPException(
+                status_code=400,
+                detail="File is empty"
+            )
+        
+        # Get document service
+        doc_service = get_document_service()
+        
+        # Upload document
+        document = await doc_service.upload_document(
             filename=file.filename,
-            file_type="md",
-            total_chunks=0,
-            chunk_indices=[],
-            total_characters=0,
-            avg_chunk_length=0.0,
+            content=content,
+            auto_index=auto_index
         )
+        
+        logger.info(f"Uploaded document: {file.filename} ({len(content)} bytes, auto_index: {auto_index})")
         
         return DocumentDetailResponse(
             document=document,
@@ -308,37 +470,55 @@ async def upload_document(
         raise
     except Exception as e:
         logger.error(f"Failed to upload document: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Upload failed: {str(e)}"
+        )
 
 
 @router.get("/missing/files", response_model=MissingDocumentsResponse)
 async def get_missing_documents():
     """
-    Get files present in directory but missing from database.
+    Get files present in markdown directory but missing from database.
     
-    Compares:
-    - Files in markdown directory
-    - Records in database
+    **Analysis:**
+    - Scans markdown directory for .md files
+    - Compares with database records
+    - Identifies files that should be indexed but aren't
     
-    Returns files that should be indexed but aren't.
-    Useful for detecting indexing failures.
+    **Returns:**
+    - List of missing files
+    - Counts and success rate
+    - Comparison statistics
+    
+    **Use cases:**
+    - Detecting indexing failures
+    - Finding documents that need re-indexing
+    - Verifying index completeness
+    
+    **Troubleshooting:** If many files are missing, consider running full reindex.
     """
     try:
-        # TODO: Implement missing files detection
-        # This should:
-        # 1. Scan markdown directory
-        # 2. Compare with database records
-        # 3. Return missing files
+        # Get document service
+        doc_service = get_document_service()
         
-        # Placeholder response
+        # Analyze missing documents
+        (missing_files, total_missing, total_in_directory, 
+         total_in_database, success_rate) = await doc_service.get_missing_documents()
+        
+        logger.info(f"Missing documents analysis: {total_missing}/{total_in_directory} missing")
+        
         return MissingDocumentsResponse(
-            missing_files=[],
-            total_missing=0,
-            total_in_directory=0,
-            total_in_database=0,
-            success_rate=100.0,
+            missing_files=missing_files,
+            total_missing=total_missing,
+            total_in_directory=total_in_directory,
+            total_in_database=total_in_database,
+            success_rate=success_rate,
         )
         
     except Exception as e:
         logger.error(f"Failed to get missing documents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analysis failed: {str(e)}"
+        )
