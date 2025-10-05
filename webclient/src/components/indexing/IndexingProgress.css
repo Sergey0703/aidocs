@@ -482,3 +482,14 @@
     align-items: flex-start;
   }
 }
+/* No Status Message */
+.no-status-message {
+  padding: 2rem;
+  text-align: center;
+  color: #666;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+  font-size: 1rem;
+  font-weight: 500;
+}

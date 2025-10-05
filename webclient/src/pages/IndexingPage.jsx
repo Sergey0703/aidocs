@@ -24,6 +24,9 @@ function IndexingPage() {
   const [documentStats, setDocumentStats] = useState(null);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
 
+  // Upload state
+  const [uploadProgress, setUploadProgress] = useState(null);
+
   // Settings
   const [conversionSettings, setConversionSettings] = useState({
     incremental: true,
@@ -129,10 +132,36 @@ function IndexingPage() {
     if (files.length === 0) return;
 
     setError(null);
-    setIsConverting(true);
+    setUploadProgress({ current: 0, total: files.length, uploading: true });
 
     try {
-      // Start conversion
+      // STEP 1: Upload each file to server
+      console.log(`Starting upload of ${files.length} files...`);
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        setUploadProgress({ current: i, total: files.length, uploading: true, currentFile: file.name });
+        
+        try {
+          const uploadResult = await ragApi.uploadDocument(file, false); // autoIndex = false
+          console.log(`✅ Uploaded ${i + 1}/${files.length}: ${file.name}`, uploadResult);
+        } catch (uploadErr) {
+          console.error(`❌ Failed to upload ${file.name}:`, uploadErr);
+          throw new Error(`Failed to upload ${file.name}: ${uploadErr.response?.data?.detail || uploadErr.message}`);
+        }
+      }
+      
+      setUploadProgress({ current: files.length, total: files.length, uploading: false });
+      console.log('✅ All files uploaded successfully!');
+
+      // Small delay to ensure files are written to disk
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // STEP 2: Start conversion of uploaded files
+      console.log('Starting conversion...');
+      setIsConverting(true);
+      
       const response = await ragApi.startConversion({
         incremental: conversionSettings.incremental,
         enableOcr: conversionSettings.enableOcr,
@@ -141,10 +170,15 @@ function IndexingPage() {
 
       setConversionTaskId(response.task_id);
       setConversionStatus(response);
+      
+      // Clear upload progress after successful conversion start
+      setTimeout(() => setUploadProgress(null), 2000);
+      
     } catch (err) {
-      console.error('Failed to start conversion:', err);
-      setError(err.response?.data?.detail || 'Failed to start conversion');
+      console.error('Failed to upload or convert:', err);
+      setError(err.message || err.response?.data?.detail || 'Failed to process files');
       setIsConverting(false);
+      setUploadProgress(null);
     }
   };
 
@@ -156,6 +190,7 @@ function IndexingPage() {
       const response = await ragApi.startIndexing({
         mode: indexingSettings.mode,
         skipConversion: true, // We already converted
+        skipIndexing: false,  // DO NOT skip indexing!
         batchSize: indexingSettings.batchSize,
         deleteExisting: indexingSettings.deleteExisting
       });
@@ -209,9 +244,60 @@ function IndexingPage() {
           {/* File Upload Section */}
           <section className="upload-section">
             <h2>📤 Document Upload & Conversion</h2>
+            
+            {/* Upload Progress Display */}
+            {uploadProgress && uploadProgress.uploading && (
+              <div style={{
+                padding: '1rem',
+                background: '#e3f2fd',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+                border: '2px solid #2196f3'
+              }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                  Uploading files to server...
+                </div>
+                <div style={{ fontSize: '0.9rem', color: '#666' }}>
+                  {uploadProgress.current} / {uploadProgress.total} files uploaded
+                </div>
+                {uploadProgress.currentFile && (
+                  <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
+                    Current: {uploadProgress.currentFile}
+                  </div>
+                )}
+                <div style={{
+                  marginTop: '0.5rem',
+                  height: '8px',
+                  background: '#e0e0e0',
+                  borderRadius: '4px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
+                    height: '100%',
+                    background: '#2196f3',
+                    transition: 'width 0.3s'
+                  }} />
+                </div>
+              </div>
+            )}
+            
+            {uploadProgress && !uploadProgress.uploading && (
+              <div style={{
+                padding: '1rem',
+                background: '#d4edda',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+                border: '2px solid #28a745',
+                color: '#155724'
+              }}>
+                ✅ All files uploaded successfully! Starting conversion...
+              </div>
+            )}
+            
             <FileUploader
               onFilesSelected={handleFilesSelected}
-              disabled={isConverting || isIndexing}
+              disabled={isConverting || isIndexing || (uploadProgress && uploadProgress.uploading)}
               settings={conversionSettings}
               onSettingsChange={setConversionSettings}
             />

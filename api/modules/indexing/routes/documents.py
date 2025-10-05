@@ -4,6 +4,7 @@
 # Real implementation with DocumentService integration
 
 import logging
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import Optional
 
@@ -398,46 +399,63 @@ async def get_document_chunks(
         )
 
 
-@router.post("/upload", response_model=DocumentDetailResponse)
+@router.post("/upload", response_model=dict)
 async def upload_document(
     file: UploadFile = File(...),
-    auto_index: bool = Form(True)
+    auto_index: bool = Form(False)
 ):
     """
-    Upload a new markdown document for indexing.
+    Upload a document file to raw documents directory for processing.
     
     **Process:**
-    1. Validates file is markdown (.md)
-    2. Saves to documents directory
-    3. Optionally triggers automatic indexing
+    1. Validates file type (supports all Docling formats)
+    2. Saves to RAW documents directory (data/raw/)
+    3. File is ready for conversion and indexing
     
-    **Supported formats:** .md (markdown only)
+    **Supported formats:**
+    - Documents: PDF, DOCX, DOC, PPTX, PPT
+    - Text: TXT, HTML, HTM
+    - Images: PNG, JPG, JPEG, TIFF (with OCR)
     
     **Parameters:**
-    - `file` - Markdown file to upload
-    - `auto_index` - Automatically index after upload (default: true)
+    - `file` - Document file to upload
+    - `auto_index` - Not used (kept for API compatibility)
+    
+    **Workflow:**
+    1. Upload files here
+    2. Start conversion (Docling)
+    3. Start indexing (chunking + embeddings)
     
     **Example:**
     ```bash
     curl -X POST "http://localhost:8000/api/documents/upload" \\
-         -F "file=@document.md" \\
-         -F "auto_index=true"
+         -F "file=@document.docx"
     ```
     
-    Returns document metadata. Check indexing status via `/api/indexing/status`.
+    Returns upload confirmation with file details.
     """
     try:
-        # Validate file type
+        # Validate file
         if not file.filename:
             raise HTTPException(
                 status_code=400,
                 detail="No filename provided"
             )
         
-        if not file.filename.endswith('.md'):
+        # Get file extension
+        file_ext = Path(file.filename).suffix.lower()
+        
+        # Supported formats (same as Docling)
+        ALLOWED_EXTENSIONS = {
+            '.pdf', '.docx', '.doc', '.pptx', '.ppt',
+            '.txt', '.html', '.htm',
+            '.png', '.jpg', '.jpeg', '.tiff'
+        }
+        
+        if file_ext not in ALLOWED_EXTENSIONS:
             raise HTTPException(
                 status_code=400,
-                detail="Only markdown files (.md) are supported"
+                detail=f"Unsupported file type: {file_ext}. Supported formats: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
             )
         
         # Read file content
@@ -449,22 +467,43 @@ async def upload_document(
                 detail="File is empty"
             )
         
-        # Get document service
-        doc_service = get_document_service()
+        # Get path to raw documents directory
+        import sys
+        current_file = Path(__file__)
+        project_root = current_file.parent.parent.parent.parent.parent
+        raw_dir = project_root / "rag_indexer" / "data" / "raw"
         
-        # Upload document
-        document = await doc_service.upload_document(
-            filename=file.filename,
-            content=content,
-            auto_index=auto_index
-        )
+        # Create directory if it doesn't exist
+        raw_dir.mkdir(parents=True, exist_ok=True)
         
-        logger.info(f"Uploaded document: {file.filename} ({len(content)} bytes, auto_index: {auto_index})")
+        # Save file to raw directory
+        save_path = raw_dir / file.filename
         
-        return DocumentDetailResponse(
-            document=document,
-            chunks=None,
-        )
+        # Check if file already exists
+        if save_path.exists():
+            logger.warning(f"File already exists, overwriting: {file.filename}")
+        
+        # Write file
+        with open(save_path, 'wb') as f:
+            f.write(content)
+        
+        file_size = len(content)
+        
+        logger.info(f"Uploaded document: {file.filename} ({file_size} bytes) -> {save_path}")
+        
+        return {
+            "success": True,
+            "message": f"File uploaded successfully: {file.filename}",
+            "filename": file.filename,
+            "file_size": file_size,
+            "file_type": file_ext,
+            "saved_to": str(save_path),
+            "next_steps": [
+                "1. Start conversion to convert to markdown",
+                "2. Start indexing to create embeddings",
+                "3. File will appear in documents list"
+            ]
+        }
         
     except HTTPException:
         raise

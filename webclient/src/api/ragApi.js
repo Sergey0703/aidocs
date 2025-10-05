@@ -10,6 +10,15 @@ const api = axios.create({
   },
 });
 
+// Add response interceptor for better error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API Error:', error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
+
 export const ragApi = {
   // ============================================================================
   // SEARCH ENDPOINTS
@@ -56,6 +65,9 @@ export const ragApi = {
 
   // Get conversion status
   getConversionStatus: async (taskId) => {
+    if (!taskId) {
+      throw new Error('Task ID is required');
+    }
     const response = await api.get('/api/conversion/status', {
       params: { task_id: taskId }
     });
@@ -70,6 +82,9 @@ export const ragApi = {
 
   // Get conversion results
   getConversionResults: async (taskId, includeFailed = true, includeSkipped = false) => {
+    if (!taskId) {
+      throw new Error('Task ID is required');
+    }
     const response = await api.get('/api/conversion/results', {
       params: {
         task_id: taskId,
@@ -93,12 +108,18 @@ export const ragApi = {
 
   // Retry failed conversions
   retryFailedConversions: async (taskId) => {
+    if (!taskId) {
+      throw new Error('Task ID is required');
+    }
     const response = await api.post(`/api/conversion/retry?task_id=${taskId}`);
     return response.data;
   },
 
   // Delete conversion task
   deleteConversionTask: async (taskId) => {
+    if (!taskId) {
+      throw new Error('Task ID is required');
+    }
     const response = await api.delete(`/api/conversion/task/${taskId}`);
     return response.data;
   },
@@ -131,6 +152,9 @@ export const ragApi = {
 
   // Stop indexing
   stopIndexing: async (taskId) => {
+    if (!taskId) {
+      throw new Error('Task ID is required');
+    }
     const response = await api.post('/api/indexing/stop', null, {
       params: { task_id: taskId }
     });
@@ -162,6 +186,9 @@ export const ragApi = {
 
   // Reindex specific files
   reindexFiles: async (filenames, force = false) => {
+    if (!filenames || filenames.length === 0) {
+      throw new Error('At least one filename is required');
+    }
     const response = await api.post('/api/indexing/reindex', {
       filenames,
       force
@@ -200,6 +227,9 @@ export const ragApi = {
 
   // Get document details
   getDocument: async (filename, includeChunks = false) => {
+    if (!filename) {
+      throw new Error('Filename is required');
+    }
     const response = await api.get(`/api/documents/${encodeURIComponent(filename)}`, {
       params: { include_chunks: includeChunks }
     });
@@ -220,6 +250,9 @@ export const ragApi = {
 
   // Delete document
   deleteDocument: async (filename, deleteChunks = true) => {
+    if (!filename) {
+      throw new Error('Filename is required');
+    }
     const response = await api.delete(`/api/documents/${encodeURIComponent(filename)}`, {
       params: { delete_chunks: deleteChunks }
     });
@@ -228,6 +261,9 @@ export const ragApi = {
 
   // Get document chunks
   getDocumentChunks: async (filename, limit = 100, offset = 0) => {
+    if (!filename) {
+      throw new Error('Filename is required');
+    }
     const response = await api.get(`/api/documents/${encodeURIComponent(filename)}/chunks`, {
       params: { limit, offset }
     });
@@ -236,6 +272,9 @@ export const ragApi = {
 
   // Upload document
   uploadDocument: async (file, autoIndex = true) => {
+    if (!file) {
+      throw new Error('File is required');
+    }
     const formData = new FormData();
     formData.append('file', file);
     formData.append('auto_index', autoIndex);
@@ -314,3 +353,6 @@ export const ragApi = {
     return response.data;
   },
 };
+
+// Export default
+export default ragApi;
