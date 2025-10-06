@@ -23,10 +23,12 @@ class DoclingConfig:
         """Load all settings from environment variables with defaults"""
         
         # --- DIRECTORY SETTINGS ---
-        self.RAW_DOCUMENTS_DIR = os.getenv("RAW_DOCUMENTS_DIR", "./data/raw")
-        self.MARKDOWN_OUTPUT_DIR = os.getenv("MARKDOWN_OUTPUT_DIR", "./data/markdown")
-        self.FAILED_CONVERSIONS_DIR = os.getenv("FAILED_CONVERSIONS_DIR", "./data/failed")
-        self.METADATA_DIR = os.getenv("METADATA_DIR", "./data/markdown/_metadata")
+        # Default all paths to the rag_indexer/data tree
+        base_dir = Path(__file__).resolve().parent.parent / "data"
+        self.RAW_DOCUMENTS_DIR = os.getenv("RAW_DOCUMENTS_DIR", str(base_dir / "raw"))
+        self.MARKDOWN_OUTPUT_DIR = os.getenv("MARKDOWN_OUTPUT_DIR", str(base_dir / "markdown"))
+        self.FAILED_CONVERSIONS_DIR = os.getenv("FAILED_CONVERSIONS_DIR", str(base_dir / "failed"))
+        self.METADATA_DIR = os.getenv("METADATA_DIR", str(base_dir / "markdown" / "_metadata"))
         
         # --- SUPPORTED FORMATS ---
         default_formats = "pdf,docx,doc,pptx,ppt,txt,html,htm,png,jpg,jpeg,tiff"
@@ -60,7 +62,9 @@ class DoclingConfig:
         
         # --- LOGGING ---
         self.VERBOSE_LOGGING = os.getenv("VERBOSE_LOGGING", "true").lower() == "true"
-        self.LOG_DIR = os.getenv("LOG_DIR", "./logs")
+        # Keep logs at project root by default
+        project_root = Path(__file__).resolve().parents[2]
+        self.LOG_DIR = os.getenv("LOG_DIR", str(project_root / "logs"))
     
     def _validate_settings(self):
         """Validate configuration settings"""

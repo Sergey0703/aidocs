@@ -24,8 +24,12 @@ class Config:
         """Load all settings from environment variables with defaults"""
         
         # --- DIRECTORY AND FILE SETTINGS ---
-        self.DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", "./data/markdown")  # Now expects markdown files
-        self.ERROR_LOG_FILE = "./indexing_errors.log"
+        # Default all paths under rag_indexer/data
+        base_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
+        self.DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", os.path.join(base_dir, "markdown"))  # expects markdown files
+        # Keep error log at project root logs by default
+        project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+        self.ERROR_LOG_FILE = os.path.join(project_root, "logs", "indexing_errors.log")
         
         # --- BLACKLIST SETTINGS (Keep for excluding logs/temp directories) ---
         blacklist_env = os.getenv("BLACKLIST_DIRECTORIES", "logs,temp,.git,__pycache__,.vscode,.idea,node_modules")

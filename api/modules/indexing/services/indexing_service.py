@@ -192,12 +192,19 @@ class IndexingService:
             # Add backend path to sys.path just-in-time
             self._setup_backend_path()
             
-            # Import real backend modules
+            # Import available backend modules (simplified pipeline)
             from chunking_vectors.config import get_config
-            from chunking_vectors.document_loader import DocumentLoader
-            from chunking_vectors.chunker import DocumentChunker
-            from chunking_vectors.embedding_generator import EmbeddingGenerator
-            from chunking_vectors.database_manager import create_database_manager
+            from chunking_vectors.loading_helpers import (
+                load_markdown_documents,
+                print_loading_summary,
+                validate_documents_for_processing,
+                print_document_validation_summary,
+            )
+            from chunking_vectors.embedding_processor import create_embedding_processor
+            from chunking_vectors.batch_processor import create_batch_processor, create_progress_tracker
+            from llama_index.vector_stores.supabase import SupabaseVectorStore
+            from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+            from llama_index.core.node_parser import SentenceSplitter
             
             # Load configuration
             config = get_config()
@@ -221,22 +228,35 @@ class IndexingService:
                 task.end_time = datetime.now()
                 return
             
-            # Initialize components
-            doc_loader = DocumentLoader(config.DOCUMENTS_DIR)
-            chunker = DocumentChunker(
+            # Initialize vector store and embedding model
+            vector_store = SupabaseVectorStore(
+                postgres_connection_string=config.CONNECTION_STRING,
+                collection_name=config.TABLE_NAME,
+                dimension=config.EMBED_DIM,
+            )
+            embed_model = GoogleGenAIEmbedding(
+                model_name=config.EMBED_MODEL,
+                api_key=config.GEMINI_API_KEY,
+            )
+            node_parser = SentenceSplitter(
                 chunk_size=config.CHUNK_SIZE,
-                overlap_size=config.OVERLAP_SIZE
-            )
-            embedding_gen = EmbeddingGenerator(
-                model_name=config.EMBEDDING_MODEL,
-                api_key=config.GEMINI_API_KEY
-            )
-            db_manager = create_database_manager(
-                config.CONNECTION_STRING,
-                config.TABLE_NAME
+                chunk_overlap=config.CHUNK_OVERLAP,
+                paragraph_separator="\n\n",
+                secondary_chunking_regex="[.!?]\\s+",
+                include_metadata=True,
+                include_prev_next_rel=True,
             )
             
-            logger.info("✅ Components initialized")
+            # Create processors
+            embedding_processor = create_embedding_processor(embed_model, vector_store, config)
+            batch_processor = create_batch_processor(
+                embedding_processor,
+                config.PROCESSING_BATCH_SIZE,
+                batch_restart_interval=0,
+                config=config,
+            )
+            
+            logger.info("✅ Components initialized (vector store, embeddings, node parser)")
             
             # =================================================================
             # STAGE 1: Document Loading (skip if skip_conversion AND skip_indexing)
@@ -254,8 +274,14 @@ class IndexingService:
             
             logger.info("📂 Loading markdown documents...")
             
-            # Load documents
-            documents = doc_loader.load_documents()
+            # Prepare progress tracker and load markdown documents
+            progress_tracker = create_progress_tracker()
+            documents, loading_summary = load_markdown_documents(config, progress_tracker)
+            # Optional: print a brief summary in logs
+            try:
+                print_loading_summary(documents, loading_summary, 0)
+            except Exception:
+                pass
             
             if not documents:
                 logger.warning("⚠️ No documents found to index")
@@ -275,33 +301,25 @@ class IndexingService:
             task.current_stage = "chunking"
             task.current_stage_name = "Chunking Documents"
             
-            logger.info("✂️ Chunking documents...")
+            logger.info("✂️ Chunking documents with SentenceSplitter...")
             
-            all_chunks = []
-            for i, doc in enumerate(documents, 1):
-                if task.cancelled:
-                    logger.info("⚠️ Indexing cancelled by user")
-                    task.status = IndexingStatus.FAILED
-                    task.errors.append("Cancelled by user")
-                    break
-                
-                task.current_file = doc.metadata.get('file_name', 'unknown')
-                logger.info(f"[{i}/{len(documents)}] Chunking: {task.current_file}")
-                
-                try:
-                    chunks = chunker.chunk_document(doc)
-                    all_chunks.extend(chunks)
-                    task.processed_files += 1
-                    logger.info(f"  ✅ Created {len(chunks)} chunks")
-                except Exception as e:
-                    logger.error(f"  ❌ Chunking failed: {e}")
-                    task.failed_files += 1
-                    task.errors.append(f"{task.current_file}: Chunking failed - {str(e)}")
+            try:
+                # Convert documents to nodes (chunks)
+                all_nodes = node_parser.get_nodes_from_documents(documents, show_progress=False)
+                task.processed_files = len(documents)
+            except Exception as e:
+                logger.error(f"❌ Failed to create chunks: {e}")
+                task.failed_files = len(documents)
+                task.errors.append(f"Chunking failed: {str(e)}")
+                task.status = IndexingStatus.FAILED
+                task.end_time = datetime.now()
+                self._add_to_history(task)
+                return
             
-            task.total_chunks = len(all_chunks)
-            logger.info(f"📊 Total chunks created: {len(all_chunks)}")
+            task.total_chunks = len(all_nodes)
+            logger.info(f"📊 Total chunks created: {task.total_chunks}")
             
-            if not all_chunks:
+            if task.total_chunks == 0:
                 logger.warning("⚠️ No chunks created")
                 task.warnings.append("No chunks created from documents")
                 task.status = IndexingStatus.COMPLETED
@@ -316,65 +334,44 @@ class IndexingService:
             task.current_stage = "embedding"
             task.current_stage_name = "Generating Embeddings"
             
-            logger.info("🧮 Generating embeddings...")
+            logger.info("🧮 Generating embeddings (Gemini)...")
             
-            # Process in batches
-            actual_batch_size = batch_size or config.BATCH_SIZE
-            total_batches = (len(all_chunks) + actual_batch_size - 1) // actual_batch_size
+            # Determine batch sizes
+            actual_embed_batch = batch_size or config.EMBEDDING_BATCH_SIZE
+            db_batch_size = config.DB_BATCH_SIZE
             
-            embedded_chunks = []
-            for batch_idx in range(0, len(all_chunks), actual_batch_size):
-                if task.cancelled:
-                    break
-                
-                batch = all_chunks[batch_idx:batch_idx + actual_batch_size]
-                batch_num = (batch_idx // actual_batch_size) + 1
-                
-                logger.info(f"📦 Processing batch {batch_num}/{total_batches} ({len(batch)} chunks)")
-                
-                try:
-                    batch_with_embeddings = embedding_gen.generate_embeddings(batch)
-                    embedded_chunks.extend(batch_with_embeddings)
-                    task.processed_chunks += len(batch)
-                    logger.info(f"  ✅ Generated {len(batch)} embeddings")
-                except Exception as e:
-                    logger.error(f"  ❌ Embedding generation failed: {e}")
-                    task.errors.append(f"Batch {batch_num}: Embedding failed - {str(e)}")
-            
-            logger.info(f"✅ Generated embeddings for {len(embedded_chunks)} chunks")
+            # Generate embeddings and save using batch processor utilities
+            try:
+                # The batch processor expects a list of nodes; it will call embedding_processor
+                results = batch_processor.process_all_batches(
+                    all_nodes,
+                    actual_embed_batch,
+                    db_batch_size
+                )
+                task.processed_chunks = results.get('total_saved', 0)
+                logger.info(f"✅ Generated and saved embeddings for {task.processed_chunks} chunks")
+            except Exception as e:
+                logger.error(f"❌ Embedding or save failed: {e}")
+                task.errors.append(f"Embedding/save failed: {str(e)}")
+                task.status = IndexingStatus.FAILED
+                task.end_time = datetime.now()
+                self._add_to_history(task)
+                return
             
             # =================================================================
             # STAGE 4: Database Save
             # =================================================================
             
+            # Update final statistics (saving already done in batch processor)
             task.current_stage = "saving"
             task.current_stage_name = "Saving to Database"
-            
-            logger.info("💾 Saving to database...")
-            
-            # Delete existing if requested
-            if delete_existing:
-                logger.warning("⚠️ Deleting existing records...")
-                # Implement deletion if needed
-            
-            # Save to database
-            try:
-                saved_count = db_manager.insert_chunks(embedded_chunks)
-                logger.info(f"✅ Saved {saved_count} chunks to database")
-                
-                task.statistics = {
-                    "documents_loaded": len(documents),
-                    "chunks_created": len(all_chunks),
-                    "chunks_saved": saved_count,
-                    "success_rate": saved_count / len(all_chunks) if all_chunks else 0,
-                }
-            except Exception as e:
-                logger.error(f"❌ Database save failed: {e}")
-                task.errors.append(f"Database save failed: {str(e)}")
-                task.status = IndexingStatus.FAILED
-                task.end_time = datetime.now()
-                self._add_to_history(task)
-                return
+            logger.info("💾 Save to database completed via vector store")
+            task.statistics = {
+                "documents_loaded": len(documents),
+                "chunks_created": task.total_chunks,
+                "chunks_saved": task.processed_chunks,
+                "success_rate": (task.processed_chunks / task.total_chunks) if task.total_chunks else 0,
+            }
             
             # =================================================================
             # COMPLETE
