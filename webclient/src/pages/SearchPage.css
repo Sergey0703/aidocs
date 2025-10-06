@@ -5,18 +5,18 @@
   flex-direction: column;
 }
 
-.page-container {
+.search-page-container {
   flex: 1;
-  display: flex;
-  max-width: 1400px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 2rem;
+  display: grid;
+  grid-template-columns: 240px 1fr;
   gap: 2rem;
+  width: 100%;
+  padding: 2rem;
+  box-sizing: border-box;
 }
 
 .sidebar {
-  flex: 0 0 350px;
+  width: 240px;
   position: sticky;
   top: 2rem;
   align-self: flex-start;
@@ -25,7 +25,6 @@
 }
 
 .main-content {
-  flex: 1;
   min-width: 0;
 }
 
@@ -126,7 +125,7 @@
   padding: 2.5rem;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  max-width: 800px;
+  max-width: 100%;
   margin: 0 auto;
 }
 
@@ -239,33 +238,31 @@
 
 /* Responsive Design - Mobile First */
 @media (max-width: 1024px) {
-  .page-container {
+  .search-page-container {
+    grid-template-columns: 220px 1fr;
     padding: 1.5rem;
     gap: 1.5rem;
   }
   
   .sidebar {
-    flex: 0 0 300px;
+    width: 220px;
   }
 }
 
 @media (max-width: 768px) {
-  /* CRITICAL: Change layout order for mobile */
-  .page-container {
+  .search-page-container {
+    display: flex;
     flex-direction: column;
     padding: 1rem;
     gap: 1rem;
   }
   
-  /* Main content (search + results) goes FIRST */
   .main-content {
     order: 1;
   }
   
-  /* Sidebar (system status) goes SECOND */
   .sidebar {
     order: 2;
-    flex: 1 1 auto;
     position: static;
     max-height: none;
     width: 100%;
@@ -315,7 +312,7 @@
 }
 
 @media (max-width: 480px) {
-  .page-container {
+  .search-page-container {
     padding: 0.75rem;
   }
   

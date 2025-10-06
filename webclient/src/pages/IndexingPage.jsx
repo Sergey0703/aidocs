@@ -238,7 +238,7 @@ function IndexingPage() {
 
   return (
     <div className="indexing-page">
-      <div className="page-container">
+      <div className="indexing-page-container">
         {/* Left Column: Upload & Processing */}
         <div className="left-column">
           {/* File Upload Section */}

@@ -34,7 +34,7 @@ function SearchPage() {
 
   return (
     <div className="search-page">
-      <div className="page-container">
+      <div className="search-page-container">
         <aside className="sidebar">
           <SystemStatus 
             lastSearchMetrics={searchResults?.performance_metrics}
