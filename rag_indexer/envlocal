@@ -100,7 +100,7 @@ ENABLE_OCR=true
 OCR_LANGUAGE=eng+rus
 
 # Naming: timestamp_originalname.md
-USE_TIMESTAMP_PREFIX=true
+USE_TIMESTAMP_PREFIX=false
 TIMESTAMP_FORMAT=%Y%m%d_%H%M%S
 
 # Error handling

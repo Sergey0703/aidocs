@@ -102,10 +102,10 @@ class ConversionService:
             project_root = current_file.parent.parent.parent.parent.parent
             backend_path = project_root / "rag_indexer"
             
-            if backend_path.exists():
+            if backend_path.exists() and str(backend_path) not in sys.path:
                 sys.path.insert(0, str(backend_path))
                 logger.info(f"Added backend path: {backend_path}")
-            else:
+            elif not backend_path.exists():
                 logger.warning(f"Backend path not found: {backend_path}")
         except Exception as e:
             logger.error(f"Failed to setup backend path: {e}")
@@ -200,10 +200,20 @@ class ConversionService:
             # Default markdown output directory
             default_md_dir = project_root / "rag_indexer" / "data" / "markdown"
             default_md_dir.mkdir(parents=True, exist_ok=True)
+
+            # --- START: ИСПРАВЛЕНИЕ ---
+            # Явно определяем путь для метаданных
+            default_metadata_dir = default_md_dir / "_metadata"
+            # --- END: ИСПРАВЛЕНИЕ ---
             
             # Override config if provided
             config.RAW_DOCUMENTS_DIR = input_dir if input_dir else str(default_raw_dir)
             config.MARKDOWN_OUTPUT_DIR = output_dir if output_dir else str(default_md_dir)
+
+            # --- START: ИСПРАВЛЕНИЕ ---
+            # Явно устанавливаем путь к метаданным в конфигурации
+            config.METADATA_DIR = str(default_metadata_dir)
+            # --- END: ИСПРАВЛЕНИЕ ---
             
             if enable_ocr is not None:
                 config.ENABLE_OCR = enable_ocr
@@ -212,8 +222,10 @@ class ConversionService:
             if formats:
                 config.SUPPORTED_FORMATS = formats
             
+            # Логирование для отладки
             logger.info(f"📁 Input directory: {config.RAW_DOCUMENTS_DIR}")
             logger.info(f"📁 Output directory: {config.MARKDOWN_OUTPUT_DIR}")
+            logger.info(f"📋 Metadata directory: {config.METADATA_DIR}")
             logger.info(f"📊 OCR enabled: {config.ENABLE_OCR}")
             
             # ========================================================
@@ -271,7 +283,7 @@ class ConversionService:
                     task.errors.append("Cancelled by user")
                     break
                 
-                task.current_file = str(file_path)
+                task.current_file = str(file_path.name)
                 
                 logger.info(f"[{i}/{len(files_to_process)}] Converting: {file_path.name}")
                 
@@ -286,7 +298,7 @@ class ConversionService:
                     status=ConversionStatus.COMPLETED if success else ConversionStatus.FAILED,
                     input_path=str(file_path),
                     output_path=str(output_path) if output_path else None,
-                    file_size=file_path.stat().st_size if success else 0,
+                    file_size=file_path.stat().st_size,
                     conversion_time=conversion_time,
                     error_message=error,
                 )
@@ -310,7 +322,10 @@ class ConversionService:
             task.current_file = None
             
             # Summary
-            duration = (task.end_time - task.start_time).total_seconds()
+            if task.start_time:
+                duration = (task.end_time - task.start_time).total_seconds()
+            else:
+                duration = 0
             
             logger.info(f"✅ Conversion completed: {task.task_id}")
             logger.info(f"   Total: {task.total_files}")
@@ -381,6 +396,7 @@ class ConversionService:
     async def get_supported_formats(self) -> Dict[str, Any]:
         """Get supported document formats from Docling config"""
         try:
+            self._setup_backend_path()
             from docling_processor import get_docling_config
             
             config = get_docling_config()
@@ -410,6 +426,7 @@ class ConversionService:
     ) -> Dict[str, Any]:
         """Validate documents before conversion"""
         try:
+            self._setup_backend_path()
             from docling_processor import get_docling_config, create_document_scanner
             
             config = get_docling_config()
@@ -421,7 +438,7 @@ class ConversionService:
             
             # Scan directory
             scanner = create_document_scanner(config)
-            files_to_process = scanner.scan_directory()
+            scanner.scan_directory()
             
             # Get scan stats
             scan_stats = scanner.get_scan_stats()
@@ -467,7 +484,14 @@ class ConversionService:
             # Get completed tasks
             history = []
             
-            for task_id, task in list(self._tasks.items())[-limit:]:
+            # Sort tasks by start time to get the most recent ones
+            sorted_tasks = sorted(
+                self._tasks.items(),
+                key=lambda item: item[1].start_time if item[1].start_time else datetime.min,
+                reverse=True
+            )
+
+            for task_id, task in sorted_tasks[:limit]:
                 if task.status in [ConversionStatus.COMPLETED, ConversionStatus.FAILED]:
                     history.append({
                         "task_id": task_id,

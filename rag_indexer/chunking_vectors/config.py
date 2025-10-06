@@ -8,6 +8,7 @@ PURPOSE: This module now only handles markdown input → chunking → embeddings
 """
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 
@@ -23,16 +24,20 @@ class Config:
     def _load_settings(self):
         """Load all settings from environment variables with defaults"""
         
+        # --- START ИСПРАВЛЕНИЕ: Используем абсолютные пути ---
+        # Вычисляем путь к директории rag_indexer/data относительно этого файла,
+        # что делает его независимым от точки запуска.
+        base_dir = Path(__file__).resolve().parent.parent / "data"
+        project_root = Path(__file__).resolve().parent.parent.parent
+        
         # --- DIRECTORY AND FILE SETTINGS ---
-        # Default all paths under rag_indexer/data
-        base_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, "data"))
-        self.DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", os.path.join(base_dir, "markdown"))  # expects markdown files
-        # Keep error log at project root logs by default
-        project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-        self.ERROR_LOG_FILE = os.path.join(project_root, "logs", "indexing_errors.log")
+        self.DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", str(base_dir / "markdown"))
+        self.ERROR_LOG_FILE = str(project_root / "logs" / "indexing_errors.log")
+        # --- END ИСПРАВЛЕНИЕ ---
         
         # --- BLACKLIST SETTINGS (Keep for excluding logs/temp directories) ---
-        blacklist_env = os.getenv("BLACKLIST_DIRECTORIES", "logs,temp,.git,__pycache__,.vscode,.idea,node_modules")
+        # Добавил "_metadata", чтобы сканер индексации не пытался обработать JSON-файлы
+        blacklist_env = os.getenv("BLACKLIST_DIRECTORIES", "logs,temp,.git,__pycache__,.vscode,.idea,node_modules,_metadata")
         self.BLACKLIST_DIRECTORIES = [dir.strip() for dir in blacklist_env.split(",") if dir.strip()]
         
         # --- DATABASE SETTINGS ---
@@ -81,8 +86,21 @@ class Config:
         if not self.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY not found in .env file!")
         
-        if not os.path.exists(self.DOCUMENTS_DIR):
-            raise ValueError(f"Documents directory does not exist: {self.DOCUMENTS_DIR}")
+        # --- START ИСПРАВЛЕНИЕ: Создаем директории, если их нет ---
+        # Проверяем и создаем директории для документов и логов, если они отсутствуют.
+        # Это делает приложение более устойчивым к первому запуску.
+        docs_path = Path(self.DOCUMENTS_DIR)
+        if not docs_path.exists():
+            print(f"⚠️ WARNING: Documents directory does not exist: {self.DOCUMENTS_DIR}")
+            print(f"   Creating directory...")
+            docs_path.mkdir(parents=True, exist_ok=True)
+            
+        logs_path = Path(self.ERROR_LOG_FILE).parent
+        if not logs_path.exists():
+            print(f"⚠️ WARNING: Logs directory does not exist: {logs_path}")
+            print(f"   Creating directory...")
+            logs_path.mkdir(parents=True, exist_ok=True)
+        # --- END ИСПРАВЛЕНИЕ ---
         
         # Validate numeric ranges
         if self.CHUNK_SIZE < 100:
@@ -92,9 +110,9 @@ class Config:
             raise ValueError("CHUNK_OVERLAP must be less than CHUNK_SIZE")
         
         # Validate Gemini embedding dimensions
-        if self.EMBED_DIM not in [768, 1536, 3072]:
-            print(f"WARNING: Unusual embedding dimension for Gemini: {self.EMBED_DIM}")
-            print(f"Recommended dimensions: 768, 1536, or 3072")
+        if self.EMBED_DIM not in [768]:
+             print(f"WARNING: Unusual embedding dimension for text-embedding-004: {self.EMBED_DIM}")
+             print(f"Recommended dimension for text-embedding-004 is 768.")
         
         if self.PROCESSING_BATCH_SIZE < 1:
             raise ValueError("PROCESSING_BATCH_SIZE must be at least 1")
@@ -130,6 +148,7 @@ class Config:
     
     def print_config(self):
         """Print current configuration in a readable format"""
+        print("=" * 60)
         print("=== SIMPLIFIED RAG INDEXER CONFIGURATION (CHUNKING & VECTORS) ===")
         print(f"Documents directory: {self.DOCUMENTS_DIR} (expects markdown files)")
         print(f"Blacklisted directories: {', '.join(self.BLACKLIST_DIRECTORIES)}")
@@ -268,11 +287,11 @@ def validate_gemini_environment():
         validation['configuration_issues'].append("GEMINI_API_KEY not set")
     
     # Check embedding model
-    if config.EMBED_MODEL not in ['gemini-embedding-001', 'text-embedding-004']:
+    if config.EMBED_MODEL not in ['text-embedding-004']:
         validation['warnings'].append(f"Unusual embedding model: {config.EMBED_MODEL}")
     
     # Check embedding dimension
-    if config.EMBED_DIM not in [768, 1536, 3072]:
+    if config.EMBED_DIM not in [768]:
         validation['warnings'].append(f"Unusual embedding dimension: {config.EMBED_DIM}")
     
     # Check rate limits
@@ -351,7 +370,8 @@ def get_recommended_gemini_env_vars():
         'ENABLE_PROGRESS_LOGGING': 'true',
         
         # Documents directory (markdown input)
-        'DOCUMENTS_DIR': './data/markdown',
+        # Этот путь теперь вычисляется автоматически, но можно переопределить
+        'DOCUMENTS_DIR': './rag_indexer/data/markdown',
         
         # Database
         'SUPABASE_CONNECTION_STRING': 'your_connection_string_here',
@@ -421,6 +441,7 @@ if __name__ == "__main__":
     try:
         config = get_config()
         print("✅ Configuration loaded successfully")
+        config.print_config()
         
         # Print feature status
         print_feature_status()
