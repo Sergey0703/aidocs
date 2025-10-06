@@ -47,7 +47,7 @@ class DoclingConfig:
         
         # --- NAMING CONVENTION ---
         # Format: timestamp_originalname.md
-        self.USE_TIMESTAMP_PREFIX = os.getenv("USE_TIMESTAMP_PREFIX", "true").lower() == "true"
+        self.USE_TIMESTAMP_PREFIX = os.getenv("USE_TIMESTAMP_PREFIX", "false").lower() == "true"
         self.TIMESTAMP_FORMAT = os.getenv("TIMESTAMP_FORMAT", "%Y%m%d_%H%M%S")
         
         # --- ERROR HANDLING ---
