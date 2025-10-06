@@ -1,5 +1,11 @@
 DROP TABLE vecs.documents;
 
+CREATE TABLE vecs.documents (
+  id UUID PRIMARY KEY,
+  vec VECTOR(768), -- <--- УКАЖИТЕ 768
+  metadata JSONB
+);
+
 SELECT replace(metadata ->> 'text', E'\n', ' ') AS full_document
 FROM vecs.documents;
 
