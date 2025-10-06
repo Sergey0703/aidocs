@@ -1,344 +1,204 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Markdown loader module for RAG Document Indexer (Part 2: Chunking & Vectors Only)
-Simple markdown file loading from Docling output
-PURPOSE: Load markdown files → validate → create LlamaIndex Documents
-"""
+# rag_indexer/chunking_vectors/markdown_loader.py
+# --- ИСПРАВЛЕНО: Теперь загружает метаданные из JSON и включает все вспомогательные функции ---
 
 import os
+import json
+import logging
+import time
+import uuid
 from pathlib import Path
 from datetime import datetime
+from typing import List, Tuple, Dict, Any, Optional
 from llama_index.core import Document
 
+logger = logging.getLogger(__name__)
 
-def clean_content_from_null_bytes(content):
-    """
-    Clean content from null bytes and other problematic characters
-    
-    Args:
-        content: Text content to clean
-    
-    Returns:
-        str: Cleaned content
-    """
+
+def clean_content_from_null_bytes(content: str) -> str:
+    """Clean content from null bytes and other problematic characters."""
     if not isinstance(content, str):
         return content
-    
-    # Remove null bytes and control characters
     content = content.replace('\u0000', '').replace('\x00', '')
-    cleaned_content = ''.join(char for char in content 
-                            if ord(char) >= 32 or char in '\n\t\r')
+    cleaned_content = ''.join(char for char in content if ord(char) >= 32 or char in '\n\t\r')
     return cleaned_content
 
 
-def clean_metadata_recursive(obj):
-    """
-    Recursively clean metadata from null bytes
-    
-    Args:
-        obj: Object to clean (dict, list, str, etc.)
-    
-    Returns:
-        Cleaned object
-    """
+def clean_metadata_recursive(obj: Any) -> Any:
+    """Recursively clean metadata from null bytes."""
     if isinstance(obj, dict):
         return {k: clean_metadata_recursive(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [clean_metadata_recursive(v) for v in obj]
     elif isinstance(obj, str):
         cleaned = obj.replace('\u0000', '').replace('\x00', '')
-        return cleaned[:1000]  # Limit metadata string length
+        return cleaned[:2048]  # Limit metadata string length for safety
     else:
         return obj
 
 
 class MarkdownLoader:
-    """Simple markdown file loader for preprocessed documents from Docling"""
+    """
+    Simple markdown file loader for preprocessed documents from Docling.
+    It now enriches document metadata by loading from corresponding JSON files.
+    """
     
-    def __init__(self, input_dir, recursive=True, config=None):
+    def __init__(self, input_dir: str, recursive: bool = True, config: Any = None):
         """
-        Initialize markdown loader
+        Initialize markdown loader.
         
         Args:
-            input_dir: Input directory path (markdown files from Docling)
-            recursive: Whether to scan recursively
-            config: Configuration object
+            input_dir: Input directory path (markdown files from Docling).
+            recursive: Whether to scan recursively.
+            config: Configuration object.
         """
-        self.input_dir = input_dir
+        self.input_dir = Path(input_dir)
+        self.metadata_dir = self.input_dir / "_metadata"
         self.recursive = recursive
         self.config = config
+        self.blacklist_directories = getattr(config, 'BLACKLIST_DIRECTORIES', [])
         
-        # Get blacklist from config
-        self.blacklist_directories = []
-        if config:
-            self.blacklist_directories = config.BLACKLIST_DIRECTORIES
-        
-        # Statistics
         self.loading_stats = {
-            'total_files_found': 0,
-            'markdown_files': 0,
+            'total_files_scanned': 0,
+            'markdown_files_found': 0,
             'documents_created': 0,
             'failed_files': 0,
             'failed_files_list': [],
             'total_characters': 0,
-            'directories_scanned': 0,
-            'directories_skipped': 0,
-            'loading_time': 0
+            'metadata_files_loaded': 0,
+            'metadata_files_missing': 0,
+            'loading_time': 0.0,
         }
-    
-    def _is_blacklisted_directory(self, directory_path):
-        """
-        Check if a directory is blacklisted
-        
-        Args:
-            directory_path: Path to check
-        
-        Returns:
-            bool: True if directory should be excluded
-        """
-        if not self.blacklist_directories:
-            return False
-        
-        path_obj = Path(directory_path)
-        path_parts = path_obj.parts
-        
-        # Check if any part of the path matches blacklisted directories
-        for blacklist_dir in self.blacklist_directories:
-            if blacklist_dir in path_parts or path_obj.name == blacklist_dir:
-                return True
-        
-        return False
-    
-    def _scan_markdown_files(self):
-        """
-        Scan directory for markdown files
-        
-        Returns:
-            list: List of markdown file paths
-        """
+
+    def _is_blacklisted(self, path: Path) -> bool:
+        """Check if a path is in a blacklisted directory."""
+        # Ensure comparison is case-insensitive and handles different path separators
+        path_parts = {part.lower() for part in path.parts}
+        blacklisted_parts = {part.lower() for part in self.blacklist_directories}
+        return not path_parts.isdisjoint(blacklisted_parts)
+
+    def _scan_markdown_files(self) -> List[str]:
+        """Scan directory for markdown files, respecting blacklists."""
         markdown_files = []
         
-        try:
-            if self.recursive:
-                # Walk directory tree
-                for root, dirs, files in os.walk(self.input_dir):
-                    self.loading_stats['directories_scanned'] += 1
-                    
-                    # Filter out blacklisted directories
-                    if self._is_blacklisted_directory(root):
-                        self.loading_stats['directories_skipped'] += 1
-                        dirs[:] = []  # Don't recurse into this directory
-                        continue
-                    
-                    # Remove blacklisted directories from traversal
-                    original_dirs = dirs.copy()
-                    dirs[:] = []
-                    for dir_name in original_dirs:
-                        dir_path = os.path.join(root, dir_name)
-                        if not self._is_blacklisted_directory(dir_path):
-                            dirs.append(dir_name)
-                        else:
-                            self.loading_stats['directories_skipped'] += 1
-                    
-                    # Find markdown files
-                    for file in files:
-                        if file.lower().endswith('.md'):
-                            file_path = os.path.join(root, file)
-                            markdown_files.append(file_path)
-                            self.loading_stats['total_files_found'] += 1
-            else:
-                # Non-recursive scan
-                directory_path = Path(self.input_dir)
-                for file_path in directory_path.glob('*.md'):
-                    if file_path.is_file():
-                        markdown_files.append(str(file_path))
-                        self.loading_stats['total_files_found'] += 1
-                
-                self.loading_stats['directories_scanned'] = 1
-            
-            self.loading_stats['markdown_files'] = len(markdown_files)
-            
-        except Exception as e:
-            print(f"❌ ERROR: Failed to scan directory {self.input_dir}: {e}")
+        if not self.input_dir.exists():
+            logger.error(f"Input directory does not exist: {self.input_dir}")
+            return []
+
+        glob_pattern = "**/*.md" if self.recursive else "*.md"
         
+        for file_path in self.input_dir.glob(glob_pattern):
+            self.loading_stats['total_files_scanned'] += 1
+            if file_path.is_file() and not self._is_blacklisted(file_path):
+                markdown_files.append(str(file_path))
+        
+        self.loading_stats['markdown_files_found'] = len(markdown_files)
         return markdown_files
-    
-    def _read_markdown_file(self, file_path):
-        """
-        Read a single markdown file
-        
-        Args:
-            file_path: Path to markdown file
-        
-        Returns:
-            tuple: (content, error_message) - content is None if failed
-        """
+
+    def _read_markdown_file(self, file_path: str) -> Tuple[Optional[str], Optional[str]]:
+        """Read a single markdown file with encoding fallbacks."""
         try:
-            # Try UTF-8 first (should be standard for markdown)
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            except UnicodeDecodeError:
-                # Fallback to UTF-8 with error handling
-                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-                    content = f.read()
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
             
-            # Clean content
-            content = clean_content_from_null_bytes(content)
+            cleaned_content = clean_content_from_null_bytes(content)
             
-            if not content or not content.strip():
+            if not cleaned_content.strip():
                 return None, "empty_file"
             
-            return content, None
-            
+            return cleaned_content, None
+        except UnicodeDecodeError:
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                    logger.warning(f"UTF-8 decoding error in {file_path}, reading with replacements.")
+                    content = f.read()
+                return clean_content_from_null_bytes(content), None
+            except Exception as e:
+                return None, f"read_error_fallback: {e}"
         except Exception as e:
-            return None, f"read_error: {str(e)}"
-    
-    def _validate_markdown_content(self, content, file_path):
+            return None, f"read_error: {e}"
+
+    def _load_accompanying_metadata(self, md_file_path: Path) -> Dict[str, Any]:
+        """Loads metadata from the corresponding .json file in the _metadata directory."""
+        try:
+            json_filename = f"{md_file_path.stem}.json"
+            metadata_path = self.metadata_dir / json_filename
+            
+            if metadata_path.exists():
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                self.loading_stats['metadata_files_loaded'] += 1
+                return metadata
+            else:
+                logger.warning(f"Metadata file not found for {md_file_path.name} at {metadata_path}")
+                self.loading_stats['metadata_files_missing'] += 1
+                return {}
+        except Exception as e:
+            logger.error(f"Failed to load or parse metadata for {md_file_path.name}: {e}")
+            self.loading_stats['metadata_files_missing'] += 1
+            return {}
+
+    def _create_document_from_markdown(self, file_path: str, content: str) -> Optional[Document]:
         """
-        Validate markdown content quality
-        
-        Args:
-            content: Markdown content
-            file_path: Path to file (for error messages)
-        
-        Returns:
-            tuple: (is_valid, error_reason)
-        """
-        if not content:
-            return False, "empty_content"
-        
-        # Check minimum length
-        min_length = self.config.MIN_CHUNK_LENGTH if self.config else 50
-        if len(content.strip()) < min_length:
-            return False, f"too_short ({len(content)} chars, min: {min_length})"
-        
-        # Check if it's mostly text (not binary garbage)
-        printable_chars = sum(1 for c in content if c.isprintable() or c.isspace())
-        total_chars = len(content)
-        
-        if total_chars > 0:
-            text_ratio = printable_chars / total_chars
-            if text_ratio < 0.8:  # Less than 80% printable characters
-                return False, f"low_text_quality ({text_ratio:.1%} printable)"
-        
-        # Check if there are actual words
-        words = content.split()
-        if len(words) < 3:
-            return False, f"too_few_words ({len(words)} words)"
-        
-        return True, None
-    
-    def _create_document_from_markdown(self, file_path, content):
-        """
-        Create LlamaIndex Document from markdown file
-        
-        Args:
-            file_path: Path to markdown file
-            content: Markdown content
-        
-        Returns:
-            Document: LlamaIndex Document object
+        Creates a LlamaIndex Document, enriched with metadata from its .json file.
         """
         try:
-            # Clean file path and name
-            clean_file_path = clean_content_from_null_bytes(str(file_path))
-            clean_file_name = clean_content_from_null_bytes(os.path.basename(file_path))
+            md_file_path = Path(file_path)
             
-            # Get file info
-            file_size = os.path.getsize(file_path)
-            file_mtime = os.path.getmtime(file_path)
+            json_metadata = self._load_accompanying_metadata(md_file_path)
             
-            # Create metadata
-            metadata = {
-                'file_path': clean_file_path,
-                'file_name': clean_file_name,
+            base_metadata = {
+                'file_path': str(md_file_path.resolve()),
+                'file_name': md_file_path.name,
                 'file_type': 'markdown',
-                'file_size': file_size,
+                'file_size': md_file_path.stat().st_size,
                 'content_length': len(content),
                 'word_count': len(content.split()),
-                'indexed_at': datetime.now().isoformat(),
-                'source_modified': datetime.fromtimestamp(file_mtime).isoformat(),
-                'source_system': 'docling',  # Mark as coming from Docling preprocessing
-                'processing_stage': 'chunking_and_vectors'  # Part 2 identifier
+                'loader_timestamp': datetime.now().isoformat(),
             }
             
-            # Clean metadata
-            clean_metadata = clean_metadata_recursive(metadata)
-            
-            # Create document
+            final_metadata = {**base_metadata, **json_metadata}
+            cleaned_metadata = clean_metadata_recursive(final_metadata)
+
             document = Document(
+                id_=str(uuid.uuid4()),  # Ensure a unique ID for LlamaIndex
                 text=content,
-                metadata=clean_metadata
+                metadata=cleaned_metadata
             )
-            
             return document
-            
         except Exception as e:
-            print(f"   ❌ ERROR: Failed to create document from {file_path}: {e}")
+            logger.error(f"Failed to create LlamaIndex Document from {file_path}: {e}", exc_info=True)
             return None
-    
-    def load_data(self):
+
+    def load_data(self) -> Tuple[List[Document], Dict[str, Any]]:
         """
-        Load all markdown files and create documents
-        
-        Returns:
-            tuple: (documents, loading_stats)
+        Load all markdown files, enrich with JSON metadata, and create LlamaIndex documents.
         """
-        import time
-        
-        print(f"📁 Loading markdown files from: {self.input_dir}")
-        
-        if self.blacklist_directories:
-            print(f"🚫 Blacklisted directories: {', '.join(self.blacklist_directories)}")
-        
         start_time = time.time()
-        
-        # Scan for markdown files
-        print("🔍 Scanning directory...")
+        logger.info(f"📁 Starting markdown load from: {self.input_dir}")
+        if self.blacklist_directories:
+            logger.info(f"🚫 Blacklisted directories: {', '.join(self.blacklist_directories)}")
+
         markdown_files = self._scan_markdown_files()
         
         if not markdown_files:
-            print("⚠️ WARNING: No markdown files found!")
+            logger.warning("⚠️ No markdown files found to load.")
             self.loading_stats['loading_time'] = time.time() - start_time
             return [], self.loading_stats
+
+        logger.info(f"📄 Found {len(markdown_files)} markdown files. Loading content...")
         
-        print(f"📄 Found {len(markdown_files)} markdown files")
-        
-        if self.loading_stats['directories_skipped'] > 0:
-            print(f"🚫 Skipped {self.loading_stats['directories_skipped']} blacklisted directories")
-        
-        # Load documents
         documents = []
-        print("📖 Loading markdown content...")
-        
-        for i, file_path in enumerate(markdown_files, 1):
-            file_name = os.path.basename(file_path)
-            
-            # Progress indicator
-            if i % 10 == 0:
-                print(f"   Progress: {i}/{len(markdown_files)} files processed...")
-            
-            # Read markdown file
+        for file_path in markdown_files:
             content, error = self._read_markdown_file(file_path)
             
-            if content is None:
+            if error or content is None:
                 self.loading_stats['failed_files'] += 1
-                self.loading_stats['failed_files_list'].append(f"{file_name} - {error}")
-                print(f"   ⚠️ Failed to read: {file_name} ({error})")
+                self.loading_stats['failed_files_list'].append({"file": file_path, "reason": error or "unknown_read_error"})
+                logger.error(f"Failed to read {file_path}: {error}")
                 continue
             
-            # Validate content
-            is_valid, validation_error = self._validate_markdown_content(content, file_path)
-            
-            if not is_valid:
-                self.loading_stats['failed_files'] += 1
-                self.loading_stats['failed_files_list'].append(f"{file_name} - {validation_error}")
-                print(f"   ⚠️ Invalid content: {file_name} ({validation_error})")
-                continue
-            
-            # Create document
             document = self._create_document_from_markdown(file_path, content)
             
             if document:
@@ -347,65 +207,47 @@ class MarkdownLoader:
                 self.loading_stats['total_characters'] += len(content)
             else:
                 self.loading_stats['failed_files'] += 1
-                self.loading_stats['failed_files_list'].append(f"{file_name} - document_creation_failed")
+                self.loading_stats['failed_files_list'].append({"file": file_path, "reason": "document_creation_failed"})
         
         self.loading_stats['loading_time'] = time.time() - start_time
-        
-        # Print summary
         self._print_loading_summary()
         
         return documents, self.loading_stats
-    
+
     def _print_loading_summary(self):
-        """Print loading summary"""
-        print(f"\n📊 MARKDOWN LOADING SUMMARY:")
-        print(f"   ⏱️ Loading time: {self.loading_stats['loading_time']:.2f}s")
-        print(f"   📁 Directories scanned: {self.loading_stats['directories_scanned']}")
-        
-        if self.loading_stats['directories_skipped'] > 0:
-            print(f"   🚫 Directories skipped: {self.loading_stats['directories_skipped']}")
-        
-        print(f"   📄 Markdown files found: {self.loading_stats['markdown_files']}")
-        print(f"   ✅ Documents created: {self.loading_stats['documents_created']}")
-        print(f"   ❌ Failed files: {self.loading_stats['failed_files']}")
-        print(f"   📝 Total characters: {self.loading_stats['total_characters']:,}")
-        
-        if self.loading_stats['documents_created'] > 0:
-            avg_chars = self.loading_stats['total_characters'] / self.loading_stats['documents_created']
-            print(f"   📊 Average characters per document: {avg_chars:.0f}")
+        """Print a summary of the loading process."""
+        stats = self.loading_stats
+        summary = [
+            "="*50,
+            "📊 MARKDOWN LOADING SUMMARY",
+            "="*50,
+            f"⏱️ Loading time: {stats['loading_time']:.2f}s",
+            f"📄 Markdown files found: {stats['markdown_files_found']}",
+            f"✅ Documents created: {stats['documents_created']}",
+            f"❌ Failed to load: {stats['failed_files']}",
+            f"📝 Total characters loaded: {stats['total_characters']:,}",
+            f"📋 Metadata files loaded: {stats['metadata_files_loaded']}",
+            f"❓ Metadata files missing: {stats['metadata_files_missing']}",
+        ]
+        for line in summary:
+            logger.info(line)
             
-            success_rate = (self.loading_stats['documents_created'] / self.loading_stats['markdown_files'] * 100)
-            print(f"   📈 Success rate: {success_rate:.1f}%")
-        
-        if self.loading_stats['failed_files'] > 0:
-            print(f"\n   ⚠️ Failed files details:")
-            for i, failed_file in enumerate(self.loading_stats['failed_files_list'][:5], 1):
-                print(f"      {i}. {failed_file}")
-            
-            if len(self.loading_stats['failed_files_list']) > 5:
-                print(f"      ... and {len(self.loading_stats['failed_files_list']) - 5} more")
-    
+        if stats['failed_files'] > 0:
+            logger.warning("--- Failed Files ---")
+            for item in stats['failed_files_list'][:5]:
+                logger.warning(f"  - {item['file']}: {item['reason']}")
+            if len(stats['failed_files_list']) > 5:
+                logger.warning(f"  ... and {len(stats['failed_files_list']) - 5} more.")
+        logger.info("="*50)
+
     def get_loading_stats(self):
-        """
-        Get loading statistics
-        
-        Returns:
-            dict: Loading statistics
-        """
+        """Get loading statistics"""
         return self.loading_stats.copy()
 
 
-def create_markdown_loader(documents_dir, recursive=True, config=None):
+def create_markdown_loader(documents_dir: str, recursive: bool = True, config: Any = None) -> MarkdownLoader:
     """
-    Create a markdown loader instance
-    
-    Args:
-        documents_dir: Directory containing markdown files
-        recursive: Whether to scan recursively
-        config: Configuration object
-    
-    Returns:
-        MarkdownLoader: Configured markdown loader
+    Factory function to create a MarkdownLoader instance.
     """
     return MarkdownLoader(
         input_dir=documents_dir,
@@ -414,15 +256,9 @@ def create_markdown_loader(documents_dir, recursive=True, config=None):
     )
 
 
-def validate_markdown_directory(directory_path):
+def validate_markdown_directory(directory_path: str) -> Tuple[bool, str, int]:
     """
-    Validate that a directory exists and contains markdown files
-    
-    Args:
-        directory_path: Path to directory
-    
-    Returns:
-        tuple: (is_valid, error_message, file_count)
+    Validate that a directory exists and contains markdown files.
     """
     try:
         if not os.path.exists(directory_path):
@@ -431,128 +267,111 @@ def validate_markdown_directory(directory_path):
         if not os.path.isdir(directory_path):
             return False, f"Path is not a directory: {directory_path}", 0
         
-        # Count markdown files
-        markdown_count = 0
-        for root, dirs, files in os.walk(directory_path):
-            markdown_count += sum(1 for f in files if f.lower().endswith('.md'))
+        markdown_count = len(list(Path(directory_path).glob("**/*.md")))
         
         if markdown_count == 0:
-            return False, f"No markdown files found in: {directory_path}", 0
+            return True, f"Directory is valid, but no markdown files were found in: {directory_path}", 0
         
-        return True, None, markdown_count
+        return True, f"Directory is valid and contains {markdown_count} markdown files.", markdown_count
         
     except Exception as e:
         return False, f"Error validating directory: {e}", 0
 
 
-def scan_markdown_files(directory_path, recursive=True):
+def scan_markdown_files(directory_path: str, recursive: bool = True) -> Dict[str, Any]:
     """
-    Quick scan of markdown files in directory
-    
-    Args:
-        directory_path: Directory to scan
-        recursive: Whether to scan recursively
-    
-    Returns:
-        dict: Scan results
+    Quick scan of markdown files in a directory.
     """
-    results = {
+    results: Dict[str, Any] = {
         'total_markdown_files': 0,
         'total_size_bytes': 0,
         'files': []
     }
     
     try:
-        if recursive:
-            for root, dirs, files in os.walk(directory_path):
-                for file in files:
-                    if file.lower().endswith('.md'):
-                        file_path = os.path.join(root, file)
-                        file_size = os.path.getsize(file_path)
-                        
-                        results['total_markdown_files'] += 1
-                        results['total_size_bytes'] += file_size
-                        results['files'].append({
-                            'path': file_path,
-                            'name': file,
-                            'size': file_size
-                        })
-        else:
-            directory = Path(directory_path)
-            for file_path in directory.glob('*.md'):
-                if file_path.is_file():
-                    file_size = file_path.stat().st_size
-                    
-                    results['total_markdown_files'] += 1
-                    results['total_size_bytes'] += file_size
-                    results['files'].append({
-                        'path': str(file_path),
-                        'name': file_path.name,
-                        'size': file_size
-                    })
-        
-        # Calculate average size
+        glob_pattern = "**/*.md" if recursive else "*.md"
+        for file_path in Path(directory_path).glob(glob_pattern):
+            if file_path.is_file():
+                file_size = file_path.stat().st_size
+                results['total_markdown_files'] += 1
+                results['total_size_bytes'] += file_size
+                results['files'].append({
+                    'path': str(file_path),
+                    'name': file_path.name,
+                    'size': file_size
+                })
+
         if results['total_markdown_files'] > 0:
             results['average_size_bytes'] = results['total_size_bytes'] / results['total_markdown_files']
             results['total_size_mb'] = results['total_size_bytes'] / (1024 * 1024)
-        
+            
     except Exception as e:
         results['error'] = str(e)
     
     return results
 
 
-def print_markdown_scan_summary(scan_results):
+def print_markdown_scan_summary(scan_results: Dict[str, Any]):
     """
-    Print summary of markdown file scan
-    
-    Args:
-        scan_results: Results from scan_markdown_files
+    Print a summary of a markdown file scan.
     """
     if 'error' in scan_results:
         print(f"❌ Scan error: {scan_results['error']}")
         return
     
-    print(f"\n📊 MARKDOWN FILES SCAN SUMMARY:")
-    print(f"   📄 Total markdown files: {scan_results['total_markdown_files']}")
+    print("\n📊 MARKDOWN FILES SCAN SUMMARY:")
+    print(f"   📄 Total markdown files: {scan_results.get('total_markdown_files', 0)}")
     
-    if scan_results['total_markdown_files'] > 0:
-        print(f"   💾 Total size: {scan_results['total_size_mb']:.2f} MB")
-        print(f"   📊 Average file size: {scan_results['average_size_bytes']/1024:.1f} KB")
+    if scan_results.get('total_markdown_files', 0) > 0:
+        print(f"   💾 Total size: {scan_results.get('total_size_mb', 0):.2f} MB")
+        print(f"   📊 Average file size: {scan_results.get('average_size_bytes', 0) / 1024:.1f} KB")
         
-        if len(scan_results['files']) <= 10:
-            print(f"\n   Files:")
-            for file_info in scan_results['files']:
-                size_kb = file_info['size'] / 1024
-                print(f"      - {file_info['name']} ({size_kb:.1f} KB)")
-        else:
-            print(f"\n   First 10 files:")
-            for file_info in scan_results['files'][:10]:
-                size_kb = file_info['size'] / 1024
-                print(f"      - {file_info['name']} ({size_kb:.1f} KB)")
-            print(f"      ... and {len(scan_results['files']) - 10} more files")
+        files_list = scan_results.get('files', [])
+        print("\n   Files (first 10):")
+        for file_info in files_list[:10]:
+            size_kb = file_info.get('size', 0) / 1024
+            print(f"      - {file_info.get('name')} ({size_kb:.1f} KB)")
+        if len(files_list) > 10:
+            print(f"      ... and {len(files_list) - 10} more.")
 
 
 if __name__ == "__main__":
     # Test markdown loader when run directly
-    import sys
-    
-    print("📁 Markdown Loader Test")
+    print("📁 Markdown Loader Test (with JSON metadata enrichment)")
     print("=" * 60)
     
-    # Test directory validation
-    test_dir = "./data/markdown" if len(sys.argv) < 2 else sys.argv[1]
+    # Configure basic logging for standalone test
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    # Use a relative path for testing that should work if run from project root
+    test_dir = str(Path(__file__).resolve().parent.parent / "data" / "markdown")
     
-    is_valid, error, file_count = validate_markdown_directory(test_dir)
+    is_valid, msg, file_count = validate_markdown_directory(test_dir)
+    print(f"Validation result for '{test_dir}': {msg}")
     
-    if is_valid:
-        print(f"✅ Directory is valid: {test_dir}")
-        print(f"📄 Found {file_count} markdown files")
-        
-        # Quick scan
+    if is_valid and file_count > 0:
+        print("\n--- Running Quick Scan ---")
         scan_results = scan_markdown_files(test_dir, recursive=True)
         print_markdown_scan_summary(scan_results)
-    else:
-        print(f"❌ Directory validation failed: {error}")
-    
+
+        print("\n--- Running Full Loader Test ---")
+        try:
+            # Simple config mock for testing
+            class MockConfig:
+                BLACKLIST_DIRECTORIES = ["_metadata"]
+
+            loader = create_markdown_loader(test_dir, config=MockConfig())
+            docs, stats = loader.load_data()
+            if docs:
+                print(f"\nSuccessfully loaded {len(docs)} documents.")
+                print("Verifying metadata of the first document:")
+                first_doc_meta = docs[0].metadata
+                print(json.dumps(first_doc_meta, indent=2))
+                if 'original_path' in first_doc_meta:
+                    print("\n✅ SUCCESS: 'original_path' found in metadata!")
+                else:
+                    print("\n❌ FAILED: 'original_path' is MISSING from metadata!")
+        except Exception as e:
+            print(f"\n❌ An error occurred during the full loader test: {e}")
+
     print("=" * 60)
