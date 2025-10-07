@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # api/modules/indexing/services/indexing_service.py
-# Final version with path correction, de-duplication, and robust progress tracking.
+# Final version with all fixes applied.
 
 import asyncio
 import logging
@@ -352,11 +352,19 @@ class IndexingService:
     
     def _add_to_history(self, task: IndexingTaskState):
         if not task.start_time: task.start_time = datetime.now()
+        
+        # --- ИСПРАВЛЕНИЕ ОШИБКИ ---
+        files_processed_count = task.statistics.get("documents_processed", 0)
+        # Убедимся, что это число, а не список
+        if not isinstance(files_processed_count, int):
+             files_processed_count = len(files_processed_count) if hasattr(files_processed_count, '__len__') else 0
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+             
         history_item = IndexingHistoryItem(
             task_id=task.task_id, mode=task.mode, status=task.status,
             start_time=task.start_time, end_time=task.end_time,
             duration=(task.end_time - task.start_time).total_seconds() if task.end_time and task.start_time else 0.0,
-            files_processed=len(task.statistics.get("documents_processed", 0)),
+            files_processed=files_processed_count,
             chunks_created=task.statistics.get("chunks_created", 0),
             success_rate=task.statistics.get("success_rate", 0.0),
             error_message=task.errors[0] if task.errors else None
