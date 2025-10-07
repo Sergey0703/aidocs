@@ -76,3 +76,7 @@ rich>=13.0.0
 # Optional GPU support for Docling:
 # - For faster OCR processing
 # - Not required, will work on CPU
+
+
+# Optional but recommended for faster Hugging Face model downloads
+hf_xet>=0.1.1

@@ -1,55 +1,52 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Document converter module using Docling
-Converts raw documents to markdown format
+Document converter module using Docling.
+This version relies on Docling's automatic backend detection.
 """
 
 import time
-import shutil
 from pathlib import Path
 from datetime import datetime
 from docling.document_converter import DocumentConverter as DoclingConverter
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
-# Убираем неиспользуемые импорты, чтобы избежать путаницы
 
 from .metadata_extractor import MetadataExtractor
-from .utils_docling import ensure_directory_exists, format_time, safe_write_file
-
+from .utils_docling import safe_write_file, format_time
 
 class DocumentConverter:
     """Converter for documents using Docling"""
     
     def __init__(self, config):
         """
-        Initialize document converter
+        Initialize document converter.
         
         Args:
-            config: DoclingConfig instance
+            config: DoclingConfig instance.
         """
         self.config = config
         self.metadata_extractor = MetadataExtractor(config)
         self.docling = self._init_docling_converter()
         self.stats = {
-            'total_files': 0, 'successful': 0, 'failed': 0, 'skipped': 0,
-            'total_time': 0, 'failed_files': []
+            'total_files': 0, 'successful': 0, 'failed': 0, 'total_time': 0,
+            'failed_files': [], 'total_batch_time': 0
         }
     
     def _init_docling_converter(self):
         """
-        Initialize Docling document converter
+        Initialize Docling document converter.
         """
         print("🔧 Initializing Docling converter...")
         
-        # Настраиваем опции для конвейера PDF
+        # Configure options for the PDF pipeline (e.g., OCR).
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = self.config.ENABLE_OCR
         pipeline_options.do_table_structure = self.config.EXTRACT_TABLES
         
-        # Создаем конвертер. Docling автоматически обнаружит и использует
-        # установленный PDF бэкенд (pypdfium2), если он доступен.
-        # Не нужно ничего указывать явно.
+        # Create the converter. Docling will automatically discover and use
+        # the installed PDF backend (pypdfium2) if it's available.
+        # No manual backend configuration is needed.
         converter = DoclingConverter(
             allowed_formats=[
                 InputFormat.PDF,
@@ -68,10 +65,9 @@ class DocumentConverter:
     
     def convert_file(self, input_path):
         """
-        Convert a single file to markdown
+        Convert a single file to markdown.
         """
         input_path = Path(input_path)
-        self.stats['total_files'] += 1
         
         timestamp = datetime.now().strftime(self.config.TIMESTAMP_FORMAT)
         output_path = self.config.get_output_path(input_path, timestamp)
@@ -86,7 +82,7 @@ class DocumentConverter:
             markdown_content = result.document.export_to_markdown()
             
             if not safe_write_file(output_path, markdown_content):
-                raise Exception("Failed to write markdown file")
+                raise IOError(f"Failed to write markdown file to {output_path}")
             
             conversion_time = time.time() - start_time
             metadata = self.metadata_extractor.extract_metadata(
@@ -96,9 +92,6 @@ class DocumentConverter:
             )
             self.metadata_extractor.save_metadata(input_path, metadata)
             
-            self.stats['successful'] += 1
-            self.stats['total_time'] += conversion_time
-            
             print(f"   ✅ Success ({conversion_time:.2f}s)")
             print(f"   📊 Size: {len(markdown_content):,} chars")
             
@@ -106,38 +99,55 @@ class DocumentConverter:
             
         except Exception as e:
             error_msg = str(e)
-            self.stats['failed'] += 1
-            self.stats['failed_files'].append({
-                'file': str(input_path), 'error': error_msg, 'timestamp': datetime.now().isoformat()
-            })
             print(f"   ❌ Failed: {error_msg}")
             self._save_failed_conversion_log(input_path, error_msg)
             return False, None, error_msg
-    
+
     def convert_batch(self, files_to_process):
         """
-        Convert a batch of files
+        Convert a batch of files, updating stats along the way.
         """
         if not files_to_process:
+            print("⚠️ No files to convert in this batch.")
             return self.get_conversion_stats()
         
         print(f"\n🚀 Starting conversion of {len(files_to_process)} files...")
-        batch_start = time.time()
+        batch_start_time = time.time()
         
+        successful_in_batch = 0
+        failed_in_batch = 0
+        total_time_in_batch = 0
+
         for i, file_path in enumerate(files_to_process, 1):
+            self.stats['total_files'] += 1
             print(f"\n[{i}/{len(files_to_process)}]", end=" ")
-            self.convert_file(file_path)
+
+            file_start_time = time.time()
+            success, _, error_msg = self.convert_file(file_path)
+            file_conversion_time = time.time() - file_start_time
+
+            if success:
+                successful_in_batch += 1
+                total_time_in_batch += file_conversion_time
+            else:
+                failed_in_batch += 1
+                self.stats['failed_files'].append({
+                    'file': str(file_path), 'error': error_msg, 'timestamp': datetime.now().isoformat()
+                })
+            
             if i % 5 == 0:
-                self._print_progress(i, len(files_to_process), batch_start)
+                self._print_progress(i, len(files_to_process), batch_start_time)
         
-        self.stats['total_batch_time'] = time.time() - batch_start
+        self.stats['successful'] += successful_in_batch
+        self.stats['failed'] += failed_in_batch
+        self.stats['total_time'] += total_time_in_batch
+        self.stats['total_batch_time'] = time.time() - batch_start_time
+        
         self._print_final_summary()
         return self.get_conversion_stats()
     
     def _save_failed_conversion_log(self, input_path, error_msg):
-        """
-        Save information about a failed conversion to a log file.
-        """
+        """Save information about a failed conversion to a log file."""
         try:
             failed_dir = Path(self.config.FAILED_CONVERSIONS_DIR)
             failed_dir.mkdir(parents=True, exist_ok=True)
@@ -148,22 +158,22 @@ class DocumentConverter:
             print(f"   ⚠️ Could not save failed conversion log: {e}")
     
     def _print_progress(self, current, total, start_time):
-        """Print conversion progress"""
+        """Print conversion progress."""
         elapsed = time.time() - start_time
         rate = current / elapsed if elapsed > 0 else 0
         eta = (total - current) / rate if rate > 0 else 0
         print(f"\n📊 Progress: {current}/{total} files")
-        print(f"   ✅ Successful: {self.stats['successful']}")
-        print(f"   ❌ Failed: {self.stats['failed']}")
+        print(f"   ✅ Successful (in batch): {self.stats['successful']}")
+        print(f"   ❌ Failed (in batch): {self.stats['failed']}")
         print(f"   ⚡ Rate: {rate:.2f} files/sec")
         print(f"   ⏱️ ETA: {format_time(eta)}")
     
     def _print_final_summary(self):
-        """Print final conversion summary"""
+        """Print final conversion summary."""
         print(f"\n" + "=" * 60)
-        print(f"✅ CONVERSION COMPLETED")
+        print(f"✅ BATCH CONVERSION COMPLETED")
         print(f"=" * 60)
-        print(f"📊 Results:")
+        print(f"📊 Results for this batch:")
         print(f"   Total files attempted: {self.stats['total_files']}")
         print(f"   ✅ Successful: {self.stats['successful']}")
         print(f"   ❌ Failed: {self.stats['failed']}")
@@ -172,10 +182,9 @@ class DocumentConverter:
             success_rate = (self.stats['successful'] / self.stats['total_files']) * 100
             print(f"   📈 Success rate: {success_rate:.1f}%")
         
-        total_batch_time = self.stats.get('total_batch_time')
-        if total_batch_time:
-            print(f"\n⏱️ Performance:")
-            print(f"   Total time: {format_time(total_batch_time)}")
+        if self.stats.get('total_batch_time'):
+            print(f"\n⏱️ Performance for this batch:")
+            print(f"   Total time: {format_time(self.stats['total_batch_time'])}")
             if self.stats['successful'] > 0:
                 avg_time = self.stats['total_time'] / self.stats['successful']
                 print(f"   Average per successful file: {avg_time:.2f}s")
@@ -189,12 +198,9 @@ class DocumentConverter:
         print(f"=" * 60)
     
     def get_conversion_stats(self):
-        """Get conversion statistics"""
         return self.stats.copy()
 
 
 def create_document_converter(config):
-    """
-    Create document converter instance
-    """
+    """Factory to create a DocumentConverter instance."""
     return DocumentConverter(config)
