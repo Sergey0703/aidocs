@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Document converter module using Docling.
-This version relies on Docling's automatic backend detection.
+Document converter module using Docling 2.x
+Compatible with Docling 2.55.1+ API
+Automatic backend detection (pypdfium2)
 """
 
 import time
 from pathlib import Path
 from datetime import datetime
+
+# Docling 2.x imports
 from docling.document_converter import DocumentConverter as DoclingConverter
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -15,8 +18,9 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from .metadata_extractor import MetadataExtractor
 from .utils_docling import safe_write_file, format_time
 
+
 class DocumentConverter:
-    """Converter for documents using Docling"""
+    """Converter for documents using Docling 2.x"""
     
     def __init__(self, config):
         """
@@ -32,40 +36,95 @@ class DocumentConverter:
             'total_files': 0, 'successful': 0, 'failed': 0, 'total_time': 0,
             'failed_files': [], 'total_batch_time': 0
         }
+        
+        # Print Docling version info
+        self._print_docling_info()
+    
+    def _print_docling_info(self):
+        """Print Docling version and configuration info"""
+        try:
+            import docling
+            version = getattr(docling, '__version__', 'unknown')
+            print(f"📦 Docling version: {version}")
+            
+            # Check if pypdfium2 is available
+            try:
+                import pypdfium2
+                pypdfium2_version = getattr(pypdfium2, '__version__', 'unknown')
+                print(f"📦 pypdfium2 backend: {pypdfium2_version}")
+            except ImportError:
+                print("⚠️  pypdfium2 not installed - PDF processing may be limited")
+        except Exception as e:
+            print(f"⚠️  Could not determine Docling version: {e}")
     
     def _init_docling_converter(self):
         """
-        Initialize Docling document converter.
-        """
-        print("🔧 Initializing Docling converter...")
+        Initialize Docling document converter for version 2.x
         
-        # Configure options for the PDF pipeline (e.g., OCR).
+        Docling 2.x automatically detects and uses available backends:
+        - PDF: pypdfium2 (automatically detected if installed)
+        - DOCX: python-docx
+        - PPTX: python-pptx
+        - Images: PIL/Pillow + EasyOCR
+        
+        No manual backend configuration needed in 2.x!
+        """
+        print("🔧 Initializing Docling 2.x converter...")
+        
+        # Configure PDF pipeline options (Docling 2.x API)
         pipeline_options = PdfPipelineOptions()
+        
+        # Configure OCR settings
         pipeline_options.do_ocr = self.config.ENABLE_OCR
+        
+        # Configure table extraction
         pipeline_options.do_table_structure = self.config.EXTRACT_TABLES
         
-        # Create the converter. Docling will automatically discover and use
-        # the installed PDF backend (pypdfium2) if it's available.
-        # No manual backend configuration is needed.
-        converter = DoclingConverter(
-            allowed_formats=[
-                InputFormat.PDF,
-                InputFormat.DOCX,
-                InputFormat.PPTX,
-                InputFormat.HTML,
-                InputFormat.IMAGE,
-            ],
-            format_options={
-                InputFormat.PDF: pipeline_options,
-            }
-        )
+        # Additional Docling 2.x options
+        # Enable images in markdown export (if supported)
+        pipeline_options.images_scale = 1.0  # Image scaling factor
+        pipeline_options.generate_page_images = False  # Don't generate page screenshots
         
-        print("✅ Docling converter initialized")
-        return converter
+        # Create converter with automatic backend detection
+        # Docling 2.x will automatically discover and use pypdfium2 if available
+        try:
+            converter = DoclingConverter(
+                allowed_formats=[
+                    InputFormat.PDF,
+                    InputFormat.DOCX,
+                    InputFormat.PPTX,
+                    InputFormat.HTML,
+                    InputFormat.IMAGE,
+                ],
+                format_options={
+                    InputFormat.PDF: pipeline_options,
+                }
+            )
+            
+            print("✅ Docling 2.x converter initialized successfully")
+            print(f"   OCR: {'enabled' if self.config.ENABLE_OCR else 'disabled'}")
+            print(f"   Table extraction: {'enabled' if self.config.EXTRACT_TABLES else 'disabled'}")
+            
+            return converter
+            
+        except Exception as e:
+            print(f"❌ Failed to initialize Docling converter: {e}")
+            print("   Make sure all required dependencies are installed:")
+            print("   - pypdfium2 (for PDF)")
+            print("   - python-docx (for DOCX)")
+            print("   - python-pptx (for PPTX)")
+            print("   - easyocr (for OCR)")
+            raise
     
     def convert_file(self, input_path):
         """
-        Convert a single file to markdown.
+        Convert a single file to markdown using Docling 2.x
+        
+        Args:
+            input_path: Path to input file
+            
+        Returns:
+            tuple: (success: bool, output_path: Path, error_msg: str)
         """
         input_path = Path(input_path)
         
@@ -78,20 +137,36 @@ class DocumentConverter:
         start_time = time.time()
         
         try:
+            # Convert document using Docling 2.x
+            # The convert() method returns ConversionResult
             result = self.docling.convert(str(input_path))
+            
+            # Export to markdown
+            # Docling 2.x: result.document.export_to_markdown()
             markdown_content = result.document.export_to_markdown()
             
+            # Validate content
+            if not markdown_content or len(markdown_content.strip()) < 10:
+                raise ValueError("Conversion produced empty or invalid content")
+            
+            # Write markdown file
             if not safe_write_file(output_path, markdown_content):
                 raise IOError(f"Failed to write markdown file to {output_path}")
             
+            # Calculate conversion time
             conversion_time = time.time() - start_time
+            
+            # Extract and save metadata
             metadata = self.metadata_extractor.extract_metadata(
-                input_path=input_path, output_path=output_path,
-                markdown_content=markdown_content, conversion_time=conversion_time,
+                input_path=input_path, 
+                output_path=output_path,
+                markdown_content=markdown_content, 
+                conversion_time=conversion_time,
                 docling_result=result
             )
             self.metadata_extractor.save_metadata(input_path, metadata)
             
+            # Success message
             print(f"   ✅ Success ({conversion_time:.2f}s)")
             print(f"   📊 Size: {len(markdown_content):,} chars")
             
@@ -99,13 +174,24 @@ class DocumentConverter:
             
         except Exception as e:
             error_msg = str(e)
-            print(f"   ❌ Failed: {error_msg}")
+            conversion_time = time.time() - start_time
+            
+            print(f"   ❌ Failed ({conversion_time:.2f}s): {error_msg}")
+            
+            # Save detailed error log
             self._save_failed_conversion_log(input_path, error_msg)
+            
             return False, None, error_msg
-
+    
     def convert_batch(self, files_to_process):
         """
         Convert a batch of files, updating stats along the way.
+        
+        Args:
+            files_to_process: List of file paths to convert
+            
+        Returns:
+            dict: Conversion statistics
         """
         if not files_to_process:
             print("⚠️ No files to convert in this batch.")
@@ -132,39 +218,78 @@ class DocumentConverter:
             else:
                 failed_in_batch += 1
                 self.stats['failed_files'].append({
-                    'file': str(file_path), 'error': error_msg, 'timestamp': datetime.now().isoformat()
+                    'file': str(file_path), 
+                    'error': error_msg, 
+                    'timestamp': datetime.now().isoformat()
                 })
             
+            # Print progress every 5 files
             if i % 5 == 0:
                 self._print_progress(i, len(files_to_process), batch_start_time)
         
+        # Update cumulative stats
         self.stats['successful'] += successful_in_batch
         self.stats['failed'] += failed_in_batch
         self.stats['total_time'] += total_time_in_batch
         self.stats['total_batch_time'] = time.time() - batch_start_time
         
+        # Print final summary
         self._print_final_summary()
+        
         return self.get_conversion_stats()
     
     def _save_failed_conversion_log(self, input_path, error_msg):
-        """Save information about a failed conversion to a log file."""
+        """
+        Save information about a failed conversion to a log file.
+        
+        Args:
+            input_path: Path to failed input file
+            error_msg: Error message
+        """
         try:
             failed_dir = Path(self.config.FAILED_CONVERSIONS_DIR)
             failed_dir.mkdir(parents=True, exist_ok=True)
+            
             error_log_path = failed_dir / f"{input_path.stem}.error.txt"
-            error_info = f"File: {input_path}\nError: {error_msg}\nTimestamp: {datetime.now().isoformat()}\n"
+            
+            # Get Docling version for debugging
+            try:
+                import docling
+                docling_version = docling.__version__
+            except:
+                docling_version = "unknown"
+            
+            error_info = (
+                f"Docling Conversion Error\n"
+                f"{'=' * 60}\n"
+                f"File: {input_path}\n"
+                f"Error: {error_msg}\n"
+                f"Timestamp: {datetime.now().isoformat()}\n"
+                f"Docling Version: {docling_version}\n"
+                f"{'=' * 60}\n"
+            )
+            
             safe_write_file(error_log_path, error_info)
+            
         except Exception as e:
             print(f"   ⚠️ Could not save failed conversion log: {e}")
     
     def _print_progress(self, current, total, start_time):
-        """Print conversion progress."""
+        """
+        Print conversion progress.
+        
+        Args:
+            current: Current file number
+            total: Total files
+            start_time: Batch start time
+        """
         elapsed = time.time() - start_time
         rate = current / elapsed if elapsed > 0 else 0
         eta = (total - current) / rate if rate > 0 else 0
+        
         print(f"\n📊 Progress: {current}/{total} files")
-        print(f"   ✅ Successful (in batch): {self.stats['successful']}")
-        print(f"   ❌ Failed (in batch): {self.stats['failed']}")
+        print(f"   ✅ Successful: {self.stats['successful']}")
+        print(f"   ❌ Failed: {self.stats['failed']}")
         print(f"   ⚡ Rate: {rate:.2f} files/sec")
         print(f"   ⏱️ ETA: {format_time(eta)}")
     
@@ -195,12 +320,27 @@ class DocumentConverter:
                 print(f"   - {Path(failed['file']).name}: {failed['error'][:100]}...")
             if len(self.stats['failed_files']) > 5:
                 print(f"   ... and {len(self.stats['failed_files']) - 5} more.")
+        
         print(f"=" * 60)
     
     def get_conversion_stats(self):
+        """
+        Get current conversion statistics.
+        
+        Returns:
+            dict: Copy of statistics dictionary
+        """
         return self.stats.copy()
 
 
 def create_document_converter(config):
-    """Factory to create a DocumentConverter instance."""
+    """
+    Factory function to create a DocumentConverter instance.
+    
+    Args:
+        config: DoclingConfig instance
+        
+    Returns:
+        DocumentConverter: Initialized converter
+    """
     return DocumentConverter(config)
