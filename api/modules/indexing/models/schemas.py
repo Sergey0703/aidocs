@@ -199,6 +199,7 @@ class IndexingProgress(BaseModel):
     total_files: int = 0
     processed_files: int = 0
     failed_files: int = 0
+    skipped_files: int = 0  # <--- Поле добавлено здесь
     
     # Chunk processing
     total_chunks: int = 0
@@ -225,6 +226,7 @@ class IndexingStatistics(BaseModel):
     documents_loaded: int = 0
     documents_converted: int = 0
     documents_indexed: int = 0
+    skipped_files: int = 0 # <--- Поле добавлено здесь
     
     # Chunk stats
     chunks_created: int = 0
@@ -265,7 +267,7 @@ class IndexingStatusResponse(BaseModel):
     """Response for indexing status check"""
     task_id: str
     progress: IndexingProgress
-    statistics: IndexingStatistics
+    statistics: Optional[IndexingStatistics] = None # Сделаем опциональным
     errors: List[str] = []
     warnings: List[str] = []
     timestamp: datetime = Field(default_factory=datetime.now)
@@ -338,6 +340,7 @@ class ConversionStatusResponse(BaseModel):
     task_id: str
     progress: ConversionProgress
     results: List[ConversionResult] = []
+    errors: List[str] = []
     timestamp: datetime = Field(default_factory=datetime.now)
 
 

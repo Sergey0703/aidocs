@@ -9,7 +9,7 @@ import time
 import uuid
 import sys
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 
 from ..models.schemas import (
@@ -38,6 +38,7 @@ class IndexingTaskState:
         self.total_files = 0
         self.processed_files = 0
         self.failed_files = 0
+        self.skipped_files = 0
         self.total_chunks = 0
         self.processed_chunks = 0
         self.current_file: Optional[str] = None
@@ -83,6 +84,7 @@ class IndexingTaskState:
             total_files=self.total_files,
             processed_files=self.processed_files,
             failed_files=self.failed_files,
+            skipped_files=self.skipped_files,
             total_chunks=self.total_chunks,
             processed_chunks=self.processed_chunks,
             start_time=self.start_time,
@@ -156,9 +158,10 @@ class IndexingService:
         logger.info(f"🚀 Started indexing task: {task_id}")
         return True
 
-    async def _prepare_documents_for_indexing(self, documents: List[Any], task: IndexingTaskState) -> List[Any]:
+    async def _prepare_documents_for_indexing(self, documents: List[Any], task: IndexingTaskState) -> Tuple[List[Any], int]:
         """
         Filters documents, removes outdated versions from the DB, and returns a list for indexing.
+        Also returns the count of skipped files.
         """
         doc_service = get_document_service()
         files_to_index = []
@@ -205,7 +208,7 @@ class IndexingService:
                     files_to_update += 1
         
         logger.info(f"📊 Indexing Plan: New={len(files_to_index) - files_to_update}, Update={files_to_update}, Skip={files_to_skip}")
-        return files_to_index
+        return files_to_index, files_to_skip
 
     async def _run_real_indexing(
         self,
@@ -237,7 +240,6 @@ class IndexingService:
                 self._add_to_history(task)
                 return
 
-            # --- ИСПРАВЛЕНИЕ ПУТИ ---
             config = get_config()
             if not documents_dir:
                 current_file = Path(__file__)
@@ -246,15 +248,14 @@ class IndexingService:
                 config.DOCUMENTS_DIR = str(default_md_dir)
             else:
                 config.DOCUMENTS_DIR = documents_dir
-            # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
                 
             logger.info(f"📁 Documents directory: {config.DOCUMENTS_DIR}")
 
-            # STAGE 1: LOADING
             task.current_stage = ProcessingStage.LOADING
             task.current_stage_name = "Loading Documents"
             
-            documents, _ = load_markdown_documents(config, create_progress_tracker())
+            progress_tracker = create_progress_tracker()
+            documents, _ = load_markdown_documents(config, progress_tracker)
             
             if not documents:
                 logger.warning("⚠️ No documents found to index.")
@@ -265,8 +266,7 @@ class IndexingService:
 
             task.total_files = len(documents)
             
-            # STAGE 2: PREPARING (DE-DUPLICATION)
-            task.current_stage = ProcessingStage.LOADING # Re-use loading stage for this step in UI
+            task.current_stage = ProcessingStage.LOADING
             task.current_stage_name = "Checking for updates"
             
             documents_to_process = []
@@ -282,8 +282,9 @@ class IndexingService:
                     if document_id:
                         await doc_service.delete_records_by_document_id(document_id)
                 documents_to_process = documents
-            else: # Incremental mode
-                documents_to_process = await self._prepare_documents_for_indexing(documents, task)
+            else:
+                documents_to_process, skipped_count = await self._prepare_documents_for_indexing(documents, task)
+                task.skipped_files = skipped_count
 
             if not documents_to_process:
                 logger.info("✅ All documents are up-to-date. Nothing to index.")
@@ -292,7 +293,6 @@ class IndexingService:
                 self._add_to_history(task)
                 return
 
-            # STAGE 3: CHUNKING
             task.current_stage = ProcessingStage.CHUNKING
             task.current_stage_name = "Chunking Documents"
             logger.info(f"✂️ Chunking {len(documents_to_process)} documents...")
@@ -309,7 +309,6 @@ class IndexingService:
                 return
             logger.info(f"📊 Total chunks to process: {task.total_chunks}")
 
-            # STAGE 4 & 5: EMBEDDING & SAVING
             task.current_stage = ProcessingStage.EMBEDDING
             task.current_stage_name = "Generating Embeddings & Saving"
             
@@ -325,9 +324,10 @@ class IndexingService:
             task.statistics = {
                 "documents_loaded": len(documents),
                 "documents_processed": len(documents_to_process),
+                "skipped_files": task.skipped_files,
                 "chunks_created": task.total_chunks,
                 "chunks_saved": task.processed_chunks,
-                "success_rate": (task.processed_chunks / task.total_chunks * 100) if task.total_chunks > 0 else 0,
+                "success_rate": (task.processed_chunks / task.total_chunks * 100) if task.total_chunks > 0 else 100.0,
             }
             
             task.status = IndexingStatus.COMPLETED
@@ -356,8 +356,8 @@ class IndexingService:
             task_id=task.task_id, mode=task.mode, status=task.status,
             start_time=task.start_time, end_time=task.end_time,
             duration=(task.end_time - task.start_time).total_seconds() if task.end_time and task.start_time else 0.0,
-            files_processed=task.processed_files,
-            chunks_created=task.total_chunks,
+            files_processed=len(task.statistics.get("documents_processed", 0)),
+            chunks_created=task.statistics.get("chunks_created", 0),
             success_rate=task.statistics.get("success_rate", 0.0),
             error_message=task.errors[0] if task.errors else None
         )
@@ -379,7 +379,16 @@ class IndexingService:
         """Get current task status"""
         task = await self.get_task(task_id)
         if not task:
+            for item in self._history:
+                if item.task_id == task_id:
+                    return {
+                        "task_id": item.task_id,
+                        "progress": IndexingProgress(status=item.status, progress_percentage=100),
+                        "statistics": {}, "errors": [item.error_message] if item.error_message else [],
+                        "warnings": [], "timestamp": item.end_time or datetime.now()
+                    }
             return None
+        
         return {
             "task_id": task_id,
             "progress": task.get_progress(),

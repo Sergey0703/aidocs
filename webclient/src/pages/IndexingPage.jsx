@@ -18,6 +18,7 @@ function IndexingPage() {
   const [indexingTaskId, setIndexingTaskId] = useState(null);
   const [indexingStatus, setIndexingStatus] = useState(null);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [indexingResult, setIndexingResult] = useState(null);
 
   // Documents state
   const [documents, setDocuments] = useState([]);
@@ -37,28 +38,47 @@ function IndexingPage() {
   const [indexingSettings, setIndexingSettings] = useState({
     mode: 'incremental',
     batchSize: 50,
-    deleteExisting: false,
     forceReindex: false,
   });
 
   // Error state
   const [error, setError] = useState(null);
 
+  const loadDocuments = useCallback(async () => {
+    setLoadingDocuments(true);
+    try {
+      const response = await ragApi.listDocuments({ limit: 50, sortBy: 'indexed_at', order: 'desc' });
+      setDocuments(response.documents);
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+      setError('Failed to load documents');
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }, []);
+
+  const loadDocumentStats = useCallback(async () => {
+    try {
+      const stats = await ragApi.getDocumentStats();
+      setDocumentStats(stats);
+    } catch (err) {
+      console.error('Failed to load document stats:', err);
+    }
+  }, []);
+
   const handleStartIndexing = useCallback(async () => {
     setError(null);
+    setIndexingResult(null);
+    setIndexingStatus(null);
     setIsIndexing(true);
-    setIndexingStatus(null); // Reset previous status
 
     try {
       const response = await ragApi.startIndexing({
         mode: indexingSettings.mode,
         skipConversion: true,
-        skipIndexing: false,
         batchSize: parseInt(indexingSettings.batchSize),
-        deleteExisting: indexingSettings.deleteExisting,
         forceReindex: indexingSettings.forceReindex,
       });
-
       setIndexingTaskId(response.task_id);
     } catch (err) {
       console.error('Failed to start indexing:', err);
@@ -67,8 +87,6 @@ function IndexingPage() {
     }
   }, [indexingSettings]);
 
-
-  // Polling intervals
   useEffect(() => {
     let conversionInterval = null;
     let indexingInterval = null;
@@ -82,9 +100,8 @@ function IndexingPage() {
           const currentStatus = status?.progress?.status;
           if (currentStatus === 'completed' || currentStatus === 'failed') {
             setIsConverting(false);
-            
             if (currentStatus === 'completed' && status.progress.converted_files > 0) {
-              setTimeout(() => handleStartIndexing(), 1000);
+              setTimeout(handleStartIndexing, 1000);
             }
           }
         } catch (err) {
@@ -106,11 +123,21 @@ function IndexingPage() {
             setIsIndexing(false);
             
             if (currentStatus === 'completed') {
-              console.log("Indexing completed, refreshing documents...");
+              const processed = status.statistics?.documents_processed ?? (status.statistics?.chunks_saved > 0 ? 1 : 0);
+              const skipped = status.progress?.skipped_files || 0;
+
+              if (processed === 0 && skipped > 0) {
+                setIndexingResult({ type: 'info', message: `Indexing finished. ${skipped} file(s) were already up-to-date and were skipped.` });
+              } else {
+                setIndexingResult({ type: 'success', message: `Successfully indexed ${processed} file(s) and created ${status.statistics?.chunks_saved || 0} chunks.` });
+              }
+              
               setTimeout(() => {
                 loadDocuments();
                 loadDocumentStats();
               }, 500);
+            } else {
+              setIndexingResult({ type: 'error', message: `Indexing failed. Check logs for details.` });
             }
           }
         } catch (err) {
@@ -125,36 +152,12 @@ function IndexingPage() {
       if (conversionInterval) clearInterval(conversionInterval);
       if (indexingInterval) clearInterval(indexingInterval);
     };
-  }, [isConverting, conversionTaskId, isIndexing, indexingTaskId, handleStartIndexing]);
+  }, [isConverting, conversionTaskId, isIndexing, indexingTaskId, handleStartIndexing, loadDocuments, loadDocumentStats]);
 
-
-  const loadDocuments = async () => {
-    setLoadingDocuments(true);
-    try {
-      const response = await ragApi.listDocuments({ limit: 50, sortBy: 'indexed_at', order: 'desc' });
-      setDocuments(response.documents);
-    } catch (err) {
-      console.error('Failed to load documents:', err);
-      setError('Failed to load documents');
-    } finally {
-      setLoadingDocuments(false);
-    }
-  };
-
-  const loadDocumentStats = async () => {
-    try {
-      const stats = await ragApi.getDocumentStats();
-      setDocumentStats(stats);
-    } catch (err) {
-      console.error('Failed to load document stats:', err);
-    }
-  };
-
-  // Load documents on initial mount
   useEffect(() => {
     loadDocuments();
     loadDocumentStats();
-  }, []);
+  }, [loadDocuments, loadDocumentStats]);
 
   const handleFilesSelected = async (files) => {
     if (files.length === 0) return;
@@ -162,6 +165,7 @@ function IndexingPage() {
     setError(null);
     setConversionStatus(null);
     setIndexingStatus(null);
+    setIndexingResult(null);
     setUploadProgress({ current: 0, total: files.length, uploading: true });
 
     try {
@@ -248,6 +252,14 @@ function IndexingPage() {
 
           <section className="indexing-section">
             <h2>🔍 Vector Indexing</h2>
+            
+            {!isIndexing && indexingResult && (
+              <div className={`indexing-result ${indexingResult.type}`}>
+                <span className="result-icon">{indexingResult.type === 'success' ? '✅' : (indexingResult.type === 'info' ? '💡' : '❌')}</span>
+                <p className="result-message">{indexingResult.message}</p>
+                <button className="result-dismiss" onClick={() => setIndexingResult(null)}>×</button>
+              </div>
+            )}
             
             <div className="indexing-controls">
               <div className="settings-grid">

@@ -180,6 +180,66 @@ section h2 {
   transform: translateY(-2px);
 }
 
+/* Indexing Result Message */
+.indexing-result {
+  padding: 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.indexing-result.info {
+  background: linear-gradient(135deg, #e7f3ff, #cfe2ff);
+  border: 2px solid #007bff;
+  color: #004085;
+}
+
+.indexing-result.success {
+  background: linear-gradient(135deg, #d4edda, #c3e6cb);
+  border: 2px solid #28a745;
+  color: #155724;
+}
+
+.indexing-result.error {
+    background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+    border: 2px solid #dc3545;
+    color: #721c24;
+}
+
+.result-icon {
+  font-size: 2rem;
+}
+
+.result-message {
+  flex: 1;
+  font-weight: 600;
+  margin: 0;
+}
+
+.result-dismiss {
+  padding: 0.5rem;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  color: inherit;
+}
+
+.result-dismiss:hover {
+  opacity: 1;
+}
+
+
 /* Documents Section */
 .documents-section {
   height: 100%;

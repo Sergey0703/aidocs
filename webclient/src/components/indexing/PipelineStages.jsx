@@ -13,7 +13,7 @@ const PipelineStages = ({ status }) => {
       icon: '📂',
       key: 'loading',
       description: 'Loading & Preparing Docs',
-      completed: !!statistics?.documents_loaded,
+      completed: !!statistics?.documents_loaded || progress.stage !== 'loading',
       active: progress.stage === 'loading' || progress.current_stage_name === "Checking for updates",
       count: statistics?.documents_loaded || 0
     },
@@ -47,12 +47,13 @@ const PipelineStages = ({ status }) => {
   ];
 
   const getStageStatus = (stage) => {
-    // Если вся задача завершена, ни один этап не может быть активным.
-    // Показываем только те, что были реально пройдены.
+    // If the overall task is finished, no stage can be 'active'.
+    // It's either 'completed' if it was passed, or 'pending'.
     if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
         return stage.completed ? 'completed' : 'pending';
     }
-    // В остальном логика прежняя
+    
+    // Otherwise, use the active logic
     if (stage.active) return 'active';
     if (stage.completed) return 'completed';
     return 'pending';
@@ -68,7 +69,7 @@ const PipelineStages = ({ status }) => {
               <div className="stage-content">
                 <div className="stage-name">{stage.name}</div>
                 <div className="stage-description">{stage.description}</div>
-                {(stage.active || stage.completed) && stage.count > 0 && (
+                {(getStageStatus(stage) !== 'pending') && stage.count > 0 && (
                   <div className="stage-count">
                     {stage.count.toLocaleString()} {stage.key === 'loading' ? 'docs' : 'chunks'}
                   </div>

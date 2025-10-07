@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/-bin/env python3
 # -*- coding: utf-8 -*-
 """
 Document converter module using Docling
@@ -6,6 +6,7 @@ Converts raw documents to markdown format
 """
 
 import time
+import shutil
 from pathlib import Path
 from datetime import datetime
 from docling.document_converter import DocumentConverter as DoclingConverter
@@ -57,6 +58,9 @@ class DocumentConverter:
         pipeline_options.do_ocr = self.config.ENABLE_OCR
         pipeline_options.do_table_structure = self.config.EXTRACT_TABLES
         
+        # --- ИСПРАВЛЕНИЕ: Явно указываем "движок" для обработки PDF ---
+        pipeline_options.backend = PyPdfiumDocumentBackend
+        
         # Create converter
         converter = DoclingConverter(
             allowed_formats=[
@@ -87,10 +91,7 @@ class DocumentConverter:
         input_path = Path(input_path)
         self.stats['total_files'] += 1
         
-        # Generate timestamp
         timestamp = datetime.now().strftime(self.config.TIMESTAMP_FORMAT)
-        
-        # Get output path
         output_path = self.config.get_output_path(input_path, timestamp)
         
         print(f"\n📄 Converting: {input_path.name}")
@@ -131,10 +132,8 @@ class DocumentConverter:
             return True, output_path, None
             
         except Exception as e:
-            conversion_time = time.time() - start_time
             error_msg = str(e)
             
-            # Log error
             self.stats['failed'] += 1
             self.stats['failed_files'].append({
                 'file': str(input_path),
@@ -144,9 +143,8 @@ class DocumentConverter:
             
             print(f"   ❌ Failed: {error_msg}")
             
-            # Save to failed directory if configured
-            if not self.config.SKIP_FAILED_CONVERSIONS:
-                self._save_failed_conversion(input_path, error_msg)
+            if self.config.SKIP_FAILED_CONVERSIONS:
+                self._save_failed_conversion_log(input_path, error_msg)
             
             return False, None, error_msg
     
@@ -170,48 +168,33 @@ class DocumentConverter:
         
         batch_start = time.time()
         
-        # Process files
         for i, file_path in enumerate(files_to_process, 1):
             print(f"\n[{i}/{len(files_to_process)}]", end=" ")
+            self.convert_file(file_path)
             
-            success, output_path, error = self.convert_file(file_path)
-            
-            # Show progress
             if i % 5 == 0:
                 self._print_progress(i, len(files_to_process), batch_start)
         
-        # Final summary
-        total_time = time.time() - batch_start
-        self.stats['total_batch_time'] = total_time
-        
+        self.stats['total_batch_time'] = time.time() - batch_start
         self._print_final_summary()
         
         return self.get_conversion_stats()
     
-    def _save_failed_conversion(self, input_path, error_msg):
+    def _save_failed_conversion_log(self, input_path, error_msg):
         """
-        Save failed conversion info
-        
-        Args:
-            input_path: Input file path
-            error_msg: Error message
+        Save information about a failed conversion to a log file.
         """
         try:
             failed_dir = Path(self.config.FAILED_CONVERSIONS_DIR)
             failed_dir.mkdir(parents=True, exist_ok=True)
             
-            # Copy file to failed directory
-            import shutil
-            dest_path = failed_dir / input_path.name
-            shutil.copy2(input_path, dest_path)
-            
-            # Save error log
-            error_log = dest_path.with_suffix('.error.txt')
+            error_log_path = failed_dir / f"{input_path.stem}.error.txt"
             error_info = f"File: {input_path}\nError: {error_msg}\nTimestamp: {datetime.now().isoformat()}\n"
-            safe_write_file(error_log, error_info)
+            
+            safe_write_file(error_log_path, error_info)
             
         except Exception as e:
-            print(f"   ⚠️ Could not save failed conversion: {e}")
+            print(f"   ⚠️ Could not save failed conversion log: {e}")
     
     def _print_progress(self, current, total, start_time):
         """Print conversion progress"""
@@ -231,7 +214,7 @@ class DocumentConverter:
         print(f"✅ CONVERSION COMPLETED")
         print(f"=" * 60)
         print(f"📊 Results:")
-        print(f"   Total files: {self.stats['total_files']}")
+        print(f"   Total files attempted: {self.stats['total_files']}")
         print(f"   ✅ Successful: {self.stats['successful']}")
         print(f"   ❌ Failed: {self.stats['failed']}")
         
@@ -239,18 +222,20 @@ class DocumentConverter:
             success_rate = (self.stats['successful'] / self.stats['total_files']) * 100
             print(f"   📈 Success rate: {success_rate:.1f}%")
         
-        if self.stats['total_batch_time']:
+        total_batch_time = self.stats.get('total_batch_time')
+        if total_batch_time:
             print(f"\n⏱️ Performance:")
-            print(f"   Total time: {format_time(self.stats['total_batch_time'])}")
-            avg_time = self.stats['total_time'] / self.stats['successful'] if self.stats['successful'] > 0 else 0
-            print(f"   Average per file: {avg_time:.2f}s")
+            print(f"   Total time: {format_time(total_batch_time)}")
+            if self.stats['successful'] > 0:
+                avg_time = self.stats['total_time'] / self.stats['successful']
+                print(f"   Average per successful file: {avg_time:.2f}s")
         
         if self.stats['failed_files']:
-            print(f"\n❌ Failed files:")
+            print(f"\n❌ Failed files (check logs in '{self.config.FAILED_CONVERSIONS_DIR}'):")
             for failed in self.stats['failed_files'][:5]:
-                print(f"   - {Path(failed['file']).name}: {failed['error']}")
+                print(f"   - {Path(failed['file']).name}: {failed['error'][:100]}...")
             if len(self.stats['failed_files']) > 5:
-                print(f"   ... and {len(self.stats['failed_files']) - 5} more")
+                print(f"   ... and {len(self.stats['failed_files']) - 5} more.")
         
         print(f"=" * 60)
     
