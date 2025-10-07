@@ -1,5 +1,5 @@
 // src/pages/IndexingPage.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './IndexingPage.css';
 import { ragApi } from '../api/ragApi';
 import FileUploader from '../components/indexing/FileUploader';
@@ -22,7 +22,7 @@ function IndexingPage() {
   // Documents state
   const [documents, setDocuments] = useState([]);
   const [documentStats, setDocumentStats] = useState(null);
-  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [loadingDocuments, setLoadingDocuments] = useState(true);
 
   // Upload state
   const [uploadProgress, setUploadProgress] = useState(null);
@@ -37,11 +37,36 @@ function IndexingPage() {
   const [indexingSettings, setIndexingSettings] = useState({
     mode: 'incremental',
     batchSize: 50,
-    deleteExisting: false
+    deleteExisting: false,
+    forceReindex: false,
   });
 
   // Error state
   const [error, setError] = useState(null);
+
+  const handleStartIndexing = useCallback(async () => {
+    setError(null);
+    setIsIndexing(true);
+    setIndexingStatus(null); // Reset previous status
+
+    try {
+      const response = await ragApi.startIndexing({
+        mode: indexingSettings.mode,
+        skipConversion: true,
+        skipIndexing: false,
+        batchSize: parseInt(indexingSettings.batchSize),
+        deleteExisting: indexingSettings.deleteExisting,
+        forceReindex: indexingSettings.forceReindex,
+      });
+
+      setIndexingTaskId(response.task_id);
+    } catch (err) {
+      console.error('Failed to start indexing:', err);
+      setError(err.response?.data?.detail || 'Failed to start indexing');
+      setIsIndexing(false);
+    }
+  }, [indexingSettings]);
+
 
   // Polling intervals
   useEffect(() => {
@@ -54,21 +79,20 @@ function IndexingPage() {
           const status = await ragApi.getConversionStatus(conversionTaskId);
           setConversionStatus(status);
           
-          if (status.progress.status === 'completed' || status.progress.status === 'failed') {
+          const currentStatus = status?.progress?.status;
+          if (currentStatus === 'completed' || currentStatus === 'failed') {
             setIsConverting(false);
-            clearInterval(conversionInterval);
             
-            // Auto-start indexing after successful conversion
-            if (status.progress.status === 'completed' && status.progress.converted_files > 0) {
-              setTimeout(() => {
-                handleStartIndexing();
-              }, 1000);
+            if (currentStatus === 'completed' && status.progress.converted_files > 0) {
+              setTimeout(() => handleStartIndexing(), 1000);
             }
           }
         } catch (err) {
           console.error('Failed to get conversion status:', err);
+          setError('Failed to poll conversion status.');
+          setIsConverting(false);
         }
-      }, 1000);
+      }, 2000);
     }
 
     if (isIndexing && indexingTaskId) {
@@ -77,34 +101,32 @@ function IndexingPage() {
           const status = await ragApi.getIndexingStatus(indexingTaskId);
           setIndexingStatus(status);
           
-          if (status.progress.status === 'completed' || status.progress.status === 'failed') {
+          const currentStatus = status?.progress?.status;
+          if (currentStatus === 'completed' || currentStatus === 'failed' || currentStatus === 'cancelled') {
             setIsIndexing(false);
-            clearInterval(indexingInterval);
             
-            // Refresh documents list after indexing
-            if (status.progress.status === 'completed') {
+            if (currentStatus === 'completed') {
+              console.log("Indexing completed, refreshing documents...");
               setTimeout(() => {
                 loadDocuments();
-              }, 1000);
+                loadDocumentStats();
+              }, 500);
             }
           }
         } catch (err) {
           console.error('Failed to get indexing status:', err);
+          setError('Failed to poll indexing status. Please refresh.');
+          setIsIndexing(false);
         }
-      }, 1000);
+      }, 2000);
     }
 
     return () => {
       if (conversionInterval) clearInterval(conversionInterval);
       if (indexingInterval) clearInterval(indexingInterval);
     };
-  }, [isConverting, conversionTaskId, isIndexing, indexingTaskId]);
+  }, [isConverting, conversionTaskId, isIndexing, indexingTaskId, handleStartIndexing]);
 
-  // Load documents on mount
-  useEffect(() => {
-    loadDocuments();
-    loadDocumentStats();
-  }, []);
 
   const loadDocuments = async () => {
     setLoadingDocuments(true);
@@ -128,37 +150,33 @@ function IndexingPage() {
     }
   };
 
+  // Load documents on initial mount
+  useEffect(() => {
+    loadDocuments();
+    loadDocumentStats();
+  }, []);
+
   const handleFilesSelected = async (files) => {
     if (files.length === 0) return;
 
     setError(null);
+    setConversionStatus(null);
+    setIndexingStatus(null);
     setUploadProgress({ current: 0, total: files.length, uploading: true });
 
     try {
-      // STEP 1: Upload each file to server
       console.log(`Starting upload of ${files.length} files...`);
-      
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        
-        setUploadProgress({ current: i, total: files.length, uploading: true, currentFile: file.name });
-        
-        try {
-          const uploadResult = await ragApi.uploadDocument(file, false); // autoIndex = false
-          console.log(`✅ Uploaded ${i + 1}/${files.length}: ${file.name}`, uploadResult);
-        } catch (uploadErr) {
-          console.error(`❌ Failed to upload ${file.name}:`, uploadErr);
-          throw new Error(`Failed to upload ${file.name}: ${uploadErr.response?.data?.detail || uploadErr.message}`);
-        }
+        setUploadProgress(prev => ({ ...prev, current: i, currentFile: file.name }));
+        await ragApi.uploadDocument(file, false);
       }
       
-      setUploadProgress({ current: files.length, total: files.length, uploading: false });
+      setUploadProgress(prev => ({ ...prev, current: files.length, uploading: false }));
       console.log('✅ All files uploaded successfully!');
-
-      // Small delay to ensure files are written to disk
+      
       await new Promise(resolve => setTimeout(resolve, 500));
-
-      // STEP 2: Start conversion of uploaded files
+      
       console.log('Starting conversion...');
       setIsConverting(true);
       
@@ -169,9 +187,6 @@ function IndexingPage() {
       });
 
       setConversionTaskId(response.task_id);
-      setConversionStatus(response);
-      
-      // Clear upload progress after successful conversion start
       setTimeout(() => setUploadProgress(null), 2000);
       
     } catch (err) {
@@ -182,31 +197,8 @@ function IndexingPage() {
     }
   };
 
-  const handleStartIndexing = async () => {
-    setError(null);
-    setIsIndexing(true);
-
-    try {
-      const response = await ragApi.startIndexing({
-        mode: indexingSettings.mode,
-        skipConversion: true, // We already converted
-        skipIndexing: false,  // DO NOT skip indexing!
-        batchSize: indexingSettings.batchSize,
-        deleteExisting: indexingSettings.deleteExisting
-      });
-
-      setIndexingTaskId(response.task_id);
-      setIndexingStatus(response);
-    } catch (err) {
-      console.error('Failed to start indexing:', err);
-      setError(err.response?.data?.detail || 'Failed to start indexing');
-      setIsIndexing(false);
-    }
-  };
-
   const handleStopIndexing = async () => {
     if (!indexingTaskId) return;
-
     try {
       await ragApi.stopIndexing(indexingTaskId);
       setIsIndexing(false);
@@ -217,10 +209,7 @@ function IndexingPage() {
   };
 
   const handleDeleteDocument = async (filename) => {
-    if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) {
-      return;
-    }
-
+    if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) return;
     try {
       await ragApi.deleteDocument(filename);
       loadDocuments();
@@ -239,62 +228,9 @@ function IndexingPage() {
   return (
     <div className="indexing-page">
       <div className="indexing-page-container">
-        {/* Left Column: Upload & Processing */}
         <div className="left-column">
-          {/* File Upload Section */}
           <section className="upload-section">
             <h2>📤 Document Upload & Conversion</h2>
-            
-            {/* Upload Progress Display */}
-            {uploadProgress && uploadProgress.uploading && (
-              <div style={{
-                padding: '1rem',
-                background: '#e3f2fd',
-                borderRadius: '8px',
-                marginBottom: '1rem',
-                border: '2px solid #2196f3'
-              }}>
-                <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                  Uploading files to server...
-                </div>
-                <div style={{ fontSize: '0.9rem', color: '#666' }}>
-                  {uploadProgress.current} / {uploadProgress.total} files uploaded
-                </div>
-                {uploadProgress.currentFile && (
-                  <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.25rem' }}>
-                    Current: {uploadProgress.currentFile}
-                  </div>
-                )}
-                <div style={{
-                  marginTop: '0.5rem',
-                  height: '8px',
-                  background: '#e0e0e0',
-                  borderRadius: '4px',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{
-                    width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
-                    height: '100%',
-                    background: '#2196f3',
-                    transition: 'width 0.3s'
-                  }} />
-                </div>
-              </div>
-            )}
-            
-            {uploadProgress && !uploadProgress.uploading && (
-              <div style={{
-                padding: '1rem',
-                background: '#d4edda',
-                borderRadius: '8px',
-                marginBottom: '1rem',
-                border: '2px solid #28a745',
-                color: '#155724'
-              }}>
-                ✅ All files uploaded successfully! Starting conversion...
-              </div>
-            )}
-            
             <FileUploader
               onFilesSelected={handleFilesSelected}
               disabled={isConverting || isIndexing || (uploadProgress && uploadProgress.uploading)}
@@ -303,95 +239,54 @@ function IndexingPage() {
             />
           </section>
 
-          {/* Conversion Progress */}
           {(isConverting || conversionStatus) && (
             <section className="conversion-section">
               <h2>🔄 Conversion Progress</h2>
-              <ConversionProgress
-                status={conversionStatus}
-                isActive={isConverting}
-              />
+              <ConversionProgress status={conversionStatus} isActive={isConverting} />
             </section>
           )}
 
-          {/* Indexing Controls & Progress */}
           <section className="indexing-section">
             <h2>🔍 Vector Indexing</h2>
             
-            {!isIndexing && !indexingStatus && (
-              <div className="indexing-controls">
-                <div className="settings-grid">
-                  <div className="setting-item">
-                    <label>Mode:</label>
-                    <select
-                      value={indexingSettings.mode}
-                      onChange={(e) => setIndexingSettings({
-                        ...indexingSettings,
-                        mode: e.target.value
-                      })}
-                    >
-                      <option value="incremental">Incremental</option>
-                      <option value="full">Full Reindex</option>
-                    </select>
-                  </div>
-
-                  <div className="setting-item">
-                    <label>Batch Size:</label>
-                    <input
-                      type="number"
-                      min="10"
-                      max="200"
-                      value={indexingSettings.batchSize}
-                      onChange={(e) => setIndexingSettings({
-                        ...indexingSettings,
-                        batchSize: parseInt(e.target.value)
-                      })}
-                    />
-                  </div>
-
-                  <div className="setting-item checkbox">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={indexingSettings.deleteExisting}
-                        onChange={(e) => setIndexingSettings({
-                          ...indexingSettings,
-                          deleteExisting: e.target.checked
-                        })}
-                      />
-                      Delete existing records
-                    </label>
-                  </div>
+            <div className="indexing-controls">
+              <div className="settings-grid">
+                <div className="setting-item">
+                  <label>Mode:</label>
+                  <select value={indexingSettings.mode} onChange={(e) => setIndexingSettings(s => ({ ...s, mode: e.target.value }))} disabled={isIndexing || isConverting}>
+                    <option value="incremental">Incremental</option>
+                    <option value="full">Full Reindex</option>
+                  </select>
                 </div>
-
-                <button
-                  className="start-indexing-button"
-                  onClick={handleStartIndexing}
-                  disabled={isConverting || isIndexing}
-                >
-                  Start Indexing
-                </button>
+                <div className="setting-item">
+                  <label>Batch Size:</label>
+                  <input type="number" min="10" max="200" value={indexingSettings.batchSize} onChange={(e) => setIndexingSettings(s => ({ ...s, batchSize: parseInt(e.target.value) }))} disabled={isIndexing || isConverting} />
+                </div>
+                <div className="setting-item checkbox">
+                  <label>
+                    <input type="checkbox" checked={indexingSettings.forceReindex} onChange={(e) => setIndexingSettings(s => ({ ...s, forceReindex: e.target.checked }))} disabled={isIndexing || isConverting} />
+                    Force re-index all
+                  </label>
+                </div>
               </div>
-            )}
+
+              <button className="start-indexing-button" onClick={handleStartIndexing} disabled={isConverting || isIndexing}>
+                {isIndexing ? 'Indexing...' : 'Start Indexing Manually'}
+              </button>
+            </div>
 
             {(isIndexing || indexingStatus) && (
-              <IndexingProgress
-                status={indexingStatus}
-                isActive={isIndexing}
-                onStop={handleStopIndexing}
-              />
+              <IndexingProgress status={indexingStatus} isActive={isIndexing} onStop={handleStopIndexing} />
             )}
           </section>
 
-          {/* Pipeline Visualization */}
-          {indexingStatus && (
+          {(isIndexing || indexingStatus) && (
             <section className="pipeline-section">
               <h2>⚡ Pipeline Stages</h2>
               <PipelineStages status={indexingStatus} />
             </section>
           )}
 
-          {/* Error Display */}
           {error && (
             <div className="error-display">
               <h3>⚠️ Error</h3>
@@ -401,17 +296,12 @@ function IndexingPage() {
           )}
         </div>
 
-        {/* Right Column: Documents List */}
         <div className="right-column">
           <section className="documents-section">
             <div className="documents-header">
               <h2>📚 Indexed Documents</h2>
-              <button
-                className="refresh-button"
-                onClick={handleRefreshDocuments}
-                disabled={loadingDocuments}
-              >
-                🔄 Refresh
+              <button className="refresh-button" onClick={handleRefreshDocuments} disabled={loadingDocuments}>
+                {loadingDocuments ? 'Refreshing...' : '🔄 Refresh'}
               </button>
             </div>
 
@@ -427,7 +317,7 @@ function IndexingPage() {
                 </div>
                 <div className="stat-card">
                   <div className="stat-value">{documentStats.avg_chunks_per_document.toFixed(1)}</div>
-                  <div className="stat-label">Avg Chunks</div>
+                  <div className="stat-label">Avg Chunks/Doc</div>
                 </div>
               </div>
             )}
@@ -436,7 +326,6 @@ function IndexingPage() {
               documents={documents}
               loading={loadingDocuments}
               onDelete={handleDeleteDocument}
-              onRefresh={handleRefreshDocuments}
             />
           </section>
         </div>

@@ -12,9 +12,9 @@ const PipelineStages = ({ status }) => {
       name: 'Loading',
       icon: '📂',
       key: 'loading',
-      description: 'Loading markdown documents',
-      completed: statistics?.documents_loaded > 0,
-      active: progress.stage === 'loading',
+      description: 'Loading & Preparing Docs',
+      completed: !!statistics?.documents_loaded,
+      active: progress.stage === 'loading' || progress.current_stage_name === "Checking for updates",
       count: statistics?.documents_loaded || 0
     },
     {
@@ -22,7 +22,7 @@ const PipelineStages = ({ status }) => {
       icon: '🧩',
       key: 'chunking',
       description: 'Creating text chunks',
-      completed: statistics?.chunks_created > 0,
+      completed: !!statistics?.chunks_created,
       active: progress.stage === 'chunking',
       count: statistics?.chunks_created || 0
     },
@@ -30,8 +30,8 @@ const PipelineStages = ({ status }) => {
       name: 'Embedding',
       icon: '🤖',
       key: 'embedding',
-      description: 'Generating embeddings with Gemini',
-      completed: statistics?.chunks_saved > 0 && progress.progress_percentage > 50,
+      description: 'Generating embeddings',
+      completed: progress.processed_chunks > 0 && progress.stage !== 'embedding',
       active: progress.stage === 'embedding',
       count: progress.processed_chunks || 0
     },
@@ -40,15 +40,21 @@ const PipelineStages = ({ status }) => {
       icon: '💾',
       key: 'saving',
       description: 'Saving to vector database',
-      completed: statistics?.chunks_saved > 0 && progress.progress_percentage === 100,
+      completed: !!statistics?.chunks_saved && progress.status === 'completed',
       active: progress.stage === 'saving',
       count: statistics?.chunks_saved || 0
     }
   ];
 
   const getStageStatus = (stage) => {
-    if (stage.completed) return 'completed';
+    // Если вся задача завершена, ни один этап не может быть активным.
+    // Показываем только те, что были реально пройдены.
+    if (progress.status === 'completed' || progress.status === 'failed' || progress.status === 'cancelled') {
+        return stage.completed ? 'completed' : 'pending';
+    }
+    // В остальном логика прежняя
     if (stage.active) return 'active';
+    if (stage.completed) return 'completed';
     return 'pending';
   };
 
@@ -62,19 +68,19 @@ const PipelineStages = ({ status }) => {
               <div className="stage-content">
                 <div className="stage-name">{stage.name}</div>
                 <div className="stage-description">{stage.description}</div>
-                {stage.count > 0 && (
+                {(stage.active || stage.completed) && stage.count > 0 && (
                   <div className="stage-count">
                     {stage.count.toLocaleString()} {stage.key === 'loading' ? 'docs' : 'chunks'}
                   </div>
                 )}
                 <div className="stage-status-indicator">
-                  {stage.completed && <span className="status-icon completed">✅</span>}
-                  {stage.active && (
+                  {getStageStatus(stage) === 'completed' && <span className="status-icon completed">✅</span>}
+                  {getStageStatus(stage) === 'active' && (
                     <span className="status-icon active">
                       <span className="spinner"></span>
                     </span>
                   )}
-                  {!stage.completed && !stage.active && (
+                  {getStageStatus(stage) === 'pending' && (
                     <span className="status-icon pending">⏸️</span>
                   )}
                 </div>
@@ -82,7 +88,7 @@ const PipelineStages = ({ status }) => {
             </div>
             
             {index < stages.length - 1 && (
-              <div className={`stage-connector ${stages[index + 1].completed || stages[index + 1].active ? 'active' : ''}`}>
+              <div className={`stage-connector ${getStageStatus(stages[index + 1]) !== 'pending' ? 'active' : ''}`}>
                 <div className="connector-line"></div>
                 <div className="connector-arrow">→</div>
               </div>
@@ -92,28 +98,30 @@ const PipelineStages = ({ status }) => {
       </div>
 
       {/* Overall Progress Summary */}
-      <div className="pipeline-summary">
-        <div className="summary-item">
-          <span className="summary-label">Overall Progress:</span>
-          <span className="summary-value">{progress.progress_percentage.toFixed(1)}%</span>
+      {progress.status !== 'idle' && (
+        <div className="pipeline-summary">
+          <div className="summary-item">
+            <span className="summary-label">Overall Progress:</span>
+            <span className="summary-value">{progress.progress_percentage.toFixed(1)}%</span>
+          </div>
+          {statistics?.success_rate > 0 && (
+            <div className="summary-item">
+              <span className="summary-label">Success Rate:</span>
+              <span className="summary-value success">
+                {statistics.success_rate.toFixed(1)}%
+              </span>
+            </div>
+          )}
+          {statistics?.gemini_api_calls > 0 && (
+            <div className="summary-item">
+              <span className="summary-label">Gemini API Calls:</span>
+              <span className="summary-value api">
+                {statistics.gemini_api_calls.toLocaleString()}
+              </span>
+            </div>
+          )}
         </div>
-        {statistics?.success_rate > 0 && (
-          <div className="summary-item">
-            <span className="summary-label">Success Rate:</span>
-            <span className="summary-value success">
-              {(statistics.success_rate * 100).toFixed(1)}%
-            </span>
-          </div>
-        )}
-        {statistics?.gemini_api_calls > 0 && (
-          <div className="summary-item">
-            <span className="summary-label">Gemini API Calls:</span>
-            <span className="summary-value api">
-              {statistics.gemini_api_calls.toLocaleString()}
-            </span>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };
