@@ -97,7 +97,7 @@ EXTRACT_TABLES=true
 
 # OCR settings
 ENABLE_OCR=true
-OCR_LANGUAGE=eng+rus
+OCR_LANGUAGE=eng
 
 # Naming: timestamp_originalname.md
 USE_TIMESTAMP_PREFIX=false

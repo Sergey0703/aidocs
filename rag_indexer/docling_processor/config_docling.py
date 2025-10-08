@@ -43,7 +43,7 @@ class DoclingConfig:
         
         # --- OCR SETTINGS ---
         self.ENABLE_OCR = os.getenv("ENABLE_OCR", "true").lower() == "true"
-        self.OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "eng+rus")
+        self.OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "eng")
         
         # --- NAMING CONVENTION ---
         # Format: timestamp_originalname.md
