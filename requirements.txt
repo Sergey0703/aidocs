@@ -1,0 +1,44 @@
+# ============================================================================
+# API & WEB SERVER
+# ============================================================================
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+httpx
+
+# ============================================================================
+# RAG PIPELINE - CORE
+# ============================================================================
+# LlamaIndex & Google Gemini
+llama-index-core
+llama-index-llms-google-genai
+llama-index-embeddings-google-genai
+llama-index-vector-stores-supabase
+google-generativeai
+
+# Database Connector
+psycopg2-binary
+
+# ============================================================================
+# DOCUMENT CONVERSION (DOCLING) & DEPENDENCIES
+# ============================================================================
+# Указываем только главный пакет. Он сам установит docling-core, 
+# docling-ibm-models, docling-parse, easyocr и т.д. нужных версий.
+docling>=2.55.0
+
+# Явно указываем бэкенд для PDF, чтобы быть уверенными
+pypdfium2
+
+# Явно указываем поддержку форматов, хотя docling может их подтянуть
+python-docx
+python-pptx
+Pillow
+
+# Для ускорения скачивания моделей OCR
+hf-xet
+
+# ============================================================================
+# UTILITIES
+# ============================================================================
+psutil

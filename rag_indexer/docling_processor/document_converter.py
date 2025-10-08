@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Document converter module using Docling 2.x
-Compatible with Docling 2.55.1+ API
-Automatic backend detection (pypdfium2)
+Document converter module using Docling 2.55.1
+Tested and working with basic DocumentConverter initialization
 """
 
 import time
@@ -13,7 +12,6 @@ from datetime import datetime
 # Docling 2.x imports
 from docling.document_converter import DocumentConverter as DoclingConverter
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
 
 from .metadata_extractor import MetadataExtractor
 from .utils_docling import safe_write_file, format_time
@@ -59,35 +57,14 @@ class DocumentConverter:
     
     def _init_docling_converter(self):
         """
-        Initialize Docling document converter for version 2.x
+        Initialize Docling document converter for version 2.55.1
         
-        Docling 2.x automatically detects and uses available backends:
-        - PDF: pypdfium2 (automatically detected if installed)
-        - DOCX: python-docx
-        - PPTX: python-pptx
-        - Images: PIL/Pillow + EasyOCR
-        
-        No manual backend configuration needed in 2.x!
+        Uses the EXACT same initialization that worked in test_docling.py
         """
         print("🔧 Initializing Docling 2.x converter...")
         
-        # Configure PDF pipeline options (Docling 2.x API)
-        pipeline_options = PdfPipelineOptions()
-        
-        # Configure OCR settings
-        pipeline_options.do_ocr = self.config.ENABLE_OCR
-        
-        # Configure table extraction
-        pipeline_options.do_table_structure = self.config.EXTRACT_TABLES
-        
-        # Additional Docling 2.x options
-        # Enable images in markdown export (if supported)
-        pipeline_options.images_scale = 1.0  # Image scaling factor
-        pipeline_options.generate_page_images = False  # Don't generate page screenshots
-        
-        # Create converter with automatic backend detection
-        # Docling 2.x will automatically discover and use pypdfium2 if available
         try:
+            # Use the EXACT same code that worked in the test script
             converter = DoclingConverter(
                 allowed_formats=[
                     InputFormat.PDF,
@@ -95,25 +72,18 @@ class DocumentConverter:
                     InputFormat.PPTX,
                     InputFormat.HTML,
                     InputFormat.IMAGE,
-                ],
-                format_options={
-                    InputFormat.PDF: pipeline_options,
-                }
+                ]
             )
             
             print("✅ Docling 2.x converter initialized successfully")
-            print(f"   OCR: {'enabled' if self.config.ENABLE_OCR else 'disabled'}")
-            print(f"   Table extraction: {'enabled' if self.config.EXTRACT_TABLES else 'disabled'}")
+            print(f"   Using default OCR and table extraction settings")
             
             return converter
             
         except Exception as e:
             print(f"❌ Failed to initialize Docling converter: {e}")
-            print("   Make sure all required dependencies are installed:")
-            print("   - pypdfium2 (for PDF)")
-            print("   - python-docx (for DOCX)")
-            print("   - python-pptx (for PPTX)")
-            print("   - easyocr (for OCR)")
+            import traceback
+            traceback.print_exc()
             raise
     
     def convert_file(self, input_path):
@@ -137,12 +107,10 @@ class DocumentConverter:
         start_time = time.time()
         
         try:
-            # Convert document using Docling 2.x
-            # The convert() method returns ConversionResult
+            # Convert document - EXACT same way as in test script
             result = self.docling.convert(str(input_path))
             
             # Export to markdown
-            # Docling 2.x: result.document.export_to_markdown()
             markdown_content = result.document.export_to_markdown()
             
             # Validate content
@@ -177,6 +145,10 @@ class DocumentConverter:
             conversion_time = time.time() - start_time
             
             print(f"   ❌ Failed ({conversion_time:.2f}s): {error_msg}")
+            
+            # Print full traceback for debugging
+            import traceback
+            traceback.print_exc()
             
             # Save detailed error log
             self._save_failed_conversion_log(input_path, error_msg)
