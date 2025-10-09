@@ -621,37 +621,39 @@ class NodeProcessor:
         return True, "valid"
     
     def enhance_node_metadata(self, node, indexed_at=None):
-        """
-        Safely enhance node metadata with additional information
-        
-        Args:
-            node: Node to enhance
-            indexed_at: Timestamp for indexing (defaults to now)
-        
-        Returns:
-            Node: Enhanced node
-        """
-        if indexed_at is None:
-            indexed_at = datetime.now().isoformat()
-        
-        content = node.get_content()
-        
-        # Add basic metadata if missing
-        if 'file_name' not in node.metadata:
-            node.metadata['file_name'] = node.get_metadata_str()
-        
-        # Add content metadata safely
-        node.metadata.update({
-            'text': content,
-            'indexed_at': indexed_at,
-            'content_length': len(content),
-            'word_count': len(content.split()),
-            'paragraph_count': len([p for p in content.split('\n\n') if p.strip()]),
-            'safe_processing': True,  # Mark as safely processed
-            'api_provider': 'gemini'  # NEW: Mark API provider
-        })
-        
-        return node
+    """
+    Safely enhance node metadata with additional information
+    """
+    if indexed_at is None:
+        indexed_at = datetime.now().isoformat()
+    
+    content = node.get_content()
+    
+    # IMPORTANT: Preserve registry_id if it exists
+    registry_id = node.metadata.get('registry_id')
+    
+    # Add basic metadata if missing
+    if 'file_name' not in node.metadata:
+        node.metadata['file_name'] = node.get_metadata_str()
+    
+    # Add content metadata safely
+    node.metadata.update({
+        'text': content,
+        'indexed_at': indexed_at,
+        'content_length': len(content),
+        'word_count': len(content.split()),
+        'paragraph_count': len([p for p in content.split('\n\n') if p.strip()]),
+        'safe_processing': True,
+        'api_provider': 'gemini'
+    })
+    
+    # Ensure registry_id is present (CRITICAL!)
+    if registry_id:
+        node.metadata['registry_id'] = registry_id
+    else:
+        logger.warning(f"Node for {node.metadata.get('file_name')} is missing registry_id!")
+    
+    return node
     
     def filter_and_enhance_nodes(self, all_nodes, show_progress=True):
         """

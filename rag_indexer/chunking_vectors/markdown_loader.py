@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # rag_indexer/chunking_vectors/markdown_loader.py
-# --- ИСПРАВЛЕНО: Теперь загружает метаданные из JSON и включает все вспомогательные функции ---
+# Complete markdown loader with registry_id enrichment
 
 import os
 import json
@@ -41,7 +41,7 @@ def clean_metadata_recursive(obj: Any) -> Any:
 class MarkdownLoader:
     """
     Simple markdown file loader for preprocessed documents from Docling.
-    It now enriches document metadata by loading from corresponding JSON files.
+    Enriches document metadata with registry_id for database integration.
     """
     
     def __init__(self, input_dir: str, recursive: bool = True, config: Any = None):
@@ -68,12 +68,13 @@ class MarkdownLoader:
             'total_characters': 0,
             'metadata_files_loaded': 0,
             'metadata_files_missing': 0,
+            'registry_enrichments': 0,
+            'registry_failures': 0,
             'loading_time': 0.0,
         }
 
     def _is_blacklisted(self, path: Path) -> bool:
         """Check if a path is in a blacklisted directory."""
-        # Ensure comparison is case-insensitive and handles different path separators
         path_parts = {part.lower() for part in path.parts}
         blacklisted_parts = {part.lower() for part in self.blacklist_directories}
         return not path_parts.isdisjoint(blacklisted_parts)
@@ -162,7 +163,7 @@ class MarkdownLoader:
             cleaned_metadata = clean_metadata_recursive(final_metadata)
 
             document = Document(
-                id_=str(uuid.uuid4()),  # Ensure a unique ID for LlamaIndex
+                id_=str(uuid.uuid4()),
                 text=content,
                 metadata=cleaned_metadata
             )
@@ -171,14 +172,82 @@ class MarkdownLoader:
             logger.error(f"Failed to create LlamaIndex Document from {file_path}: {e}", exc_info=True)
             return None
 
-    def load_data(self) -> Tuple[List[Document], Dict[str, Any]]:
+    def _enrich_with_registry_id(self, document: Document, registry_manager) -> Document:
         """
-        Load all markdown files, enrich with JSON metadata, and create LlamaIndex documents.
+        Enrich document metadata with registry_id from document_registry table.
+        
+        Args:
+            document: LlamaIndex Document
+            registry_manager: RegistryManager instance
+        
+        Returns:
+            Document: Enriched document with registry_id
+        """
+        try:
+            file_path = document.metadata.get('file_path')
+            if not file_path:
+                logger.warning(f"Document missing file_path, cannot create registry entry")
+                self.loading_stats['registry_failures'] += 1
+                return document
+            
+            # Prepare extracted data for registry
+            extracted_data = {
+                'file_name': document.metadata.get('file_name'),
+                'file_size': document.metadata.get('file_size'),
+                'content_length': document.metadata.get('content_length'),
+                'word_count': document.metadata.get('word_count'),
+                'original_filename': document.metadata.get('original_filename'),
+                'original_format': document.metadata.get('original_format'),
+                'conversion_date': document.metadata.get('conversion_date'),
+                'content_hash': document.metadata.get('content_hash'),
+            }
+            
+            # Remove None values
+            extracted_data = {k: v for k, v in extracted_data.items() if v is not None}
+            
+            # Get or create registry entry
+            registry_id = registry_manager.get_or_create_registry_entry(
+                file_path=file_path,
+                document_type=document.metadata.get('original_format', 'markdown'),
+                extracted_data=extracted_data
+            )
+            
+            if registry_id:
+                # Add registry_id to metadata
+                document.metadata['registry_id'] = registry_id
+                self.loading_stats['registry_enrichments'] += 1
+                logger.debug(f"✅ Added registry_id {registry_id} to {document.metadata.get('file_name')}")
+            else:
+                logger.error(f"❌ Failed to get registry_id for {file_path}")
+                self.loading_stats['registry_failures'] += 1
+            
+            return document
+            
+        except Exception as e:
+            logger.error(f"Failed to enrich document with registry_id: {e}", exc_info=True)
+            self.loading_stats['registry_failures'] += 1
+            return document
+
+    def load_data(self, registry_manager=None) -> Tuple[List[Document], Dict[str, Any]]:
+        """
+        Load all markdown files, enrich with JSON metadata and registry_id.
+        
+        Args:
+            registry_manager: RegistryManager instance (optional, but recommended)
+        
+        Returns:
+            Tuple of (documents, loading_stats)
         """
         start_time = time.time()
         logger.info(f"📁 Starting markdown load from: {self.input_dir}")
+        
         if self.blacklist_directories:
             logger.info(f"🚫 Blacklisted directories: {', '.join(self.blacklist_directories)}")
+        
+        if registry_manager:
+            logger.info("🔗 Registry enrichment: ENABLED")
+        else:
+            logger.warning("⚠️ Registry enrichment: DISABLED (registry_id will be NULL)")
 
         markdown_files = self._scan_markdown_files()
         
@@ -195,19 +264,31 @@ class MarkdownLoader:
             
             if error or content is None:
                 self.loading_stats['failed_files'] += 1
-                self.loading_stats['failed_files_list'].append({"file": file_path, "reason": error or "unknown_read_error"})
+                self.loading_stats['failed_files_list'].append({
+                    "file": file_path, 
+                    "reason": error or "unknown_read_error"
+                })
                 logger.error(f"Failed to read {file_path}: {error}")
                 continue
             
             document = self._create_document_from_markdown(file_path, content)
             
             if document:
+                # Enrich with registry_id if manager provided
+                if registry_manager:
+                    document = self._enrich_with_registry_id(document, registry_manager)
+                else:
+                    logger.warning(f"⚠️ Document {document.metadata.get('file_name')} will NOT have registry_id")
+                
                 documents.append(document)
                 self.loading_stats['documents_created'] += 1
                 self.loading_stats['total_characters'] += len(content)
             else:
                 self.loading_stats['failed_files'] += 1
-                self.loading_stats['failed_files_list'].append({"file": file_path, "reason": "document_creation_failed"})
+                self.loading_stats['failed_files_list'].append({
+                    "file": file_path, 
+                    "reason": "document_creation_failed"
+                })
         
         self.loading_stats['loading_time'] = time.time() - start_time
         self._print_loading_summary()
@@ -228,7 +309,12 @@ class MarkdownLoader:
             f"📝 Total characters loaded: {stats['total_characters']:,}",
             f"📋 Metadata files loaded: {stats['metadata_files_loaded']}",
             f"❓ Metadata files missing: {stats['metadata_files_missing']}",
+            f"🔗 Registry enrichments: {stats['registry_enrichments']}",
         ]
+        
+        if stats['registry_failures'] > 0:
+            summary.append(f"⚠️ Registry failures: {stats['registry_failures']}")
+        
         for line in summary:
             logger.info(line)
             
@@ -238,6 +324,16 @@ class MarkdownLoader:
                 logger.warning(f"  - {item['file']}: {item['reason']}")
             if len(stats['failed_files_list']) > 5:
                 logger.warning(f"  ... and {len(stats['failed_files_list']) - 5} more.")
+        
+        # Warning if no registry enrichments
+        if stats['documents_created'] > 0 and stats['registry_enrichments'] == 0:
+            logger.warning("="*50)
+            logger.warning("⚠️ WARNING: NO REGISTRY ENRICHMENTS!")
+            logger.warning("Documents will be created WITHOUT registry_id")
+            logger.warning("This will cause database constraint violations!")
+            logger.warning("Make sure to pass registry_manager to load_data()")
+            logger.warning("="*50)
+        
         logger.info("="*50)
 
     def get_loading_stats(self):
@@ -337,13 +433,13 @@ def print_markdown_scan_summary(scan_results: Dict[str, Any]):
 
 if __name__ == "__main__":
     # Test markdown loader when run directly
-    print("📁 Markdown Loader Test (with JSON metadata enrichment)")
+    print("📁 Markdown Loader Test (with JSON metadata and registry_id enrichment)")
     print("=" * 60)
     
     # Configure basic logging for standalone test
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    # Use a relative path for testing that should work if run from project root
+    # Use a relative path for testing
     test_dir = str(Path(__file__).resolve().parent.parent / "data" / "markdown")
     
     is_valid, msg, file_count = validate_markdown_directory(test_dir)
@@ -361,17 +457,31 @@ if __name__ == "__main__":
                 BLACKLIST_DIRECTORIES = ["_metadata"]
 
             loader = create_markdown_loader(test_dir, config=MockConfig())
-            docs, stats = loader.load_data()
+            
+            # Load WITHOUT registry manager for basic test
+            print("\n⚠️ Loading without registry_manager (registry_id will be NULL)")
+            docs, stats = loader.load_data(registry_manager=None)
+            
             if docs:
                 print(f"\nSuccessfully loaded {len(docs)} documents.")
-                print("Verifying metadata of the first document:")
+                print("\nVerifying metadata of the first document:")
                 first_doc_meta = docs[0].metadata
                 print(json.dumps(first_doc_meta, indent=2))
-                if 'original_path' in first_doc_meta:
-                    print("\n✅ SUCCESS: 'original_path' found in metadata!")
+                
+                # Check for registry_id
+                if 'registry_id' in first_doc_meta:
+                    print("\n✅ SUCCESS: 'registry_id' found in metadata!")
                 else:
-                    print("\n❌ FAILED: 'original_path' is MISSING from metadata!")
+                    print("\n⚠️ WARNING: 'registry_id' is MISSING (expected when no registry_manager provided)")
+                
+                # Check for original_path
+                if 'original_path' in first_doc_meta:
+                    print("✅ SUCCESS: 'original_path' found in metadata!")
+                else:
+                    print("❌ FAILED: 'original_path' is MISSING from metadata!")
         except Exception as e:
             print(f"\n❌ An error occurred during the full loader test: {e}")
+            import traceback
+            traceback.print_exc()
 
     print("=" * 60)
