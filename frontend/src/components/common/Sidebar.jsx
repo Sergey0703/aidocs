@@ -5,17 +5,22 @@ import './Sidebar.css';
 import { 
   FiSearch, 
   FiUploadCloud, 
-  FiGrid, 
-  FiInbox // <-- ИМПОРТ НОВОЙ ИКОНКИ
+  FiInbox,
+  FiTruck,      // <-- НОВАЯ ИКОНКА ДЛЯ АВТО
+  FiHome,       // <-- НОВАЯ ИКОНКА ДЛЯ ЗДАНИЙ
+  FiBarChart2,  // <-- НОВАЯ ИКОНКА ДЛЯ ОТЧЕТОВ
+  FiSettings    // <-- НОВАЯ ИКОНКА ДЛЯ НАСТРОЕК
 } from 'react-icons/fi';
 
 const Sidebar = () => {
   const menuItems = [
     { to: "/", text: "Search", icon: <FiSearch /> },
     { to: "/indexing", text: "Indexing", icon: <FiUploadCloud /> },
-    { to: "/manager", text: "Document Manager", icon: <FiInbox /> }, // <-- НОВАЯ ССЫЛКА
-    { to: "/vehicles", text: "Vehicles", icon: <FiGrid /> },
-    // Будущие пункты меню
+    { to: "/manager", text: "Document Manager", icon: <FiInbox /> },
+    { to: "/vehicles", text: "Vehicles", icon: <FiTruck /> }, // <-- ИКОНКА ИЗМЕНЕНА
+    { to: "/buildings", text: "Buildings", icon: <FiHome /> },   // <-- НОВЫЙ ПУНКТ
+    { to: "/reports", text: "Reports", icon: <FiBarChart2 /> }, // <-- НОВЫЙ ПУНКТ
+    { to: "/settings", text: "Settings", icon: <FiSettings /> }, // <-- НОВЫЙ ПУНКТ
   ];
 
   return (
