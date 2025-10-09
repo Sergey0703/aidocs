@@ -352,17 +352,17 @@ export const ragApi = {
     const response = await api.get('/api/monitoring/metrics/summary');
     return response.data;
   },
-
+  
   // ============================================================================
-  // DOCUMENT & VEHICLE MANAGEMENT ENDPOINTS (НОВЫЙ РАЗДЕЛ)
+  // DOCUMENT & VEHICLE MANAGEMENT ENDPOINTS (NEW SECTION)
   // ============================================================================
   
-  // Получить все документы, которые еще не привязаны к машине.
-  // Бэкенд должен вернуть их сгруппированными по найденному номеру.
+  // Get all documents that are not yet linked to a vehicle.
+  // The backend should return them grouped by any detected registration number.
   getUnassignedAndGroupedDocuments: async () => {
-    // ЗАГЛУШКА: Этот эндпоинт должен быть реализован на бэкенде
+    // MOCK: This endpoint needs to be implemented on the backend.
     console.warn("API: getUnassignedAndGroupedDocuments is a mock.");
-    // Возвращаем моковые данные для демонстрации
+    // We return mock data here to allow frontend development.
     return new Promise(resolve => setTimeout(() => resolve({
       grouped: [
         {
@@ -378,6 +378,9 @@ export const ragApi = {
           vrn: '241-KY-999',
           vehicleExists: false,
           vehicleDetails: null,
+          // This data is expected to be extracted by the backend from the document content.
+          suggestedMake: 'Toyota', 
+          suggestedModel: 'Yaris',
           documents: [
             { id: 'doc-uuid-3', filename: 'purchase_agreement_new_car.docx' },
           ]
@@ -387,42 +390,47 @@ export const ragApi = {
         { id: 'doc-uuid-4', filename: 'unrecognized_document.pdf' },
         { id: 'doc-uuid-5', filename: 'drivers_manual.pdf' },
       ]
-    }), 1000)); // Имитация задержки сети
+    }), 1000)); // Simulate network delay
     
     /*
-    // РЕАЛЬНЫЙ ВЫЗОВ (когда бэкенд будет готов):
+    // REAL CALL (once backend is ready):
     const response = await api.get('/api/manager/unassigned');
     return response.data;
     */
   },
 
-  // Привязать документы к существующей машине
+  // Link one or more documents to an existing vehicle
   linkDocumentsToVehicle: async (vehicleId, documentIds) => {
     console.log(`API: Linking docs [${documentIds.join(', ')}] to vehicle ${vehicleId}`);
     /*
-    // РЕАЛЬНЫЙ ВЫЗОВ:
+    // REAL CALL:
     const response = await api.post('/api/manager/link', { vehicle_id: vehicleId, document_ids: documentIds });
     return response.data;
     */
     return { success: true, message: `${documentIds.length} documents linked.` };
   },
   
-  // Создать новую машину и привязать к ней документы
-  createVehicleAndLinkDocuments: async (vrn, documentIds) => {
-    console.log(`API: Creating vehicle ${vrn} and linking docs [${documentIds.join(', ')}]`);
+  // Create a new vehicle and link documents to it
+  createVehicleAndLinkDocuments: async (vrn, documentIds, vehicleDetails) => {
+    console.log(`API: Creating vehicle ${vrn} with details:`, vehicleDetails);
+    console.log(`API: and linking docs [${documentIds.join(', ')}]`);
     /*
-    // РЕАЛЬНЫЙ ВЫЗОВ:
-    const response = await api.post('/api/manager/create-and-link', { vrn: vrn, document_ids: documentIds });
+    // REAL CALL:
+    const response = await api.post('/api/manager/create-and-link', { 
+      vrn: vrn, 
+      document_ids: documentIds,
+      details: vehicleDetails // 'make', 'model', 'vin_number'
+    });
     return response.data;
     */
     return { success: true, message: `Vehicle ${vrn} created and ${documentIds.length} documents linked.` };
   },
 
-  // Получить список всех машин для ручного выбора
+  // Get a list of all vehicles for manual assignment dropdowns
   getVehiclesList: async () => {
     console.warn("API: getVehiclesList is a mock.");
     /*
-    // РЕАЛЬНЫЙ ВЫЗОВ:
+    // REAL CALL:
     const response = await api.get('/api/vehicles/list');
     return response.data;
     */

@@ -36,16 +36,16 @@ const DocumentManagerPage = () => {
 
     try {
       await ragApi.linkDocumentsToVehicle(group.vehicleDetails.id, documentIds);
-      // Оптимистичное обновление: удаляем группу из UI
       setGroupedDocs(prev => prev.filter(g => g.vrn !== vrn));
     } catch (err) {
       alert("Failed to link documents.");
     }
   };
 
-  const handleCreateAndLink = async (vrn, documentIds) => {
+  // <-- ОБНОВЛЕННЫЙ ОБРАБОТЧИК -->
+  const handleCreateAndLink = async (vrn, documentIds, vehicleDetails) => {
     try {
-      await ragApi.createVehicleAndLinkDocuments(vrn, documentIds);
+      await ragApi.createVehicleAndLinkDocuments(vrn, documentIds, vehicleDetails);
       setGroupedDocs(prev => prev.filter(g => g.vrn !== vrn));
     } catch (err) {
       alert("Failed to create vehicle and link documents.");
@@ -56,13 +56,11 @@ const DocumentManagerPage = () => {
     if (!documentId || !vehicleId) return;
     try {
       await ragApi.linkDocumentsToVehicle(vehicleId, [documentId]);
-      // Удаляем документ из списка нераспределенных
       setUnassignedDocs(prev => prev.filter(doc => doc.id !== documentId));
     } catch (err) {
       alert("Failed to manually assign document.");
     }
   };
-
 
   if (isLoading) {
     return <div className="loading-state">Loading Document Manager...</div>;
