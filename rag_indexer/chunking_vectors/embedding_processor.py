@@ -439,6 +439,7 @@ class EmbeddingProcessor:
     def robust_save_to_database(self, nodes_with_embeddings, batch_num, db_batch_size=25):
         """
         SAFE: Save nodes to database with robust error handling
+        UPDATED: Now properly handles registry_id column for new database schema
         
         Args:
             nodes_with_embeddings: List of nodes with embeddings
@@ -459,14 +460,75 @@ class EmbeddingProcessor:
         cleaned_nodes = aggressive_clean_all_nodes(nodes_with_embeddings)
         print(f"   INFO: Safely cleaned {len(cleaned_nodes)} nodes (original: {len(nodes_with_embeddings)})")
         
+        # CRITICAL: Use direct SQL to handle registry_id column
+        import psycopg2
+        import json
+        from psycopg2.extras import execute_values
+        
         try:
-            # Try to save all cleaned chunks at once first
-            self.vector_store.add(cleaned_nodes, batch_size=db_batch_size)
-            total_saved = len(cleaned_nodes)
+            # Get database connection
+            conn = psycopg2.connect(self.config.CONNECTION_STRING)
+            cur = conn.cursor()
+            
+            # Prepare data for batch insert
+            data_to_insert = []
+            nodes_without_registry = []
+            
+            for node in cleaned_nodes:
+                registry_id = node.metadata.get('registry_id')
+                
+                if not registry_id:
+                    # Track nodes without registry_id
+                    nodes_without_registry.append(node.metadata.get('file_name', 'Unknown'))
+                    continue
+                
+                # Prepare data tuple: (id, registry_id, vec, metadata)
+                data_to_insert.append((
+                    str(node.id_),
+                    str(registry_id),
+                    node.embedding,
+                    json.dumps(node.metadata)
+                ))
+            
+            # Warn about missing registry_ids
+            if nodes_without_registry:
+                print(f"   WARNING: {len(nodes_without_registry)} chunks missing registry_id, skipping...")
+                for file_name in set(nodes_without_registry)[:5]:
+                    print(f"      - {file_name}")
+            
+            if not data_to_insert:
+                print(f"   ERROR: No valid chunks to save (all missing registry_id)")
+                cur.close()
+                conn.close()
+                return 0, []
+            
+            # Batch insert with registry_id
+            table_name = self.config.TABLE_NAME if hasattr(self.config, 'TABLE_NAME') else 'documents'
+            
+            execute_values(
+                cur,
+                f"""
+                INSERT INTO vecs.{table_name} (id, registry_id, vec, metadata)
+                VALUES %s
+                ON CONFLICT (id) DO UPDATE 
+                SET registry_id = EXCLUDED.registry_id,
+                    vec = EXCLUDED.vec,
+                    metadata = EXCLUDED.metadata
+                """,
+                data_to_insert,
+                page_size=db_batch_size
+            )
+            
+            conn.commit()
+            total_saved = len(data_to_insert)
             self.stats['successful_saves'] += total_saved
             
             db_time = time.time() - db_start_time
-            print(f"   SUCCESS: Safely saved {total_saved} records in {db_time:.2f}s")
+            print(f"   SUCCESS: Safely saved {total_saved} records with registry_id in {db_time:.2f}s")
+            
+            cur.close()
+            conn.close()
+            
             return total_saved, []
             
         except Exception as e:
@@ -474,33 +536,80 @@ class EmbeddingProcessor:
             print(f"   INFO: Trying individual safe chunk processing...")
             
             # If batch save fails, try saving chunks individually
-            for i, node in enumerate(cleaned_nodes):
-                try:
-                    # Double-clean problematic chunks for safety
-                    ultra_cleaned_node = clean_problematic_node(node)
-                    self.vector_store.add([ultra_cleaned_node], batch_size=1)
-                    total_saved += 1
-                    self.stats['successful_saves'] += 1
-                    
-                except Exception as chunk_error:
-                    # Log the problematic chunk details
-                    file_name = node.metadata.get('file_name', 'Unknown')
-                    file_path = node.metadata.get('file_path', 'Unknown')
-                    chunk_preview = node.get_content()[:100] + "..." if len(node.get_content()) > 100 else node.get_content()
-                    
-                    failed_info = {
-                        'chunk_index': i,
-                        'file_name': file_name,
-                        'file_path': file_path,
-                        'error': str(chunk_error),
-                        'content_preview': chunk_preview,
-                        'content_length': len(node.get_content())
-                    }
-                    failed_chunks.append(failed_info)
-                    self.stats['failed_saves'] += 1
-                    
-                    print(f"   ERROR: Failed to save chunk {i+1}: {file_name}")
-                    print(f"      Error: {str(chunk_error)[:100]}...")
+            try:
+                conn = psycopg2.connect(self.config.CONNECTION_STRING)
+                cur = conn.cursor()
+                
+                for i, node in enumerate(cleaned_nodes):
+                    try:
+                        registry_id = node.metadata.get('registry_id')
+                        
+                        if not registry_id:
+                            file_name = node.metadata.get('file_name', 'Unknown')
+                            failed_info = {
+                                'chunk_index': i,
+                                'file_name': file_name,
+                                'file_path': node.metadata.get('file_path', 'Unknown'),
+                                'error': 'Missing registry_id',
+                                'content_preview': node.get_content()[:100],
+                                'content_length': len(node.get_content())
+                            }
+                            failed_chunks.append(failed_info)
+                            self.stats['failed_saves'] += 1
+                            continue
+                        
+                        # Double-clean problematic chunks for safety
+                        ultra_cleaned_node = clean_problematic_node(node)
+                        
+                        # Individual insert
+                        table_name = self.config.TABLE_NAME if hasattr(self.config, 'TABLE_NAME') else 'documents'
+                        
+                        cur.execute(
+                            f"""
+                            INSERT INTO vecs.{table_name} (id, registry_id, vec, metadata)
+                            VALUES (%s, %s, %s, %s::jsonb)
+                            ON CONFLICT (id) DO UPDATE 
+                            SET registry_id = EXCLUDED.registry_id,
+                                vec = EXCLUDED.vec,
+                                metadata = EXCLUDED.metadata
+                            """,
+                            (
+                                str(ultra_cleaned_node.id_),
+                                str(registry_id),
+                                ultra_cleaned_node.embedding,
+                                json.dumps(ultra_cleaned_node.metadata)
+                            )
+                        )
+                        conn.commit()
+                        
+                        total_saved += 1
+                        self.stats['successful_saves'] += 1
+                        
+                    except Exception as chunk_error:
+                        # Log the problematic chunk details
+                        file_name = node.metadata.get('file_name', 'Unknown')
+                        file_path = node.metadata.get('file_path', 'Unknown')
+                        chunk_preview = node.get_content()[:100] + "..." if len(node.get_content()) > 100 else node.get_content()
+                        
+                        failed_info = {
+                            'chunk_index': i,
+                            'file_name': file_name,
+                            'file_path': file_path,
+                            'error': str(chunk_error),
+                            'content_preview': chunk_preview,
+                            'content_length': len(node.get_content())
+                        }
+                        failed_chunks.append(failed_info)
+                        self.stats['failed_saves'] += 1
+                        
+                        print(f"   ERROR: Failed to save chunk {i+1}: {file_name}")
+                        print(f"      Error: {str(chunk_error)[:100]}...")
+                
+                cur.close()
+                conn.close()
+                
+            except Exception as conn_error:
+                print(f"   ERROR: Could not establish individual save connection: {conn_error}")
             
             db_time = time.time() - db_start_time
             
@@ -621,40 +730,43 @@ class NodeProcessor:
         return True, "valid"
     
     def enhance_node_metadata(self, node, indexed_at=None):
-    """
-    Safely enhance node metadata with additional information
-    """
-    if indexed_at is None:
-        indexed_at = datetime.now().isoformat()
-    
-    content = node.get_content()
-    
-    # IMPORTANT: Preserve registry_id if it exists
-    registry_id = node.metadata.get('registry_id')
-    
-    # Add basic metadata if missing
-    if 'file_name' not in node.metadata:
-        node.metadata['file_name'] = node.get_metadata_str()
-    
-    # Add content metadata safely
-    node.metadata.update({
-        'text': content,
-        'indexed_at': indexed_at,
-        'content_length': len(content),
-        'word_count': len(content.split()),
-        'paragraph_count': len([p for p in content.split('\n\n') if p.strip()]),
-        'safe_processing': True,
-        'api_provider': 'gemini'
-    })
-    
-    # Ensure registry_id is present (CRITICAL!)
-    if registry_id:
-        node.metadata['registry_id'] = registry_id
-    else:
-        logger.warning(f"Node for {node.metadata.get('file_name')} is missing registry_id!")
-    
-    return node
-    
+        """
+        Safely enhance node metadata with additional information
+        CRITICAL: Preserve registry_id from parent document
+        """
+        if indexed_at is None:
+            indexed_at = datetime.now().isoformat()
+        
+        content = node.get_content()
+        
+        # CRITICAL: Preserve registry_id if it exists
+        registry_id = node.metadata.get('registry_id')
+        
+        # Add basic metadata if missing
+        if 'file_name' not in node.metadata:
+            node.metadata['file_name'] = node.get_metadata_str()
+        
+        # Add content metadata safely
+        node.metadata.update({
+            'text': content,
+            'indexed_at': indexed_at,
+            'content_length': len(content),
+            'word_count': len(content.split()),
+            'paragraph_count': len([p for p in content.split('\n\n') if p.strip()]),
+            'safe_processing_enabled': True,
+            'api_provider': 'gemini'
+        })
+        
+        # Ensure registry_id is present (CRITICAL!)
+        if registry_id:
+            node.metadata['registry_id'] = registry_id
+        else:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Node for {node.metadata.get('file_name')} is missing registry_id!")
+        
+        return node
+
     def filter_and_enhance_nodes(self, all_nodes, show_progress=True):
         """
         Safely filter and enhance a list of nodes
