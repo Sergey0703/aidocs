@@ -20,7 +20,7 @@ class DatabaseConfig:
 class EmbeddingConfig:
     """Embedding model configuration - UPDATED for Gemini API"""
     model_name: str = "text-embedding-004"
-    dimension: int = 3072
+    dimension: int = 768
     api_key: str = None
 
 @dataclass

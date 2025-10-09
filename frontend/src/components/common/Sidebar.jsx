@@ -6,19 +6,16 @@ import {
   FiSearch, 
   FiUploadCloud, 
   FiGrid, 
-  FiBarChart2, 
-  FiSettings 
-} from 'react-icons/fi'; // Импортируем иконки
+  FiInbox // <-- ИМПОРТ НОВОЙ ИКОНКИ
+} from 'react-icons/fi';
 
 const Sidebar = () => {
   const menuItems = [
     { to: "/", text: "Search", icon: <FiSearch /> },
     { to: "/indexing", text: "Indexing", icon: <FiUploadCloud /> },
+    { to: "/manager", text: "Document Manager", icon: <FiInbox /> }, // <-- НОВАЯ ССЫЛКА
     { to: "/vehicles", text: "Vehicles", icon: <FiGrid /> },
     // Будущие пункты меню
-    // { to: "/buildings", text: "Buildings", icon: <FiHome /> },
-    // { to: "/reports", text: "Reports", icon: <FiBarChart2 /> },
-    // { to: "/settings", text: "Settings", icon: <FiSettings /> },
   ];
 
   return (
@@ -32,7 +29,7 @@ const Sidebar = () => {
             key={item.to}
             to={item.to}
             className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}
-            end // 'end' prop ensures only exact route match is active for "/"
+            end={item.to === "/"} // 'end' prop для главной страницы
           >
             <span className="nav-icon">{item.icon}</span>
             <span className="nav-text">{item.text}</span>

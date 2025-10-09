@@ -1,0 +1,60 @@
+/* src/components/document-manager/UnassignedDocuments.css */
+.unassigned-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.unassigned-item {
+  background-color: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.unassigned-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.unassigned-name {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.assign-button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.assign-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 0.5rem;
+}
+
+.assign-form select {
+  flex-grow: 1;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.save-assign-button {
+  padding: 0.5rem 1rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}

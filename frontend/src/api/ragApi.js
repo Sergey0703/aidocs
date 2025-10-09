@@ -352,6 +352,86 @@ export const ragApi = {
     const response = await api.get('/api/monitoring/metrics/summary');
     return response.data;
   },
+
+  // ============================================================================
+  // DOCUMENT & VEHICLE MANAGEMENT ENDPOINTS (НОВЫЙ РАЗДЕЛ)
+  // ============================================================================
+  
+  // Получить все документы, которые еще не привязаны к машине.
+  // Бэкенд должен вернуть их сгруппированными по найденному номеру.
+  getUnassignedAndGroupedDocuments: async () => {
+    // ЗАГЛУШКА: Этот эндпоинт должен быть реализован на бэкенде
+    console.warn("API: getUnassignedAndGroupedDocuments is a mock.");
+    // Возвращаем моковые данные для демонстрации
+    return new Promise(resolve => setTimeout(() => resolve({
+      grouped: [
+        {
+          vrn: '191-D-12345',
+          vehicleExists: true,
+          vehicleDetails: { id: 'uuid-vehicle-1', make: 'Ford', model: 'Focus' },
+          documents: [
+            { id: 'doc-uuid-1', filename: 'insurance_cert_2024.pdf' },
+            { id: 'doc-uuid-2', filename: 'service_invoice_11_2023.pdf' },
+          ]
+        },
+        {
+          vrn: '241-KY-999',
+          vehicleExists: false,
+          vehicleDetails: null,
+          documents: [
+            { id: 'doc-uuid-3', filename: 'purchase_agreement_new_car.docx' },
+          ]
+        }
+      ],
+      unassigned: [
+        { id: 'doc-uuid-4', filename: 'unrecognized_document.pdf' },
+        { id: 'doc-uuid-5', filename: 'drivers_manual.pdf' },
+      ]
+    }), 1000)); // Имитация задержки сети
+    
+    /*
+    // РЕАЛЬНЫЙ ВЫЗОВ (когда бэкенд будет готов):
+    const response = await api.get('/api/manager/unassigned');
+    return response.data;
+    */
+  },
+
+  // Привязать документы к существующей машине
+  linkDocumentsToVehicle: async (vehicleId, documentIds) => {
+    console.log(`API: Linking docs [${documentIds.join(', ')}] to vehicle ${vehicleId}`);
+    /*
+    // РЕАЛЬНЫЙ ВЫЗОВ:
+    const response = await api.post('/api/manager/link', { vehicle_id: vehicleId, document_ids: documentIds });
+    return response.data;
+    */
+    return { success: true, message: `${documentIds.length} documents linked.` };
+  },
+  
+  // Создать новую машину и привязать к ней документы
+  createVehicleAndLinkDocuments: async (vrn, documentIds) => {
+    console.log(`API: Creating vehicle ${vrn} and linking docs [${documentIds.join(', ')}]`);
+    /*
+    // РЕАЛЬНЫЙ ВЫЗОВ:
+    const response = await api.post('/api/manager/create-and-link', { vrn: vrn, document_ids: documentIds });
+    return response.data;
+    */
+    return { success: true, message: `Vehicle ${vrn} created and ${documentIds.length} documents linked.` };
+  },
+
+  // Получить список всех машин для ручного выбора
+  getVehiclesList: async () => {
+    console.warn("API: getVehiclesList is a mock.");
+    /*
+    // РЕАЛЬНЫЙ ВЫЗОВ:
+    const response = await api.get('/api/vehicles/list');
+    return response.data;
+    */
+    return [
+      { id: 'uuid-vehicle-1', registration_number: '191-D-12345', make: 'Ford', model: 'Focus' },
+      { id: 'uuid-vehicle-2', registration_number: '211-C-7890', make: 'Toyota', model: 'Corolla' },
+      { id: 'uuid-vehicle-3', registration_number: '182-G-4455', make: 'Volkswagen', model: 'Golf' },
+    ];
+  },
 };
 
 // Export default

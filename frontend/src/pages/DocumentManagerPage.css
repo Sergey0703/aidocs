@@ -1,0 +1,37 @@
+/* src/pages/DocumentManagerPage.css */
+
+.doc-manager-page {
+  display: grid;
+  grid-template-columns: 2fr 1fr; /* Левая колонка шире */
+  gap: 2rem;
+  align-items: start;
+}
+
+.manager-column h2 {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.grouped-list,
+.unassigned-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.loading-state,
+.empty-state {
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-secondary);
+  background-color: var(--card-background);
+  border: 2px dashed var(--border-color);
+  border-radius: 12px;
+}
+
+.empty-state h3 {
+  margin-bottom: 0.5rem;
+}

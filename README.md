@@ -1,3 +1,79 @@
+-- ШАГ 1: Создание или обновление универсальной функции для `updated_at`
+-- Эту функцию безопасно запускать, даже если она уже существует.
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+   -- NEW - это специальная переменная, содержащая новую версию строки
+   NEW.updated_at = now(); 
+   RETURN NEW; -- Возвращаем измененную строку для продолжения операции
+END;
+$$ language 'plpgsql';
+
+-- ---
+-- ТАБЛИЦЫ РЕЕСТРА (ДЛЯ БИЗНЕС-ЛОГИКИ)
+-- ---
+
+-- ШАГ 2: Создание таблицы для активов (машин)
+-- Схема: vecs
+CREATE TABLE IF NOT EXISTS vecs.vehicles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    registration_number TEXT UNIQUE NOT NULL,
+    vin_number TEXT UNIQUE,
+    make TEXT,
+    model TEXT,
+    insurance_expiry_date DATE,
+    motor_tax_expiry_date DATE,
+    nct_expiry_date DATE,
+    status TEXT DEFAULT 'active',
+    current_driver_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Создаем триггер для автоматического обновления `updated_at` в `vecs.vehicles`
+-- Сначала удаляем старый триггер (если он есть), чтобы избежать дублирования
+DROP TRIGGER IF EXISTS update_vehicles_updated_at ON vecs.vehicles;
+CREATE TRIGGER update_vehicles_updated_at
+BEFORE UPDATE ON vecs.vehicles
+FOR EACH ROW
+EXECUTE FUNCTION public.update_updated_at_column();
+
+
+-- ШАГ 3: Создание мастер-таблицы для документов (реестра файлов)
+-- Схема: vecs
+CREATE TABLE IF NOT EXISTS vecs.document_registry (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    vehicle_id UUID REFERENCES vecs.vehicles(id) ON DELETE SET NULL,
+    file_path TEXT NOT NULL UNIQUE,
+    document_type TEXT,
+    status TEXT DEFAULT 'unassigned',
+    extracted_data JSONB,
+    uploaded_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now() -- Добавляем поле updated_at
+);
+
+-- Создаем триггер для автоматического обновления `updated_at` в `vecs.document_registry`
+DROP TRIGGER IF EXISTS update_document_registry_updated_at ON vecs.document_registry;
+CREATE TRIGGER update_document_registry_updated_at
+BEFORE UPDATE ON vecs.document_registry
+FOR EACH ROW
+EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ---
+-- ТАБЛИЦА ДЛЯ СЕМАНТИЧЕСКОГО ПОИСКА (RAG)
+-- ---
+
+-- ШАГ 4: Создание таблицы для чанков и векторов (ВАША ОСНОВНАЯ ТАБЛИЦА)
+-- Схема: vecs, Имя: documents
+CREATE TABLE IF NOT EXISTS vecs.documents (
+  id UUID PRIMARY KEY,
+  registry_id UUID NOT NULL REFERENCES vecs.document_registry(id) ON DELETE CASCADE,
+  vec VECTOR(768),
+  metadata JSONB
+);
+
+-- Создаем индекс для ускорения поиска чанков по их родительскому документу
+CREATE INDEX IF NOT EXISTS idx_documents_on_registry_id ON vecs.documents(registry_id);
 # Advanced RAG Document Q&A System
 
 This project is a sophisticated, production-ready RAG (Retrieval-Augmented Generation) system designed to answer questions based on a private collection of documents. It specializes in extracting information about people, leveraging a powerful hybrid search mechanism that combines vector-based semantic search with direct database keyword search.
