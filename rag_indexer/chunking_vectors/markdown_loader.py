@@ -225,6 +225,8 @@ class MarkdownLoader:
             
         except Exception as e:
             logger.error(f"Failed to enrich document with registry_id: {e}", exc_info=True)
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")  # ← Add detailed error!
             self.loading_stats['registry_failures'] += 1
             return document
 

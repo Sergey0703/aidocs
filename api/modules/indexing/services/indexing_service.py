@@ -226,9 +226,10 @@ class IndexingService:
             self._setup_backend_path()
             
             from chunking_vectors.config import get_config
-            from chunking_vectors.loading_helpers import load_markdown_documents
-            from chunking_vectors.batch_processor import create_batch_processor, create_progress_tracker
+            from chunking_vectors.batch_processor import create_batch_processor
             from chunking_vectors.embedding_processor import create_embedding_processor
+            from chunking_vectors.markdown_loader import create_markdown_loader
+            from chunking_vectors.registry_manager import create_registry_manager
             from llama_index.core.node_parser import SentenceSplitter
             from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
             from llama_index.vector_stores.supabase import SupabaseVectorStore
@@ -254,8 +255,16 @@ class IndexingService:
             task.current_stage = ProcessingStage.LOADING
             task.current_stage_name = "Loading Documents"
             
-            progress_tracker = create_progress_tracker()
-            documents, _ = load_markdown_documents(config, progress_tracker)
+            logger.info("Initializing document registry manager and markdown loader...")
+            registry_manager = create_registry_manager(config.CONNECTION_STRING)
+            loader = create_markdown_loader(
+                documents_dir=config.DOCUMENTS_DIR,
+                recursive=True,
+                config=config
+            )
+
+            logger.info("🔗 Loading documents with registry_id enrichment...")
+            documents, _ = loader.load_data(registry_manager=registry_manager)
             
             if not documents:
                 logger.warning("⚠️ No documents found to index.")
