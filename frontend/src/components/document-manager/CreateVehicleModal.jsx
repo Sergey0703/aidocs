@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react';
 import './CreateVehicleModal.css';
 
 const CreateVehicleModal = ({ isOpen, onClose, onSave, vrn, initialData = {}, isLoading = false }) => {
+  // 🆕 ОПРЕДЕЛЯЕМ РЕЖИМ: СОЗДАНИЕ ИЛИ РЕДАКТИРОВАНИЕ
+  const isEditMode = !vrn && initialData && Object.keys(initialData).length > 0 && initialData.id;
+  
   const [formData, setFormData] = useState({
     registration_number: '',
     make: '',
@@ -19,19 +22,35 @@ const CreateVehicleModal = ({ isOpen, onClose, onSave, vrn, initialData = {}, is
   // Reset form when modal opens/closes or initialData changes
   useEffect(() => {
     if (isOpen) {
-      setFormData({
-        registration_number: vrn || '',
-        make: initialData.suggestedMake || initialData.make || '',
-        model: initialData.suggestedModel || initialData.model || '',
-        vin_number: initialData.vin_number || '',
-        insurance_expiry_date: initialData.insurance_expiry_date || '',
-        motor_tax_expiry_date: initialData.motor_tax_expiry_date || '',
-        nct_expiry_date: initialData.nct_expiry_date || '',
-        status: initialData.status || 'active',
-      });
+      // 🆕 ИСПРАВЛЕНО: Правильная инициализация для режима редактирования
+      if (isEditMode) {
+        // Режим редактирования - берём все данные из initialData
+        setFormData({
+          registration_number: initialData.registration_number || '',
+          make: initialData.make || '',
+          model: initialData.model || '',
+          vin_number: initialData.vin_number || '',
+          insurance_expiry_date: initialData.insurance_expiry_date || '',
+          motor_tax_expiry_date: initialData.motor_tax_expiry_date || '',
+          nct_expiry_date: initialData.nct_expiry_date || '',
+          status: initialData.status || 'active',
+        });
+      } else {
+        // Режим создания - используем VRN и suggested данные
+        setFormData({
+          registration_number: vrn || '',
+          make: initialData.suggestedMake || initialData.make || '',
+          model: initialData.suggestedModel || initialData.model || '',
+          vin_number: initialData.vin_number || '',
+          insurance_expiry_date: initialData.insurance_expiry_date || '',
+          motor_tax_expiry_date: initialData.motor_tax_expiry_date || '',
+          nct_expiry_date: initialData.nct_expiry_date || '',
+          status: initialData.status || 'active',
+        });
+      }
       setErrors({});
     }
-  }, [isOpen]);
+  }, [isOpen, vrn, initialData, isEditMode]);
 
   if (!isOpen) {
     return null;
@@ -102,6 +121,17 @@ const CreateVehicleModal = ({ isOpen, onClose, onSave, vrn, initialData = {}, is
     onSave(submitData);
   };
 
+  // 🆕 ДИНАМИЧЕСКИЕ ЗАГОЛОВКИ И КНОПКИ
+  const modalTitle = isEditMode 
+    ? `Edit Vehicle: ${initialData.registration_number}`
+    : vrn 
+      ? `Create Vehicle: ${vrn}` 
+      : 'Create New Vehicle';
+
+  const submitButtonText = isLoading 
+    ? (isEditMode ? 'Updating...' : 'Creating...') 
+    : (isEditMode ? 'Update Vehicle' : (vrn ? 'Create and Link' : 'Create Vehicle'));
+
   // ========================================================================
   // RENDER
   // ========================================================================
@@ -111,7 +141,7 @@ const CreateVehicleModal = ({ isOpen, onClose, onSave, vrn, initialData = {}, is
       <div className="modal-content" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="modal-header">
-          <h3>{vrn ? `Create Vehicle: ${vrn}` : 'Create New Vehicle'}</h3>
+          <h3>{modalTitle}</h3>
           <button 
             className="modal-close-button" 
             onClick={onClose}
@@ -136,7 +166,7 @@ const CreateVehicleModal = ({ isOpen, onClose, onSave, vrn, initialData = {}, is
                 value={formData.registration_number}
                 onChange={handleChange}
                 placeholder="e.g., 191-D-12345"
-                disabled={!!vrn || isLoading}
+                disabled={isLoading || (!!vrn && !isEditMode)} // 🆕 Разрешаем редактирование в режиме edit
                 className={errors.registration_number ? 'input-error' : ''}
               />
               {errors.registration_number && (
@@ -283,7 +313,7 @@ const CreateVehicleModal = ({ isOpen, onClose, onSave, vrn, initialData = {}, is
             disabled={isLoading}
             form="create-vehicle-form"
           >
-            {isLoading ? 'Creating...' : (vrn ? 'Create and Link' : 'Create Vehicle')}
+            {submitButtonText}
           </button>
         </div>
       </div>
