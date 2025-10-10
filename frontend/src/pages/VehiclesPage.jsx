@@ -6,9 +6,10 @@ import VehicleList from '../components/vehicles/VehicleList';
 import VehicleDetail from '../components/vehicles/VehicleDetail';
 import CreateVehicleModal from '../components/document-manager/CreateVehicleModal';
 import ConfirmationModal from '../components/common/ConfirmationModal';
-import { FiSearch } from 'react-icons/fi';
+import { FiSearch, FiAlertCircle } from 'react-icons/fi';
 
 const VehiclesPage = () => {
+  // State for vehicles data
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -19,13 +20,26 @@ const VehiclesPage = () => {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [vehicleToDelete, setVehicleToDelete] = useState(null);
 
+  // State for operations
+  const [isCreating, setIsCreating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // ========================================================================
+  // DATA FETCHING
+  // ========================================================================
+
   const fetchVehicles = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
+    
     try {
+      console.log('📡 Fetching vehicles from backend...');
       const data = await ragApi.getVehicles();
+      console.log(`✅ Loaded ${data.length} vehicles`, data);
       setVehicles(data);
     } catch (err) {
-      setError("Failed to load vehicles.");
+      console.error('❌ Failed to load vehicles:', err);
+      setError(err.message || "Failed to load vehicles from server.");
     } finally {
       setIsLoading(false);
     }
@@ -35,63 +49,167 @@ const VehiclesPage = () => {
     fetchVehicles();
   }, [fetchVehicles]);
 
+  // ========================================================================
+  // VEHICLE SELECTION
+  // ========================================================================
+
   const handleSelectVehicle = async (vehicleId) => {
+    if (selectedVehicle?.id === vehicleId) return; // Already selected
+
     try {
+      console.log(`📡 Fetching details for vehicle: ${vehicleId}`);
       const details = await ragApi.getVehicleDetails(vehicleId);
+      console.log('✅ Vehicle details loaded:', details);
       setSelectedVehicle(details);
+      setError(null); // Clear any previous errors
     } catch (err) {
-      setError("Failed to load vehicle details.");
+      console.error('❌ Failed to load vehicle details:', err);
+      setError(err.message || "Failed to load vehicle details.");
+      
+      // Clear error after 5 seconds
+      setTimeout(() => setError(null), 5000);
     }
   };
+
+  // ========================================================================
+  // CREATE VEHICLE
+  // ========================================================================
 
   const handleCreateVehicle = async (vehicleData) => {
+    setIsCreating(true);
+    
     try {
+      console.log('📡 Creating new vehicle...', vehicleData);
       const newVehicle = await ragApi.createVehicle(vehicleData);
-      setVehicles(prev => [...prev, newVehicle]);
+      console.log('✅ Vehicle created:', newVehicle);
+      
+      // Add to list
+      setVehicles(prev => [newVehicle, ...prev]);
+      
+      // Close modal
       setCreateModalOpen(false);
+      
+      // Select the new vehicle
+      handleSelectVehicle(newVehicle.id);
+      
     } catch (err) {
-      alert("Failed to create vehicle.");
+      console.error('❌ Failed to create vehicle:', err);
+      alert(`Failed to create vehicle: ${err.message}`);
+    } finally {
+      setIsCreating(false);
     }
   };
 
+  // ========================================================================
+  // DELETE VEHICLE
+  // ========================================================================
+
   const handleDeleteRequest = (vehicle) => {
+    console.log('🗑️ Delete requested for:', vehicle);
     setVehicleToDelete(vehicle);
     setDeleteModalOpen(true);
   };
 
   const handleDeleteConfirm = async () => {
     if (!vehicleToDelete) return;
+
+    setIsDeleting(true);
+    
     try {
+      console.log('📡 Deleting vehicle:', vehicleToDelete.id);
       await ragApi.deleteVehicle(vehicleToDelete.id);
+      console.log('✅ Vehicle deleted');
+      
+      // Remove from list
       setVehicles(prev => prev.filter(v => v.id !== vehicleToDelete.id));
+      
+      // Clear selection if deleted vehicle was selected
       if (selectedVehicle?.id === vehicleToDelete.id) {
         setSelectedVehicle(null);
       }
+      
+      // Close modal
       setDeleteModalOpen(false);
       setVehicleToDelete(null);
+      
     } catch (err) {
-      alert("Failed to delete vehicle.");
+      console.error('❌ Failed to delete vehicle:', err);
+      alert(`Failed to delete vehicle: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
+
+  const handleDeleteCancel = () => {
+    setDeleteModalOpen(false);
+    setVehicleToDelete(null);
+  };
+
+  // ========================================================================
+  // DOCUMENT UNLINKING
+  // ========================================================================
 
   const handleUnlinkDocument = async (documentId) => {
     if (!selectedVehicle) return;
+
     try {
+      console.log('📡 Unlinking document:', documentId);
       await ragApi.unlinkDocumentFromVehicle(documentId, selectedVehicle.id);
-      // Optimistically update the UI
+      console.log('✅ Document unlinked');
+      
+      // Optimistically update UI
       setSelectedVehicle(prev => ({
         ...prev,
-        documents: prev.documents.filter(doc => doc.id !== documentId)
+        documents: prev.documents.filter(doc => doc.id !== documentId),
+        total_documents: prev.total_documents - 1,
       }));
+      
     } catch (err) {
-      alert("Failed to unlink document.");
+      console.error('❌ Failed to unlink document:', err);
+      alert(`Failed to unlink document: ${err.message}`);
+      
+      // Reload vehicle details to restore correct state
+      handleSelectVehicle(selectedVehicle.id);
     }
   };
 
+  // ========================================================================
+  // RENDER
+  // ========================================================================
+
+  // Show full-page error if initial load fails
+  if (error && !vehicles.length && !isLoading) {
+    return (
+      <div className="vehicles-page-error">
+        <div className="error-container">
+          <FiAlertCircle className="error-icon" />
+          <h2>Failed to Load Vehicles</h2>
+          <p>{error}</p>
+          <button 
+            className="retry-button"
+            onClick={fetchVehicles}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
+      {/* Error banner (for non-critical errors) */}
+      {error && vehicles.length > 0 && (
+        <div className="error-banner">
+          <FiAlertCircle />
+          <span>{error}</span>
+          <button onClick={() => setError(null)}>✕</button>
+        </div>
+      )}
+
+      {/* Main Content */}
       <div className="vehicles-page">
+        {/* Left Column - Vehicle List */}
         <div className="vehicle-list-column">
           <VehicleList
             vehicles={vehicles}
@@ -101,6 +219,8 @@ const VehiclesPage = () => {
             isLoading={isLoading}
           />
         </div>
+
+        {/* Right Column - Vehicle Detail */}
         <div className="vehicle-detail-column">
           {selectedVehicle ? (
             <VehicleDetail 
@@ -111,26 +231,42 @@ const VehiclesPage = () => {
           ) : (
             <div className="placeholder">
               <FiSearch className="placeholder-icon" />
-              <h2>Select a vehicle</h2>
-              <p>Choose a vehicle from the list to view its details and documents.</p>
+              <h2>Select a Vehicle</h2>
+              <p>Choose a vehicle from the list to view its details and linked documents.</p>
+              {vehicles.length === 0 && !isLoading && (
+                <button 
+                  className="create-first-vehicle-btn"
+                  onClick={() => setCreateModalOpen(true)}
+                >
+                  Create Your First Vehicle
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
 
+      {/* Create Vehicle Modal */}
       <CreateVehicleModal
         isOpen={isCreateModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onSave={handleCreateVehicle}
-        // No VRN needed when creating from this page
+        isLoading={isCreating}
       />
 
+      {/* Delete Confirmation Modal */}
       <ConfirmationModal
         isOpen={isDeleteModalOpen}
-        onClose={() => setDeleteModalOpen(false)}
+        onClose={handleDeleteCancel}
         onConfirm={handleDeleteConfirm}
         title="Delete Vehicle"
-        message={`Are you sure you want to permanently delete ${vehicleToDelete?.registration_number}? This action cannot be undone.`}
+        message={
+          vehicleToDelete
+            ? `Are you sure you want to permanently delete ${vehicleToDelete.registration_number}? ` +
+              `This action cannot be undone. All linked documents will be unlinked but not deleted.`
+            : ''
+        }
+        isLoading={isDeleting}
       />
     </>
   );

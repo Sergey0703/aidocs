@@ -286,7 +286,8 @@ class VehicleService:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 # Get total count
                 cur.execute(count_query, params if status else [])
-                total = cur.fetchone()[0]
+                result = cur.fetchone()
+                total = result['count'] if result else 0
                 
                 # Get vehicles
                 cur.execute(query, params + [limit, offset])

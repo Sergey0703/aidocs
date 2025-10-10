@@ -297,125 +297,219 @@ export const ragApi = {
   // MONITORING ENDPOINTS
   // ============================================================================
   
-  getPipelineStatus: async (taskId = null) => { /* ... */ },
-  getPerformanceMetrics: async (taskId = null) => { /* ... */ },
-  getErrorLogs: async (options = {}) => { /* ... */ },
-  getProcessingQueue: async () => { /* ... */ },
-  getChunkAnalysis: async () => { /* ... */ },
-  getDatabaseStats: async () => { /* ... */ },
-  getMonitoringHealth: async () => { /* ... */ },
-  getMetricsSummary: async () => { /* ... */ },
-  
-  // ============================================================================
-  // DOCUMENT & VEHICLE MANAGEMENT ENDPOINTS
-  // ============================================================================
-  
-  getUnassignedAndGroupedDocuments: async () => {
-    console.warn("API: getUnassignedAndGroupedDocuments is a mock.");
-    return new Promise(resolve => setTimeout(() => resolve({
-      grouped: [
-        { vrn: '191-D-12345', vehicleExists: true, vehicleDetails: { id: 'uuid-vehicle-1', make: 'Ford', model: 'Focus' }, documents: [{ id: 'doc-uuid-1', filename: 'insurance_cert_2024.pdf' }, { id: 'doc-uuid-2', filename: 'service_invoice_11_2023.pdf' }] },
-        { vrn: '241-KY-999', vehicleExists: false, vehicleDetails: null, suggestedMake: 'Toyota', suggestedModel: 'Yaris', documents: [{ id: 'doc-uuid-3', filename: 'purchase_agreement_new_car.docx' }] }
-      ],
-      unassigned: [{ id: 'doc-uuid-4', filename: 'unrecognized_document.pdf' }, { id: 'doc-uuid-5', filename: 'drivers_manual.pdf' }]
-    }), 1000));
-  },
-  
-  linkDocumentsToVehicle: async (vehicleId, documentIds) => {
-    console.log(`API: Linking docs [${documentIds.join(', ')}] to vehicle ${vehicleId}`);
-    return { success: true, message: `${documentIds.length} documents linked.` };
-  },
-  
-  createVehicleAndLinkDocuments: async (vrn, documentIds, vehicleDetails) => {
-    console.log(`API: Creating vehicle ${vrn} with details:`, vehicleDetails, `and linking docs [${documentIds.join(', ')}]`);
-    return { success: true, message: `Vehicle ${vrn} created and ${documentIds.length} documents linked.` };
-  },
-  
-  getVehiclesList: async () => {
-    console.warn("API: getVehiclesList is a mock.");
-    return [
-      { id: 'uuid-vehicle-1', registration_number: '191-D-12345', make: 'Ford', model: 'Focus' },
-      { id: 'uuid-vehicle-2', registration_number: '211-C-7890', make: 'Toyota', model: 'Corolla' },
-      { id: 'uuid-vehicle-3', registration_number: '182-G-4455', make: 'Volkswagen', model: 'Golf' },
-    ];
+  getPipelineStatus: async (taskId = null) => {
+    const params = taskId ? { task_id: taskId } : {};
+    const response = await api.get('/api/monitoring/pipeline', { params });
+    return response.data;
   },
 
+  getPerformanceMetrics: async (taskId = null) => {
+    const params = taskId ? { task_id: taskId } : {};
+    const response = await api.get('/api/monitoring/performance', { params });
+    return response.data;
+  },
+
+  getErrorLogs: async (options = {}) => {
+    const response = await api.get('/api/monitoring/errors', {
+      params: {
+        limit: options.limit || 50,
+        error_type: options.errorType || null,
+        since: options.since || null
+      }
+    });
+    return response.data;
+  },
+
+  getProcessingQueue: async () => {
+    const response = await api.get('/api/monitoring/queue');
+    return response.data;
+  },
+
+  getChunkAnalysis: async () => {
+    const response = await api.get('/api/monitoring/chunks/analysis');
+    return response.data;
+  },
+
+  getDatabaseStats: async () => {
+    const response = await api.get('/api/monitoring/database/stats');
+    return response.data;
+  },
+
+  getMonitoringHealth: async () => {
+    const response = await api.get('/api/monitoring/health');
+    return response.data;
+  },
+
+  getMetricsSummary: async () => {
+    const response = await api.get('/api/monitoring/metrics/summary');
+    return response.data;
+  },
+  
   // ============================================================================
-  // VEHICLE CRUD ENDPOINTS (NEW SECTION)
+  // VEHICLES MODULE - REAL BACKEND INTEGRATION
   // ============================================================================
 
-  // Get list of all vehicles for the master list view
-  getVehicles: async () => {
-    console.warn("API: getVehicles is a mock.");
-    // REAL CALL:
-    // const response = await api.get('/api/vehicles');
-    // return response.data;
-    return [
-      { id: 'uuid-vehicle-1', registration_number: '191-D-12345', make: 'Ford', model: 'Focus', status: 'active' },
-      { id: 'uuid-vehicle-2', registration_number: '211-C-7890', make: 'Toyota', model: 'Corolla', status: 'active' },
-      { id: 'uuid-vehicle-3', registration_number: '182-G-4455', make: 'Volkswagen', model: 'Golf', status: 'maintenance' },
-    ];
+  // Get list of all vehicles
+  getVehicles: async (params = {}) => {
+    const response = await api.get('/api/vehicles', {
+      params: {
+        status: params.status || null,
+        page: params.page || 1,
+        page_size: params.pageSize || 100
+      }
+    });
+    return response.data.vehicles || [];
   },
 
   // Get full details for a single vehicle, including its documents
   getVehicleDetails: async (vehicleId) => {
-    console.warn(`API: getVehicleDetails for ${vehicleId} is a mock.`);
-    // REAL CALL:
-    // const response = await api.get(`/api/vehicles/${vehicleId}`);
-    // return response.data;
+    if (!vehicleId) {
+      throw new Error('Vehicle ID is required');
+    }
+    const response = await api.get(`/api/vehicles/${vehicleId}`);
+    
+    // Backend returns { vehicle: {...}, documents: [...], total_documents: N }
+    // We flatten it for easier use in frontend
     return {
-      id: vehicleId,
-      registration_number: '191-D-12345',
-      vin_number: 'WF0XXGCDXXB12345',
-      make: 'Ford',
-      model: 'Focus',
-      insurance_expiry_date: '2025-12-01',
-      motor_tax_expiry_date: '2025-08-31',
-      nct_expiry_date: '2026-05-20',
-      status: 'active',
-      documents: [
-        { id: 'doc-uuid-1', filename: 'insurance_cert_2024.pdf' },
-        { id: 'doc-uuid-2', filename: 'service_invoice_11_2023.pdf' },
-      ]
+      ...response.data.vehicle,
+      documents: response.data.documents || [],
+      total_documents: response.data.total_documents || 0,
     };
   },
 
-  // Create a new vehicle (without linking documents directly)
+  // Create a new vehicle
   createVehicle: async (vehicleData) => {
-    console.log("API: Creating new vehicle", vehicleData);
-    // REAL CALL:
-    // const response = await api.post('/api/vehicles', vehicleData);
-    // return response.data;
-    const newVehicle = { ...vehicleData, id: `new-uuid-${Math.random()}`, status: 'active' };
-    return newVehicle;
+    const response = await api.post('/api/vehicles', {
+      registration_number: vehicleData.registration_number,
+      vin_number: vehicleData.vin_number || null,
+      make: vehicleData.make || null,
+      model: vehicleData.model || null,
+      insurance_expiry_date: vehicleData.insurance_expiry_date || null,
+      motor_tax_expiry_date: vehicleData.motor_tax_expiry_date || null,
+      nct_expiry_date: vehicleData.nct_expiry_date || null,
+      status: vehicleData.status || 'active',
+      current_driver_id: vehicleData.current_driver_id || null,
+    });
+    return response.data;
   },
 
   // Update a vehicle's data
   updateVehicle: async (vehicleId, vehicleData) => {
-    console.log(`API: Updating vehicle ${vehicleId}`, vehicleData);
-    // REAL CALL:
-    // const response = await api.put(`/api/vehicles/${vehicleId}`, vehicleData);
-    // return response.data;
-    return { ...vehicleData, id: vehicleId };
+    if (!vehicleId) {
+      throw new Error('Vehicle ID is required');
+    }
+    const response = await api.put(`/api/vehicles/${vehicleId}`, vehicleData);
+    return response.data;
   },
 
   // Delete a vehicle
   deleteVehicle: async (vehicleId) => {
-    console.log(`API: Deleting vehicle ${vehicleId}`);
-    // REAL CALL:
-    // const response = await api.delete(`/api/vehicles/${vehicleId}`);
-    // return response.data;
-    return { success: true, message: 'Vehicle deleted.' };
+    if (!vehicleId) {
+      throw new Error('Vehicle ID is required');
+    }
+    const response = await api.delete(`/api/vehicles/${vehicleId}`);
+    return response.data;
+  },
+
+  // Get vehicle statistics
+  getVehicleStatistics: async () => {
+    const response = await api.get('/api/vehicles/stats/overview');
+    return response.data;
+  },
+
+  // ============================================================================
+  // DOCUMENT LINKING
+  // ============================================================================
+
+  // Link a document to a vehicle
+  linkDocumentToVehicle: async (vehicleId, documentId) => {
+    if (!vehicleId || !documentId) {
+      throw new Error('Vehicle ID and Document ID are required');
+    }
+    const response = await api.post(`/api/vehicles/${vehicleId}/documents/link`, {
+      registry_id: documentId
+    });
+    return response.data;
   },
 
   // Unlink a document from a vehicle
   unlinkDocumentFromVehicle: async (documentId, vehicleId) => {
-    console.log(`API: Unlinking doc ${documentId} from vehicle ${vehicleId}`);
-    // REAL CALL:
-    // const response = await api.post('/api/manager/unlink', { document_id: documentId, vehicle_id: vehicleId });
-    // return response.data;
-    return { success: true, message: 'Document unlinked.' };
-  }
+    if (!vehicleId || !documentId) {
+      throw new Error('Vehicle ID and Document ID are required');
+    }
+    const response = await api.post(`/api/vehicles/${vehicleId}/documents/unlink`, {
+      registry_id: documentId
+    });
+    return response.data;
+  },
+
+  // Get unassigned documents
+  getUnassignedDocuments: async () => {
+    const response = await api.get('/api/vehicles/documents/unassigned');
+    return response.data;
+  },
+
+  // Analyze documents (grouped by VRN)
+  analyzeDocuments: async () => {
+    const response = await api.get('/api/vehicles/documents/analyze');
+    return response.data;
+  },
+
+  // Get document statistics
+  getDocumentStatistics: async () => {
+    const response = await api.get('/api/vehicles/documents/stats');
+    return response.data;
+  },
+
+  // ============================================================================
+  // LEGACY COMPATIBILITY (for DocumentManagerPage)
+  // ============================================================================
+
+  // Wrapper for document manager page
+  getUnassignedAndGroupedDocuments: async () => {
+    return await ragApi.analyzeDocuments();
+  },
+
+  // Wrapper for bulk linking
+  linkDocumentsToVehicle: async (vehicleId, documentIds) => {
+    const results = [];
+    for (const docId of documentIds) {
+      try {
+        const result = await ragApi.linkDocumentToVehicle(vehicleId, docId);
+        results.push(result);
+      } catch (error) {
+        console.error(`Failed to link document ${docId}:`, error);
+      }
+    }
+    return { 
+      success: true, 
+      message: `${results.length} documents linked successfully.`,
+      results 
+    };
+  },
+
+  // Create vehicle and link documents
+  createVehicleAndLinkDocuments: async (vrn, documentIds, vehicleDetails) => {
+    // First create the vehicle
+    const vehicle = await ragApi.createVehicle({
+      registration_number: vrn,
+      ...vehicleDetails
+    });
+
+    // Then link all documents
+    await ragApi.linkDocumentsToVehicle(vehicle.id, documentIds);
+
+    return {
+      success: true,
+      message: `Vehicle ${vrn} created and ${documentIds.length} documents linked.`,
+      vehicle
+    };
+  },
+
+  // Get vehicles list (legacy wrapper)
+  getVehiclesList: async () => {
+    return await ragApi.getVehicles();
+  },
 };
 
 // Export default
