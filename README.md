@@ -1,80 +1,184 @@
+-- ============================================================================
+-- PRODUCTION RAG SYSTEM - DATABASE SCHEMA
+-- Vehicle Management + Document Registry + Vector Search
+-- ============================================================================
+
 -- ШАГ 1: Создание или обновление универсальной функции для `updated_at`
 -- Эту функцию безопасно запускать, даже если она уже существует.
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-   -- NEW - это специальная переменная, содержащая новую версию строки
-   NEW.updated_at = now(); 
-   RETURN NEW; -- Возвращаем измененную строку для продолжения операции
+   NEW.updated_at = now();
+   RETURN NEW;
 END;
 $$ language 'plpgsql';
 
--- ---
--- ТАБЛИЦЫ РЕЕСТРА (ДЛЯ БИЗНЕС-ЛОГИКИ)
--- ---
+-- ============================================================================
+-- VEHICLES TABLE - Реестр транспортных средств
+-- ============================================================================
 
--- ШАГ 2: Создание таблицы для активов (машин)
--- Схема: vecs
 CREATE TABLE IF NOT EXISTS vecs.vehicles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Основная информация
     registration_number TEXT UNIQUE NOT NULL,
     vin_number TEXT UNIQUE,
     make TEXT,
     model TEXT,
+    
+    -- Даты истечения документов
     insurance_expiry_date DATE,
     motor_tax_expiry_date DATE,
     nct_expiry_date DATE,
-    status TEXT DEFAULT 'active',
+    
+    -- Статус и назначение
+    status TEXT DEFAULT 'active' CHECK (status IN ('active', 'maintenance', 'inactive', 'sold', 'archived')),
     current_driver_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    
+    -- Метаданные
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Создаем триггер для автоматического обновления `updated_at` в `vecs.vehicles`
--- Сначала удаляем старый триггер (если он есть), чтобы избежать дублирования
+-- Индексы для быстрого поиска
+CREATE INDEX IF NOT EXISTS idx_vehicles_registration ON vecs.vehicles(registration_number);
+CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vecs.vehicles(status);
+CREATE INDEX IF NOT EXISTS idx_vehicles_driver ON vecs.vehicles(current_driver_id);
+
+-- Триггер для автоматического обновления updated_at
 DROP TRIGGER IF EXISTS update_vehicles_updated_at ON vecs.vehicles;
 CREATE TRIGGER update_vehicles_updated_at
-BEFORE UPDATE ON vecs.vehicles
-FOR EACH ROW
-EXECUTE FUNCTION public.update_updated_at_column();
+    BEFORE UPDATE ON vecs.vehicles
+    FOR EACH ROW
+    EXECUTE FUNCTION public.update_updated_at_column();
 
+-- ============================================================================
+-- DOCUMENT REGISTRY - Мастер-таблица документов
+-- ============================================================================
 
--- ШАГ 3: Создание мастер-таблицы для документов (реестра файлов)
--- Схема: vecs
 CREATE TABLE IF NOT EXISTS vecs.document_registry (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Связь с транспортным средством (опционально)
     vehicle_id UUID REFERENCES vecs.vehicles(id) ON DELETE SET NULL,
-    file_path TEXT NOT NULL UNIQUE,
-    document_type TEXT,
-    status TEXT DEFAULT 'unassigned',
-    extracted_data JSONB,
+    
+    -- Пути к файлам
+    raw_file_path TEXT UNIQUE,           -- Путь к оригинальному файлу (PDF, DOCX, etc.)
+    markdown_file_path TEXT UNIQUE,      -- Путь к конвертированному markdown
+    
+    -- Метаданные документа
+    document_type TEXT CHECK (document_type IN (
+        'insurance',
+        'motor_tax',
+        'nct_certificate',
+        'service_record',
+        'purchase_agreement',
+        'registration_document',
+        'drivers_manual',
+        'other'
+    )),
+    
+    -- Статус обработки документа
+    status TEXT DEFAULT 'unassigned' CHECK (status IN (
+        'unassigned',        -- Загружен, но не привязан к машине
+        'assigned',          -- Привязан к машине
+        'pending_ocr',       -- Ожидает OCR обработки
+        'pending_indexing',  -- Ожидает индексирования
+        'processed',         -- Полностью обработан и проиндексирован
+        'archived',          -- Устаревший документ
+        'failed'             -- Ошибка обработки
+    )),
+    
+    -- Извлечённые данные (VRN, даты, metadata из OCR, и т.д.)
+    extracted_data JSONB DEFAULT '{}'::jsonb,
+    
+    -- Метаданные
     uploaded_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now() -- Добавляем поле updated_at
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Создаем триггер для автоматического обновления `updated_at` в `vecs.document_registry`
+-- Индексы для быстрого поиска
+CREATE INDEX IF NOT EXISTS idx_document_registry_vehicle ON vecs.document_registry(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_document_registry_status ON vecs.document_registry(status);
+CREATE INDEX IF NOT EXISTS idx_document_registry_type ON vecs.document_registry(document_type);
+CREATE INDEX IF NOT EXISTS idx_document_registry_raw_path ON vecs.document_registry(raw_file_path);
+CREATE INDEX IF NOT EXISTS idx_document_registry_md_path ON vecs.document_registry(markdown_file_path);
+
+-- GIN индекс для быстрого поиска по JSONB (extracted_data)
+CREATE INDEX IF NOT EXISTS idx_document_registry_extracted_data ON vecs.document_registry USING gin(extracted_data);
+
+-- Триггер для автоматического обновления updated_at
 DROP TRIGGER IF EXISTS update_document_registry_updated_at ON vecs.document_registry;
 CREATE TRIGGER update_document_registry_updated_at
-BEFORE UPDATE ON vecs.document_registry
-FOR EACH ROW
-EXECUTE FUNCTION public.update_updated_at_column();
+    BEFORE UPDATE ON vecs.document_registry
+    FOR EACH ROW
+    EXECUTE FUNCTION public.update_updated_at_column();
 
--- ---
--- ТАБЛИЦА ДЛЯ СЕМАНТИЧЕСКОГО ПОИСКА (RAG)
--- ---
+-- ============================================================================
+-- DOCUMENTS (CHUNKS) - Таблица для векторного поиска (RAG)
+-- ============================================================================
 
--- ШАГ 4: Создание таблицы для чанков и векторов (ВАША ОСНОВНАЯ ТАБЛИЦА)
--- Схема: vecs, Имя: documents
 CREATE TABLE IF NOT EXISTS vecs.documents (
-  id UUID PRIMARY KEY,
-  registry_id UUID NOT NULL REFERENCES vecs.document_registry(id) ON DELETE CASCADE,
-  vec VECTOR(768),
-  metadata JSONB
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Обязательная связь с мастер-записью документа
+    registry_id UUID NOT NULL REFERENCES vecs.document_registry(id) ON DELETE CASCADE,
+    
+    -- Векторное представление чанка (768-dimensional embedding)
+    vec VECTOR(768),
+    
+    -- Метаданные чанка (текст, chunk_index, file_name, и т.д.)
+    metadata JSONB
 );
 
--- Создаем индекс для ускорения поиска чанков по их родительскому документу
-CREATE INDEX IF NOT EXISTS idx_documents_on_registry_id ON vecs.documents(registry_id);
-# Advanced RAG Document Q&A System
+-- Индексы для быстрого поиска
+CREATE INDEX IF NOT EXISTS idx_documents_registry_id ON vecs.documents(registry_id);
+
+-- HNSW индекс для быстрого векторного поиска (cosine distance)
+CREATE INDEX IF NOT EXISTS idx_documents_vec_hnsw ON vecs.documents 
+USING hnsw (vec vector_cosine_ops);
+
+-- ============================================================================
+-- ПОЛЕЗНЫЕ КОММЕНТАРИИ К ТАБЛИЦАМ
+-- ============================================================================
+
+COMMENT ON TABLE vecs.vehicles IS 'Реестр транспортных средств компании';
+COMMENT ON TABLE vecs.document_registry IS 'Мастер-таблица всех загруженных документов с путями к raw и markdown файлам';
+COMMENT ON TABLE vecs.documents IS 'Таблица чанков для векторного поиска (RAG). Каждый чанк связан с родительским документом через registry_id';
+
+COMMENT ON COLUMN vecs.document_registry.raw_file_path IS 'Путь к оригинальному файлу в data/raw/';
+COMMENT ON COLUMN vecs.document_registry.markdown_file_path IS 'Путь к конвертированному markdown в data/markdown/';
+COMMENT ON COLUMN vecs.document_registry.extracted_data IS 'JSON с извлечёнными данными: VRN, даты, OCR confidence, etc.';
+COMMENT ON COLUMN vecs.document_registry.status IS 'Статус жизненного цикла документа: от unassigned до processed';
+
+-- ============================================================================
+-- ПРИМЕРЫ ЗАПРОСОВ
+-- ============================================================================
+
+-- Получить все документы для конкретной машины
+-- SELECT dr.*, v.registration_number 
+-- FROM vecs.document_registry dr
+-- JOIN vecs.vehicles v ON dr.vehicle_id = v.id
+-- WHERE v.registration_number = '191-D-12345';
+
+-- Получить все неназначенные документы
+-- SELECT * FROM vecs.document_registry 
+-- WHERE status = 'unassigned';
+
+-- Получить документы, готовые к индексированию
+-- SELECT * FROM vecs.document_registry 
+-- WHERE status = 'pending_indexing' 
+-- AND markdown_file_path IS NOT NULL;
+
+-- Получить количество чанков для документа
+-- SELECT dr.raw_file_path, COUNT(d.id) as chunk_count
+-- FROM vecs.document_registry dr
+-- LEFT JOIN vecs.documents d ON dr.id = d.registry_id
+-- GROUP BY dr.id, dr.raw_file_path;
+
+-- Поиск документов по извлечённому VRN
+-- SELECT * FROM vecs.document_registry
+-- WHERE extracted_data->>'vrn' = '191-D-12345';
 
 This project is a sophisticated, production-ready RAG (Retrieval-Augmented Generation) system designed to answer questions based on a private collection of documents. It specializes in extracting information about people, leveraging a powerful hybrid search mechanism that combines vector-based semantic search with direct database keyword search.
 
