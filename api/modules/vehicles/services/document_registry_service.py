@@ -264,7 +264,7 @@ class DocumentRegistryService:
                 cur.execute("""
                     SELECT * FROM vecs.document_registry
                     WHERE vehicle_id IS NULL
-                    AND status = 'unassigned'
+                    AND status = 'processed'
                     ORDER BY uploaded_at DESC
                     LIMIT %s
                 """, (limit,))
