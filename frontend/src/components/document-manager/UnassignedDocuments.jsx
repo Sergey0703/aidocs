@@ -1,32 +1,30 @@
 // src/components/document-manager/UnassignedDocuments.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './UnassignedDocuments.css';
 import { FiFile } from 'react-icons/fi';
-import { ragApi } from '../../api/ragApi';
+import VehicleSearchInput from './VehicleSearchInput'; // 🆕 НОВЫЙ КОМПОНЕНТ
 
 const UnassignedDocuments = ({ documents, onAssign }) => {
   const [assigningFor, setAssigningFor] = useState(null); // ID of doc being assigned
-  const [selectedVehicle, setSelectedVehicle] = useState('');
-  const [vehicles, setVehicles] = useState([]);
-
-  useEffect(() => {
-    // Загружаем список машин один раз при монтировании
-    const fetchVehicles = async () => {
-      const vehicleList = await ragApi.getVehiclesList();
-      setVehicles(vehicleList);
-    };
-    fetchVehicles();
-  }, []);
 
   const handleStartAssign = (docId) => {
     setAssigningFor(docId);
-    setSelectedVehicle('');
   };
 
-  const handleSaveAssign = () => {
-    if (assigningFor && selectedVehicle) {
-      onAssign(assigningFor, selectedVehicle);
-      setAssigningFor(null); // Сбрасываем форму после сохранения
+  const handleCancelAssign = () => {
+    setAssigningFor(null);
+  };
+
+  // 🆕 ОБРАБОТЧИК ВЫБОРА МАШИНЫ ИЗ АВТОКОМПЛИТА
+  const handleVehicleSelect = (vehicle) => {
+    if (assigningFor && vehicle) {
+      console.log('📎 Assigning document to vehicle:', { docId: assigningFor, vehicleId: vehicle.id });
+      
+      // Вызываем callback родительского компонента
+      onAssign(assigningFor, vehicle.id);
+      
+      // Сбрасываем форму после назначения
+      setAssigningFor(null);
     }
   };
 
@@ -35,28 +33,33 @@ const UnassignedDocuments = ({ documents, onAssign }) => {
       {documents.map(doc => (
         <div key={doc.id} className="unassigned-item">
           <div className="unassigned-info">
-            <span className="unassigned-name"><FiFile /> {doc.filename}</span>
+            <span className="unassigned-name">
+              <FiFile /> {doc.filename}
+            </span>
             {assigningFor !== doc.id && (
-              <button className="assign-button" onClick={() => handleStartAssign(doc.id)}>
+              <button 
+                className="assign-button" 
+                onClick={() => handleStartAssign(doc.id)}
+              >
                 Manual Assign
               </button>
             )}
           </div>
 
+          {/* 🆕 ФОРМА С АВТОКОМПЛИТОМ ВМЕСТО SELECT */}
           {assigningFor === doc.id && (
             <div className="assign-form">
-              <select
-                value={selectedVehicle}
-                onChange={(e) => setSelectedVehicle(e.target.value)}
+              <VehicleSearchInput
+                onSelect={handleVehicleSelect}
+                placeholder="Type to search vehicles..."
+                autoFocus={true}
+              />
+              <button 
+                className="cancel-assign-button" 
+                onClick={handleCancelAssign}
               >
-                <option value="" disabled>-- Select a vehicle --</option>
-                {vehicles.map(v => (
-                  <option key={v.id} value={v.id}>
-                    {v.registration_number} ({v.make} {v.model})
-                  </option>
-                ))}
-              </select>
-              <button className="save-assign-button" onClick={handleSaveAssign}>Save</button>
+                Cancel
+              </button>
             </div>
           )}
         </div>

@@ -346,7 +346,7 @@ export const ragApi = {
   },
   
   // ============================================================================
-  // VEHICLES MODULE - REAL BACKEND INTEGRATION
+  // VEHICLES MODULE
   // ============================================================================
 
   // Get list of all vehicles
@@ -368,8 +368,6 @@ export const ragApi = {
     }
     const response = await api.get(`/api/vehicles/${vehicleId}`);
     
-    // Backend returns { vehicle: {...}, documents: [...], total_documents: N }
-    // We flatten it for easier use in frontend
     return {
       ...response.data.vehicle,
       documents: response.data.documents || [],
@@ -418,30 +416,8 @@ export const ragApi = {
   },
 
   // ============================================================================
-  // DOCUMENT LINKING
+  // DOCUMENT LINKING (OLD ENDPOINTS - KEPT FOR COMPATIBILITY)
   // ============================================================================
-
-  // Link a document to a vehicle
-  linkDocumentToVehicle: async (vehicleId, documentId) => {
-    if (!vehicleId || !documentId) {
-      throw new Error('Vehicle ID and Document ID are required');
-    }
-    const response = await api.post(`/api/vehicles/${vehicleId}/documents/link`, {
-      registry_id: documentId
-    });
-    return response.data;
-  },
-
-  // Unlink a document from a vehicle
-  unlinkDocumentFromVehicle: async (documentId, vehicleId) => {
-    if (!vehicleId || !documentId) {
-      throw new Error('Vehicle ID and Document ID are required');
-    }
-    const response = await api.post(`/api/vehicles/${vehicleId}/documents/unlink`, {
-      registry_id: documentId
-    });
-    return response.data;
-  },
 
   // Get unassigned documents
   getUnassignedDocuments: async () => {
@@ -462,48 +438,132 @@ export const ragApi = {
   },
 
   // ============================================================================
-  // LEGACY COMPATIBILITY (for DocumentManagerPage)
+  // 🆕 DOCUMENT INBOX MODULE - NEW BATCH ENDPOINTS
   // ============================================================================
 
-  // Wrapper for document manager page
+  // Batch link documents to vehicle
+  inboxLinkBatch: async (vehicleId, registryIds) => {
+    if (!vehicleId || !registryIds || registryIds.length === 0) {
+      throw new Error('Vehicle ID and at least one registry ID are required');
+    }
+    const response = await api.post(`/api/inbox/link-batch?vehicle_id=${vehicleId}`, {
+      registry_ids: registryIds
+    });
+    return response.data;
+  },
+
+  // Batch unlink documents
+  inboxUnlinkBatch: async (registryIds) => {
+    if (!registryIds || registryIds.length === 0) {
+      throw new Error('At least one registry ID is required');
+    }
+    const response = await api.post('/api/inbox/unlink-batch', {
+      registry_ids: registryIds
+    });
+    return response.data;
+  },
+
+  // Create vehicle and link documents in one operation
+  inboxCreateAndLink: async (registrationNumber, documentIds, vehicleDetails = {}) => {
+    if (!registrationNumber || !documentIds || documentIds.length === 0) {
+      throw new Error('Registration number and at least one document ID are required');
+    }
+    const response = await api.post('/api/inbox/create-vehicle-and-link', {
+      registration_number: registrationNumber,
+      make: vehicleDetails.make || null,
+      model: vehicleDetails.model || null,
+      vin_number: vehicleDetails.vin_number || null,
+      insurance_expiry_date: vehicleDetails.insurance_expiry_date || null,
+      motor_tax_expiry_date: vehicleDetails.motor_tax_expiry_date || null,
+      nct_expiry_date: vehicleDetails.nct_expiry_date || null,
+      status: vehicleDetails.status || 'active',
+      document_ids: documentIds
+    });
+    return response.data;
+  },
+
+  // Search vehicles for dropdown autocomplete
+  inboxSearchVehicles: async (query = '', limit = 10) => {
+    const response = await api.get('/api/inbox/search-vehicles', {
+      params: { query, limit }
+    });
+    return response.data;
+  },
+
+  // ============================================================================
+  // 🔄 UPDATED LEGACY WRAPPERS - NOW USE NEW BATCH ENDPOINTS
+  // ============================================================================
+
+  // Link single document to vehicle (uses old endpoint for single operations)
+  linkDocumentToVehicle: async (vehicleId, documentId) => {
+    if (!vehicleId || !documentId) {
+      throw new Error('Vehicle ID and Document ID are required');
+    }
+    const response = await api.post(`/api/vehicles/${vehicleId}/documents/link`, {
+      registry_id: documentId
+    });
+    return response.data;
+  },
+
+  // Unlink single document from vehicle (uses old endpoint)
+  unlinkDocumentFromVehicle: async (documentId, vehicleId) => {
+    if (!vehicleId || !documentId) {
+      throw new Error('Vehicle ID and Document ID are required');
+    }
+    const response = await api.post(`/api/vehicles/${vehicleId}/documents/unlink`, {
+      registry_id: documentId
+    });
+    return response.data;
+  },
+
+  // 🆕 UPDATED: Wrapper for document manager - NOW USES BATCH
   getUnassignedAndGroupedDocuments: async () => {
     return await ragApi.analyzeDocuments();
   },
 
-  // Wrapper for bulk linking
+  // 🆕 UPDATED: Bulk linking - NOW USES NEW BATCH ENDPOINT
   linkDocumentsToVehicle: async (vehicleId, documentIds) => {
-    const results = [];
-    for (const docId of documentIds) {
-      try {
-        const result = await ragApi.linkDocumentToVehicle(vehicleId, docId);
-        results.push(result);
-      } catch (error) {
-        console.error(`Failed to link document ${docId}:`, error);
-      }
+    if (!vehicleId || !documentIds || documentIds.length === 0) {
+      throw new Error('Vehicle ID and at least one document ID are required');
     }
-    return { 
-      success: true, 
-      message: `${results.length} documents linked successfully.`,
-      results 
-    };
+
+    try {
+      // Use new batch endpoint instead of loop
+      const result = await ragApi.inboxLinkBatch(vehicleId, documentIds);
+      
+      return {
+        success: result.success,
+        message: result.message,
+        linked_count: result.linked_count,
+        failed_ids: result.failed_ids || []
+      };
+    } catch (error) {
+      console.error('Batch linking failed:', error);
+      throw error;
+    }
   },
 
-  // Create vehicle and link documents
-  createVehicleAndLinkDocuments: async (vrn, documentIds, vehicleDetails) => {
-    // First create the vehicle
-    const vehicle = await ragApi.createVehicle({
-      registration_number: vrn,
-      ...vehicleDetails
-    });
+  // 🆕 UPDATED: Create vehicle and link - NOW USES NEW ENDPOINT
+  createVehicleAndLinkDocuments: async (vrn, documentIds, vehicleDetails = {}) => {
+    if (!vrn || !documentIds || documentIds.length === 0) {
+      throw new Error('VRN and at least one document ID are required');
+    }
 
-    // Then link all documents
-    await ragApi.linkDocumentsToVehicle(vehicle.id, documentIds);
-
-    return {
-      success: true,
-      message: `Vehicle ${vrn} created and ${documentIds.length} documents linked.`,
-      vehicle
-    };
+    try {
+      // Use new create-and-link endpoint
+      const result = await ragApi.inboxCreateAndLink(vrn, documentIds, vehicleDetails);
+      
+      return {
+        success: result.success,
+        message: result.message,
+        vehicle: result.vehicle,
+        linked_count: result.linked_count,
+        failed_ids: result.failed_ids || []
+      };
+    } catch (error) {
+      console.error('Create and link failed:', error);
+      throw error;
+    }
   },
 
   // Get vehicles list (legacy wrapper)
