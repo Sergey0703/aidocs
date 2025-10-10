@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # api/modules/indexing/services/indexing_service.py
-# Final version with all fixes applied.
+# Final version with document_registry integration
 
 import asyncio
 import logging
@@ -46,6 +46,8 @@ class IndexingTaskState:
         self.current_stage: Optional[ProcessingStage] = None
         self.current_stage_name: Optional[str] = None
         
+        self.registry_entries_created = 0  # 🆕 Track registry operations
+        
         self.statistics: Dict[str, Any] = {}
         self.errors: List[str] = []
         self.warnings: List[str] = []
@@ -85,6 +87,7 @@ class IndexingTaskState:
             processed_files=self.processed_files,
             failed_files=self.failed_files,
             skipped_files=self.skipped_files,
+            registry_entries_created=self.registry_entries_created,  # 🆕
             total_chunks=self.total_chunks,
             processed_chunks=self.processed_chunks,
             start_time=self.start_time,
@@ -220,7 +223,7 @@ class IndexingService:
         force_reindex: bool,
         delete_existing: bool,
     ):
-        """Run REAL document indexing using backend modules WITH DE-DUPLICATION LOGIC"""
+        """Run REAL document indexing using backend modules WITH REGISTRY INTEGRATION"""
         try:
             logger.info(f"🔄 Starting REAL indexing pipeline for task: {task.task_id}")
             self._setup_backend_path()
@@ -275,6 +278,35 @@ class IndexingService:
 
             task.total_files = len(documents)
             
+            # 🆕 ENRICH DOCUMENTS WITH REGISTRY_ID FROM DOCUMENT_REGISTRY
+            logger.info("🔗 Enriching documents with registry_id from document_registry...")
+            
+            from api.modules.vehicles.services.document_registry_service import get_document_registry_service
+            registry_service = get_document_registry_service()
+            
+            enriched_count = 0
+            for doc in documents:
+                markdown_path = doc.metadata.get('file_path') or doc.metadata.get('file_name')
+                
+                if markdown_path:
+                    # Build full path if needed
+                    if not str(markdown_path).startswith('/'):
+                        markdown_path = str(Path(config.DOCUMENTS_DIR) / markdown_path)
+                    
+                    registry_entry = await registry_service.find_by_markdown_path(str(markdown_path))
+                    
+                    if registry_entry:
+                        doc.metadata['registry_id'] = str(registry_entry['id'])
+                        enriched_count += 1
+                        logger.debug(f"   ✓ Found registry_id for {doc.metadata.get('file_name')}")
+                    else:
+                        logger.warning(f"   ⚠️ No registry entry for {doc.metadata.get('file_name')}")
+                else:
+                    logger.warning(f"   ⚠️ No file path in metadata for document")
+            
+            logger.info(f"   ✓ Enriched {enriched_count}/{len(documents)} documents with registry_id")
+            task.registry_entries_created = enriched_count
+            
             task.current_stage = ProcessingStage.LOADING
             task.current_stage_name = "Checking for updates"
             
@@ -318,6 +350,20 @@ class IndexingService:
                 return
             logger.info(f"📊 Total chunks to process: {task.total_chunks}")
 
+            # 🆕 ENSURE REGISTRY_ID IN CHUNK METADATA
+            logger.info("🔗 Propagating registry_id to chunks...")
+            
+            chunks_with_registry = 0
+            for node in all_nodes:
+                if 'registry_id' not in node.metadata:
+                    # Try to get from parent document
+                    parent_doc = next((d for d in documents_to_process if d.id_ == node.ref_doc_id), None)
+                    if parent_doc and 'registry_id' in parent_doc.metadata:
+                        node.metadata['registry_id'] = parent_doc.metadata['registry_id']
+                        chunks_with_registry += 1
+            
+            logger.info(f"   ✓ {chunks_with_registry}/{len(all_nodes)} chunks have registry_id")
+
             task.current_stage = ProcessingStage.EMBEDDING
             task.current_stage_name = "Generating Embeddings & Saving"
             
@@ -330,6 +376,22 @@ class IndexingService:
             
             task.processed_chunks = results.get('total_saved', 0)
             
+            # 🆕 UPDATE REGISTRY STATUS TO PROCESSED
+            logger.info("✅ Updating document_registry status to 'processed'...")
+            
+            processed_registry_ids = set()
+            for doc in documents_to_process:
+                if 'registry_id' in doc.metadata:
+                    registry_id = doc.metadata['registry_id']
+                    if registry_id not in processed_registry_ids:
+                        try:
+                            await registry_service.update_status(registry_id, 'processed')
+                            processed_registry_ids.add(registry_id)
+                        except Exception as e:
+                            logger.warning(f"Failed to update registry status for {registry_id}: {e}")
+            
+            logger.info(f"   ✓ Updated {len(processed_registry_ids)} registry entries to 'processed'")
+            
             task.statistics = {
                 "documents_loaded": len(documents),
                 "documents_processed": len(documents_to_process),
@@ -337,6 +399,7 @@ class IndexingService:
                 "chunks_created": task.total_chunks,
                 "chunks_saved": task.processed_chunks,
                 "success_rate": (task.processed_chunks / task.total_chunks * 100) if task.total_chunks > 0 else 100.0,
+                "registry_entries_updated": len(processed_registry_ids),  # 🆕
             }
             
             task.status = IndexingStatus.COMPLETED
@@ -362,12 +425,9 @@ class IndexingService:
     def _add_to_history(self, task: IndexingTaskState):
         if not task.start_time: task.start_time = datetime.now()
         
-        # --- ИСПРАВЛЕНИЕ ОШИБКИ ---
         files_processed_count = task.statistics.get("documents_processed", 0)
-        # Убедимся, что это число, а не список
         if not isinstance(files_processed_count, int):
              files_processed_count = len(files_processed_count) if hasattr(files_processed_count, '__len__') else 0
-        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
              
         history_item = IndexingHistoryItem(
             task_id=task.task_id, mode=task.mode, status=task.status,

@@ -210,6 +210,24 @@ class ConversionService:
                 
                 conversion_time = time.time() - start_time
                 
+                # 🆕 UPDATE REGISTRY AFTER SUCCESSFUL CONVERSION
+                if success and output_path:
+                    try:
+                        from api.modules.vehicles.services.document_registry_service import get_document_registry_service
+                        registry_service = get_document_registry_service()
+                        
+                        await registry_service.update_registry_by_raw_path(
+                            raw_file_path=str(file_path),
+                            markdown_file_path=str(output_path),
+                            status='pending_indexing'
+                        )
+                        
+                        logger.info(f"✅ Updated registry: {file_path.name} → pending_indexing")
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to update registry for {file_path.name}: {e}")
+                        # Don't fail conversion if registry update fails
+                
                 result = ConversionResult(
                     filename=file_path.name,
                     status=ConversionStatus.COMPLETED if success else ConversionStatus.FAILED,
@@ -241,7 +259,9 @@ class ConversionService:
         finally:
             task.end_time = datetime.now()
             task.current_file = None
-            
+
+
+          
     async def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         task = await self.get_task(task_id)
         if not task:

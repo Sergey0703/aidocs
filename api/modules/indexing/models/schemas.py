@@ -201,6 +201,8 @@ class IndexingProgress(BaseModel):
     failed_files: int = 0
     skipped_files: int = 0  # <--- Поле добавлено здесь
     
+
+    registry_entries_created: int = 0  # Number of registry entries created/updated
     # Chunk processing
     total_chunks: int = 0
     processed_chunks: int = 0

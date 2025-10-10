@@ -3,6 +3,7 @@
 
 from . import search
 from . import indexing
+from . import vehicles  # 🆕 Import vehicles module
 
 # Registry of all available modules
 AVAILABLE_MODULES = {
@@ -24,6 +25,14 @@ AVAILABLE_MODULES = {
             indexing.conversion_router,
             indexing.monitoring_router
         ]
+    },
+    # 🆕 Vehicles module
+    "vehicles": {
+        "name": "Vehicles",
+        "version": "1.0.0",
+        "status": "active",
+        "description": "Vehicle fleet management and document linking",
+        "routers": [vehicles.vehicles_router, vehicles.documents_router]
     },
     # Future modules:
     # "templates": {...},
