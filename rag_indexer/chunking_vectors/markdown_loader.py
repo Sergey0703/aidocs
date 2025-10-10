@@ -190,26 +190,10 @@ class MarkdownLoader:
                 self.loading_stats['registry_failures'] += 1
                 return document
             
-            # Prepare extracted data for registry
-            extracted_data = {
-                'file_name': document.metadata.get('file_name'),
-                'file_size': document.metadata.get('file_size'),
-                'content_length': document.metadata.get('content_length'),
-                'word_count': document.metadata.get('word_count'),
-                'original_filename': document.metadata.get('original_filename'),
-                'original_format': document.metadata.get('original_format'),
-                'conversion_date': document.metadata.get('conversion_date'),
-                'content_hash': document.metadata.get('content_hash'),
-            }
-            
-            # Remove None values
-            extracted_data = {k: v for k, v in extracted_data.items() if v is not None}
-            
-            # Get or create registry entry
+            # 🔧 FIXED: Call with correct parameters (only file_path)
+            # Get or create registry entry using ONLY the markdown file path
             registry_id = registry_manager.get_or_create_registry_entry(
-                file_path=file_path,
-                document_type=document.metadata.get('original_format', 'markdown'),
-                extracted_data=extracted_data
+                file_path=file_path
             )
             
             if registry_id:
@@ -226,7 +210,7 @@ class MarkdownLoader:
         except Exception as e:
             logger.error(f"Failed to enrich document with registry_id: {e}", exc_info=True)
             import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")  # ← Add detailed error!
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             self.loading_stats['registry_failures'] += 1
             return document
 
@@ -475,12 +459,6 @@ if __name__ == "__main__":
                     print("\n✅ SUCCESS: 'registry_id' found in metadata!")
                 else:
                     print("\n⚠️ WARNING: 'registry_id' is MISSING (expected when no registry_manager provided)")
-                
-                # Check for original_path
-                if 'original_path' in first_doc_meta:
-                    print("✅ SUCCESS: 'original_path' found in metadata!")
-                else:
-                    print("❌ FAILED: 'original_path' is MISSING from metadata!")
         except Exception as e:
             print(f"\n❌ An error occurred during the full loader test: {e}")
             import traceback
