@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # api/modules/document_inbox/routes/inbox.py
-# Document Inbox routes - batch operations, vehicle creation, search
+# Document Inbox routes - batch operations, vehicle creation, search, VRN extraction
 
 import logging
 from fastapi import APIRouter, HTTPException
-from typing import List, Optional
+from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 
 from api.modules.vehicles.services.vehicle_service import get_vehicle_service
 from api.modules.vehicles.services.document_registry_service import get_document_registry_service
 from api.modules.vehicles.models.schemas import VehicleResponse, ErrorResponse
+
+# 🆕 Import VRN Extraction Service
+from api.modules.document_inbox.services.vrn_extraction_service import get_vrn_extraction_service
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +89,33 @@ class UnlinkBatchResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
 
 
+# 🆕 VRN EXTRACTION MODELS
+class FindVRNRequest(BaseModel):
+    """Request to find VRN in documents"""
+    document_ids: Optional[List[str]] = Field(
+        default=None, 
+        description="Specific document IDs to process (null = all unassigned)"
+    )
+    use_ai: bool = Field(
+        default=True,
+        description="Whether to use AI if regex fails"
+    )
+
+
+class FindVRNResponse(BaseModel):
+    """Response after VRN extraction"""
+    success: bool
+    message: str
+    total_processed: int
+    vrn_found: int
+    vrn_not_found: int
+    failed: int
+    extraction_methods: Dict[str, int]
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+
 # ============================================================================
-# BATCH LINK DOCUMENTS TO VEHICLE
+# BATCH OPERATIONS
 # ============================================================================
 
 @router.post("/link-batch", response_model=LinkBatchResponse)
@@ -176,10 +204,6 @@ async def link_documents_batch(vehicle_id: str, request: LinkBatchRequest):
         )
 
 
-# ============================================================================
-# BATCH UNLINK DOCUMENTS
-# ============================================================================
-
 @router.post("/unlink-batch", response_model=UnlinkBatchResponse)
 async def unlink_documents_batch(request: UnlinkBatchRequest):
     """
@@ -250,7 +274,7 @@ async def unlink_documents_batch(request: UnlinkBatchRequest):
 
 
 # ============================================================================
-# CREATE VEHICLE AND LINK DOCUMENTS
+# CREATE VEHICLE AND LINK
 # ============================================================================
 
 @router.post("/create-vehicle-and-link", response_model=CreateVehicleAndLinkResponse)
@@ -358,7 +382,7 @@ async def create_vehicle_and_link_documents(request: CreateVehicleAndLinkRequest
 
 
 # ============================================================================
-# SEARCH VEHICLES FOR DROPDOWN
+# VEHICLE SEARCH FOR DROPDOWN
 # ============================================================================
 
 @router.get("/search-vehicles", response_model=VehicleSearchResponse)
@@ -418,4 +442,86 @@ async def search_vehicles_for_inbox(query: str = "", limit: int = 10):
         raise HTTPException(
             status_code=500,
             detail=f"Vehicle search failed: {str(e)}"
+        )
+
+
+# ============================================================================
+# 🆕 VRN EXTRACTION ENDPOINT
+# ============================================================================
+
+@router.post("/find-vrn", response_model=FindVRNResponse)
+async def find_vrn_in_documents(request: FindVRNRequest = None):
+    """
+    🆕 Find VRN (Vehicle Registration Numbers) in unassigned documents.
+    
+    **Process:**
+    1. Gets unassigned documents (or specific documents if IDs provided)
+    2. Reads document text from indexed chunks (vecs.documents)
+    3. Tries regex pattern matching for Irish VRN formats
+    4. Falls back to AI extraction if regex fails (optional)
+    5. Updates document_registry with extracted VRN, make, model
+    
+    **Use case:** "Find VRN in Documents" button in Document Manager
+    
+    **Request body (optional):**
+    ```json
+    {
+      "document_ids": ["uuid-1", "uuid-2"],  // null = all unassigned
+      "use_ai": true  // Use AI if regex fails
+    }
+    ```
+
+    **Returns:**
+    - Total documents processed
+    - Count of VRN found / not found / failed
+    - Breakdown by extraction method (regex, ai, filename)
+    """
+    try:
+        # Get VRN extraction service
+        vrn_service = get_vrn_extraction_service()
+    
+        # Parse request (handle both POST with body and POST without body)
+        document_ids = request.document_ids if request else None
+        use_ai = request.use_ai if request else True
+    
+        logger.info("=" * 70)
+        logger.info("🔍 VRN EXTRACTION STARTED")
+        logger.info(f"   Documents: {'All unassigned' if not document_ids else f'{len(document_ids)} specific'}")
+        logger.info(f"   Use AI: {use_ai}")
+        logger.info("=" * 70)
+    
+        # Process documents in batch
+        stats = await vrn_service.process_batch(
+            document_ids=document_ids,
+            use_ai=use_ai
+        )
+    
+        # Generate response message
+        if stats['vrn_found'] > 0:
+            message = f"Successfully extracted VRN from {stats['vrn_found']} document(s)"
+        elif stats['vrn_not_found'] > 0:
+            message = f"No VRN found in {stats['vrn_not_found']} document(s)"
+        else:
+            message = "No documents were processed"
+    
+        logger.info("=" * 70)
+        logger.info("✅ VRN EXTRACTION COMPLETED")
+        logger.info(f"   {message}")
+        logger.info("=" * 70)
+    
+        return FindVRNResponse(
+            success=True,
+            message=message,
+            total_processed=stats['total_processed'],
+            vrn_found=stats['vrn_found'],
+            vrn_not_found=stats['vrn_not_found'],
+            failed=stats['failed'],
+            extraction_methods=stats['extraction_methods']
+        )
+    
+    except Exception as e:
+        logger.error(f"❌ VRN extraction failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"VRN extraction failed: {str(e)}"
         )

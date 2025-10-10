@@ -490,6 +490,24 @@ export const ragApi = {
     return response.data;
   },
 
+  // 🆕 FIND VRN IN DOCUMENTS - NEW ENDPOINT
+  findVRNInDocuments: async (documentIds = null) => {
+    try {
+      console.log('🔍 Calling findVRNInDocuments API...');
+      
+      const response = await api.post('/api/inbox/find-vrn', {
+        document_ids: documentIds // null = process all unassigned documents
+      });
+      
+      console.log('✅ findVRNInDocuments response:', response.data);
+      
+      return response.data;
+    } catch (error) {
+      console.error('❌ findVRNInDocuments error:', error);
+      throw error;
+    }
+  },
+
   // ============================================================================
   // 🔄 UPDATED LEGACY WRAPPERS - NOW USE NEW BATCH ENDPOINTS
   // ============================================================================
