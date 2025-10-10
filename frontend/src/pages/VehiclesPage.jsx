@@ -17,11 +17,14 @@ const VehiclesPage = () => {
 
   // State for modals
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [vehicleToDelete, setVehicleToDelete] = useState(null);
+  const [vehicleToEdit, setVehicleToEdit] = useState(null);
 
   // State for operations
   const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // ========================================================================
@@ -98,6 +101,54 @@ const VehiclesPage = () => {
     } finally {
       setIsCreating(false);
     }
+  };
+
+  // ========================================================================
+  // EDIT VEHICLE
+  // ========================================================================
+
+  const handleEditRequest = (vehicle) => {
+    console.log('🔧 Edit requested for:', vehicle);
+    setVehicleToEdit(vehicle);
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateVehicle = async (vehicleData) => {
+    if (!vehicleToEdit) return;
+    
+    setIsUpdating(true);
+    
+    try {
+      console.log('📡 Updating vehicle...', vehicleData);
+      const updatedVehicle = await ragApi.updateVehicle(vehicleToEdit.id, vehicleData);
+      console.log('✅ Vehicle updated:', updatedVehicle);
+      
+      // Update in list
+      setVehicles(prev => prev.map(v => 
+        v.id === vehicleToEdit.id ? updatedVehicle : v
+      ));
+      
+      // Update selected vehicle if it's the one being edited
+      if (selectedVehicle?.id === vehicleToEdit.id) {
+        // Reload full details to get updated data
+        handleSelectVehicle(vehicleToEdit.id);
+      }
+      
+      // Close modal
+      setEditModalOpen(false);
+      setVehicleToEdit(null);
+      
+    } catch (err) {
+      console.error('❌ Failed to update vehicle:', err);
+      alert(`Failed to update vehicle: ${err.message}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleEditCancel = () => {
+    setEditModalOpen(false);
+    setVehicleToEdit(null);
   };
 
   // ========================================================================
@@ -227,6 +278,7 @@ const VehiclesPage = () => {
               vehicle={selectedVehicle}
               onDelete={handleDeleteRequest}
               onUnlinkDocument={handleUnlinkDocument}
+              onEdit={handleEditRequest}
             />
           ) : (
             <div className="placeholder">
@@ -252,6 +304,15 @@ const VehiclesPage = () => {
         onClose={() => setCreateModalOpen(false)}
         onSave={handleCreateVehicle}
         isLoading={isCreating}
+      />
+
+      {/* Edit Vehicle Modal */}
+      <CreateVehicleModal
+        isOpen={isEditModalOpen}
+        onClose={handleEditCancel}
+        onSave={handleUpdateVehicle}
+        initialData={vehicleToEdit}
+        isLoading={isUpdating}
       />
 
       {/* Delete Confirmation Modal */}

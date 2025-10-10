@@ -127,9 +127,12 @@ const VehicleDetail = ({ vehicle, onDelete, onUnlinkDocument, onEdit }) => {
         </div>
         <div className="header-actions">
           {onEdit && (
-            <button className="edit-btn" onClick={() => onEdit(vehicle)}>
-              <FiEdit /> Edit
-            </button>
+            <button 
+  className="edit-btn" 
+  onClick={() => onEdit ? onEdit(vehicle) : console.log('No onEdit handler')}
+>
+  <FiEdit /> Edit
+</button>
           )}
           <button className="delete-btn" onClick={() => onDelete(vehicle)}>
             <FiTrash2 /> Delete
