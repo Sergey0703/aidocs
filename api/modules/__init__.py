@@ -3,7 +3,8 @@
 
 from . import search
 from . import indexing
-from . import vehicles  # 🆕 Import vehicles module
+from . import vehicles
+from . import document_inbox  # 🆕 Import document_inbox module
 
 # Registry of all available modules
 AVAILABLE_MODULES = {
@@ -26,13 +27,20 @@ AVAILABLE_MODULES = {
             indexing.monitoring_router
         ]
     },
-    # 🆕 Vehicles module
     "vehicles": {
         "name": "Vehicles",
         "version": "1.0.0",
         "status": "active",
         "description": "Vehicle fleet management and document linking",
         "routers": [vehicles.vehicles_router, vehicles.documents_router]
+    },
+    # 🆕 Document Inbox module
+    "document_inbox": {
+        "name": "Document Inbox",
+        "version": "1.0.0",
+        "status": "active",
+        "description": "Smart document grouping and batch operations",
+        "routers": [document_inbox.inbox_router]
     },
     # Future modules:
     # "templates": {...},

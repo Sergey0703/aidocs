@@ -17,7 +17,7 @@ backend_path = Path(__file__).parent.parent / "streamlit-rag"
 sys.path.insert(0, str(backend_path))
 
 # Import from modules
-from api.modules import search, indexing, vehicles  # 🆕 Added vehicles
+from api.modules import search, indexing, vehicles, document_inbox  # 🆕 Added document_inbox
 from api.core.dependencies import initialize_system_components
 
 # Setup logging
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title="Document Intelligence Platform",
-    description="Unified API for document search, indexing, templates, and vehicle management",
+    description="Unified API for document search, indexing, templates, vehicle management, and document inbox",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -179,7 +179,7 @@ app.include_router(
     tags=["Monitoring"]
 )
 
-# 🆕 Include vehicles module routers
+# Include vehicles module routers
 app.include_router(
     vehicles.vehicles_router,
     prefix="/api/vehicles",
@@ -190,6 +190,13 @@ app.include_router(
     vehicles.documents_router,
     prefix="/api/vehicles",
     tags=["Vehicle Documents"]
+)
+
+# 🆕 Include document inbox module router
+app.include_router(
+    document_inbox.inbox_router,
+    prefix="/api/inbox",
+    tags=["Document Inbox"]
 )
 
 
@@ -208,7 +215,7 @@ async def root():
         "name": "Document Intelligence Platform",
         "version": "1.0.0",
         "status": "operational",
-        "description": "Unified API for document search, indexing, templates, and vehicle management",
+        "description": "Unified API for document search, indexing, templates, vehicle management, and document inbox",
         "modules": AVAILABLE_MODULES,
         "endpoints": {
             "search": "/api/search",
@@ -217,7 +224,8 @@ async def root():
             "documents": "/api/documents",
             "conversion": "/api/conversion",
             "monitoring": "/api/monitoring",
-            "vehicles": "/api/vehicles",  # 🆕
+            "vehicles": "/api/vehicles",
+            "inbox": "/api/inbox",  # 🆕
         },
         "documentation": {
             "swagger": "/docs",
@@ -243,7 +251,8 @@ async def health_check():
         "modules": {
             "search": "active",
             "indexing": "active",
-            "vehicles": "active"  # 🆕
+            "vehicles": "active",
+            "inbox": "active"  # 🆕
         }
     }
 
@@ -289,7 +298,8 @@ async def startup_message():
     logger.info("📋 Documents endpoints: http://localhost:8000/api/documents")
     logger.info("🔄 Conversion endpoints: http://localhost:8000/api/conversion")
     logger.info("📊 Monitoring endpoints: http://localhost:8000/api/monitoring")
-    logger.info("🚗 Vehicles endpoints: http://localhost:8000/api/vehicles")  # 🆕
+    logger.info("🚗 Vehicles endpoints: http://localhost:8000/api/vehicles")
+    logger.info("📥 Inbox endpoints: http://localhost:8000/api/inbox")  # 🆕
     logger.info("")
     logger.info("❤️  Health check: http://localhost:8000/health")
     logger.info("")
