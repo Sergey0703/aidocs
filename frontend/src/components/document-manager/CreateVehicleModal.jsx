@@ -31,7 +31,7 @@ const CreateVehicleModal = ({ isOpen, onClose, onSave, vrn, initialData = {}, is
       });
       setErrors({});
     }
-  }, [isOpen, vrn, initialData]);
+  }, [isOpen]);
 
   if (!isOpen) {
     return null;
