@@ -1,715 +1,554 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # api/modules/document_inbox/services/vrn_extraction_service.py
-# VRN Extraction Service using Supabase chunks + AI
+# VRN Extraction Service - extracts Vehicle Registration Numbers from documents
 
 import logging
-import asyncio
-import psycopg2
-import psycopg2.extras
-from typing import List, Dict, Optional, Any
-from dataclasses import dataclass
 import re
-
-from config.settings import config
-from api.modules.document_inbox.utils.vrn_patterns import VRNPatterns
+import sys
+from typing import Dict, List, Optional, Any, Tuple
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class VRNExtractionResult:
-    """Result of VRN extraction for a single document"""
-    document_id: str
-    filename: str
-    vrn: Optional[str] = None
-    make: Optional[str] = None
-    model: Optional[str] = None
-    document_type: Optional[str] = None
-    extraction_method: str = "none"  # regex, ai, filename, none
-    confidence: float = 0.0
-    error: Optional[str] = None
-    success: bool = False
-
-
 class VRNExtractionService:
-    """
-    Service for extracting VRN (Vehicle Registration Number) from indexed documents.
-    
-    Uses:
-    1. PostgreSQL direct access to vecs.documents for chunks
-    2. Regex patterns for Irish VRN detection
-    3. Google Gemini AI for fallback extraction
-    4. Filename parsing as last resort
-    """
+    """Service for extracting VRN from document text using regex and AI"""
     
     def __init__(self):
-        self.config = config
-        self.vrn_patterns = VRNPatterns()
-        self.llm = None
-        self._initialize_llm()
+        self._config = None
+        self._openai_client = None
+        logger.info("✅ VRNExtractionService initialized")
     
-    
-    def _initialize_llm(self):
-        """Initialize Google Gemini LLM for AI extraction"""
+    def _setup_backend_path(self):
+        """Add rag_indexer to Python path"""
         try:
-            from llama_index.llms.google_genai import GoogleGenAI
+            current_file = Path(__file__)
+            project_root = current_file.parent.parent.parent.parent.parent
+            backend_path = project_root / "rag_indexer"
             
-            self.llm = GoogleGenAI(
-                model=self.config.llm.main_model,
-                api_key=self.config.llm.api_key,
-                temperature=0.0,  # Deterministic for extraction
-            )
-            logger.info("✅ LLM initialized for VRN extraction")
-            
+            if backend_path.exists() and str(backend_path) not in sys.path:
+                sys.path.insert(0, str(backend_path))
+                logger.debug(f"Added backend path: {backend_path}")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize LLM: {e}")
-            self.llm = None
+            logger.error(f"Failed to setup backend path: {e}")
     
+    def _get_config(self):
+        """Lazy initialization of configuration"""
+        if self._config is None:
+            self._setup_backend_path()
+            from chunking_vectors.config import get_config
+            self._config = get_config()
+        return self._config
     
-    def _get_db_connection(self):
-        """Get PostgreSQL database connection"""
-        try:
-            conn = psycopg2.connect(self.config.database.connection_string)
-            return conn
-        except Exception as e:
-            logger.error(f"❌ Database connection failed: {e}")
-            raise
+    def _get_openai_client(self):
+        """Lazy initialization of OpenAI client"""
+        if self._openai_client is None:
+            try:
+                from openai import OpenAI
+                config = self._get_config()
+                self._openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+                logger.debug("✅ OpenAI client initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI client: {e}")
+                self._openai_client = None
+        return self._openai_client
     
+    # ========================================================================
+    # IRISH VRN REGEX PATTERNS
+    # ========================================================================
     
-    async def get_chunks_from_db(self, filename: str) -> List[str]:
+    @staticmethod
+    def _get_vrn_patterns() -> List[re.Pattern]:
         """
-        Get all text chunks for a document from vecs.documents table.
+        Get compiled regex patterns for Irish VRN formats
+        
+        Irish VRN formats:
+        - Modern (2013+): YY-C-NNNNN (e.g., 191-D-12345, 24-KY-999)
+        - Legacy: YY-C-NNNN or C-NNNNN (e.g., 06-D-1234, D-12345)
+        """
+        return [
+            # Modern format: YY-C-NNNNN (2013+)
+            # Year (2 digits) - County (1-2 letters) - Number (1-6 digits)
+            re.compile(r'\b(\d{2,3})-([A-Z]{1,2})-(\d{1,6})\b', re.IGNORECASE),
+            
+            # Legacy format: YY-C-NNNN
+            re.compile(r'\b(\d{2})-([A-Z]{1,2})-(\d{1,5})\b', re.IGNORECASE),
+            
+            # Legacy format: C-NNNNN
+            re.compile(r'\b([A-Z]{1,2})-(\d{1,6})\b', re.IGNORECASE),
+            
+            # Format without dashes: YYCNNNNN
+            re.compile(r'\b(\d{2,3})([A-Z]{1,2})(\d{1,6})\b', re.IGNORECASE),
+        ]
+    
+    @staticmethod
+    def _normalize_vrn(vrn: str) -> str:
+        """
+        Normalize VRN to standard format: YY-C-NNNNN or C-NNNNN
+        
+        Examples:
+            191D12345 → 191-D-12345
+            06D1234 → 06-D-1234
+            D12345 → D-12345
+        """
+        # Remove all spaces and convert to uppercase
+        vrn = vrn.upper().strip().replace(' ', '')
+        
+        # If already has dashes in correct format, return as is
+        if re.match(r'^\d{2,3}-[A-Z]{1,2}-\d{1,6}$', vrn):
+            return vrn
+        
+        if re.match(r'^[A-Z]{1,2}-\d{1,6}$', vrn):
+            return vrn
+        
+        # Try to parse and add dashes
+        # Modern format: 191D12345 → 191-D-12345
+        match = re.match(r'^(\d{2,3})([A-Z]{1,2})(\d{1,6})$', vrn)
+        if match:
+            return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+        
+        # Legacy format: D12345 → D-12345
+        match = re.match(r'^([A-Z]{1,2})(\d{1,6})$', vrn)
+        if match:
+            return f"{match.group(1)}-{match.group(2)}"
+        
+        # Return as is if can't parse
+        return vrn
+    
+    def extract_vrn_from_text(self, text: str) -> Optional[str]:
+        """
+        Extract VRN from text using regex patterns
         
         Args:
-            filename: Document filename (from document_registry.raw_file_path)
-            
+            text: Document text to search
+        
         Returns:
-            List of text chunks sorted by chunk_index
-        """
-        try:
-            conn = self._get_db_connection()
-            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            sql = """
-            SELECT 
-                metadata->>'text' as text,
-                metadata->>'chunk_index' as chunk_index
-            FROM vecs.documents
-            WHERE metadata->>'file_name' = %s
-            ORDER BY (metadata->>'chunk_index')::int
-            """
-            
-            cur.execute(sql, (filename,))
-            results = cur.fetchall()
-            
-            cur.close()
-            conn.close()
-            
-            if not results:
-                logger.warning(f"⚠️ No chunks found for: {filename}")
-                return []
-            
-            chunks = [row['text'] for row in results if row['text']]
-            logger.debug(f"📄 Retrieved {len(chunks)} chunks for {filename}")
-            
-            return chunks
-            
-        except Exception as e:
-            logger.error(f"❌ Error retrieving chunks for {filename}: {e}")
-            return []
-    
-    
-    def combine_chunks(self, chunks: List[str], max_length: int = 50000) -> str:
-        """
-        Combine chunks into full text with length limit.
-        
-        Args:
-            chunks: List of text chunks
-            max_length: Maximum combined text length
-            
-        Returns:
-            Combined text string
-        """
-        if not chunks:
-            return ""
-        
-        full_text = " ".join(chunks)
-        
-        # Truncate if too long (for AI processing)
-        if len(full_text) > max_length:
-            logger.warning(f"⚠️ Text truncated from {len(full_text)} to {max_length} chars")
-            full_text = full_text[:max_length]
-        
-        return full_text
-    
-    
-    def extract_vrn_with_regex(self, text: str) -> Optional[str]:
-        """
-        Extract VRN using regex patterns.
-        
-        Args:
-            text: Full document text
-            
-        Returns:
-            VRN if found, None otherwise
+            Normalized VRN string or None if not found
         """
         if not text:
             return None
         
-        vrn = self.vrn_patterns.extract_vrn(text)
+        patterns = self._get_vrn_patterns()
         
-        if vrn:
-            logger.info(f"✅ Regex extracted VRN: {vrn}")
-            return self.vrn_patterns.normalize_vrn(vrn)
+        for pattern in patterns:
+            matches = pattern.findall(text)
+            if matches:
+                # Get first match
+                match = matches[0]
+                
+                # Reconstruct VRN from match groups
+                if isinstance(match, tuple):
+                    vrn_raw = ''.join(match)
+                else:
+                    vrn_raw = match
+                
+                # Normalize to standard format
+                vrn = self._normalize_vrn(vrn_raw)
+                
+                logger.debug(f"✅ VRN found via regex: {vrn}")
+                return vrn
         
+        logger.debug("❌ No VRN found via regex")
         return None
-    
     
     def extract_vrn_from_filename(self, filename: str) -> Optional[str]:
         """
-        Extract VRN from filename as fallback.
+        Extract VRN from filename
         
-        Args:
-            filename: Document filename
-            
-        Returns:
-            VRN if found in filename, None otherwise
+        Examples:
+            191-D-12345_insurance.pdf → 191-D-12345
+            06-D-1234_nct.pdf → 06-D-1234
         """
         if not filename:
             return None
         
-        # Try to extract VRN-like pattern from filename
-        vrn = self.vrn_patterns.extract_vrn(filename)
+        patterns = self._get_vrn_patterns()
         
-        if vrn:
-            logger.info(f"✅ Filename extracted VRN: {vrn} from {filename}")
-            return self.vrn_patterns.normalize_vrn(vrn)
+        for pattern in patterns:
+            match = pattern.search(filename)
+            if match:
+                vrn_raw = match.group(0)
+                vrn = self._normalize_vrn(vrn_raw)
+                logger.debug(f"✅ VRN found in filename: {vrn}")
+                return vrn
         
         return None
     
-    
-    async def extract_with_ai(self, text: str, filename: str = "") -> Dict[str, Optional[str]]:
+    async def extract_vrn_with_ai(self, text: str) -> Optional[Dict[str, Any]]:
         """
-        Extract VRN, make, model, and document type using AI.
+        Extract VRN, make, and model using OpenAI
         
         Args:
-            text: Document text
-            filename: Document filename (for context)
-            
-        Returns:
-            Dict with vrn, make, model, document_type
-        """
-        if not self.llm:
-            logger.warning("⚠️ LLM not available for AI extraction")
-            return {
-                'vrn': None,
-                'make': None,
-                'model': None,
-                'document_type': None
-            }
+            text: Document text to analyze
         
+        Returns:
+            {
+                'vrn': '191-D-12345',
+                'make': 'Toyota',
+                'model': 'Corolla'
+            }
+            or None if extraction failed
+        """
         try:
-            # Truncate text for AI processing (keep first 3000 chars)
-            text_sample = text[:3000] if len(text) > 3000 else text
+            client = self._get_openai_client()
+            if not client:
+                logger.warning("OpenAI client not available")
+                return None
             
-            prompt = f"""Extract vehicle information from this document text.
+            # Limit text to first 2000 characters for efficiency
+            text_snippet = text[:2000] if len(text) > 2000 else text
+            
+            prompt = f"""Extract vehicle information from this Irish document.
 
-Document filename: {filename}
 Document text:
-{text_sample}
+{text_snippet}
 
-Extract the following information if present:
-1. Vehicle Registration Number (VRN) - Irish format like 191-D-12345 or 06-D-12345
-2. Vehicle Make (e.g., Toyota, Ford, BMW)
-3. Vehicle Model (e.g., Corolla, Focus, 3 Series)
-4. Document Type (e.g., insurance, motor_tax, nct, service, other)
+Extract:
+1. VRN (Vehicle Registration Number) - Irish format like 191-D-12345, 06-D-1234, or D-12345
+2. Make (vehicle manufacturer)
+3. Model (vehicle model)
 
-Return ONLY valid JSON in this exact format:
-{{
-    "vrn": "191-D-12345" or null,
-    "make": "Toyota" or null,
-    "model": "Corolla" or null,
-    "document_type": "insurance" or null
-}}
+Respond ONLY with JSON in this exact format:
+{{"vrn": "191-D-12345", "make": "Toyota", "model": "Corolla"}}
 
-If you cannot find any information, use null for that field.
-Return ONLY the JSON, no other text."""
+If any field is not found, use null. If no vehicle information found, respond with: {{"vrn": null, "make": null, "model": null}}"""
 
-            logger.info("🤖 Calling AI for VRN extraction...")
-            response = await self.llm.acomplete(prompt)
-            response_text = response.text.strip()
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a data extraction assistant. Extract vehicle information from Irish documents. Respond only with valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0,
+                max_tokens=150
+            )
             
-            logger.debug(f"AI response: {response_text[:200]}...")
+            result_text = response.choices[0].message.content.strip()
             
             # Parse JSON response
-            result = self._parse_ai_response(response_text)
+            import json
+            result = json.loads(result_text)
             
+            # Normalize VRN if found
             if result.get('vrn'):
-                logger.info(f"✅ AI extracted VRN: {result['vrn']}")
+                result['vrn'] = self._normalize_vrn(result['vrn'])
+                logger.info(f"✅ AI extracted: VRN={result['vrn']}, Make={result.get('make')}, Model={result.get('model')}")
+                return result
             else:
-                logger.info("⚠️ AI did not find VRN")
-            
-            return result
+                logger.debug("❌ AI found no VRN")
+                return None
             
         except Exception as e:
-            logger.error(f"❌ AI extraction failed: {e}")
-            return {
-                'vrn': None,
-                'make': None,
-                'model': None,
-                'document_type': None
-            }
+            logger.error(f"AI extraction failed: {e}", exc_info=True)
+            return None
     
+    # ========================================================================
+    # DOCUMENT TEXT RETRIEVAL
+    # ========================================================================
     
-    def _parse_ai_response(self, response_text: str) -> Dict[str, Optional[str]]:
+    async def _get_document_text(self, filename: str) -> Optional[str]:
         """
-        Parse AI response JSON.
+        Get document text from vecs.documents table
         
         Args:
-            response_text: AI response text
-            
-        Returns:
-            Parsed dict with vrn, make, model, document_type
-        """
-        import json
+            filename: Document filename to search for
         
+        Returns:
+            Combined text from all chunks or None
+        """
         try:
-            # Try to extract JSON from response
-            # Look for JSON object in response
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+            import psycopg2
+            import psycopg2.extras
             
-            if json_match:
-                json_str = json_match.group(0)
-                result = json.loads(json_str)
-                
-                # Validate and normalize VRN if present
-                if result.get('vrn'):
-                    result['vrn'] = self.vrn_patterns.normalize_vrn(result['vrn'])
-                
-                return {
-                    'vrn': result.get('vrn'),
-                    'make': result.get('make'),
-                    'model': result.get('model'),
-                    'document_type': result.get('document_type')
-                }
-            else:
-                logger.warning("⚠️ No JSON found in AI response")
-                return {
-                    'vrn': None,
-                    'make': None,
-                    'model': None,
-                    'document_type': None
-                }
-                
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Failed to parse AI JSON: {e}")
-            return {
-                'vrn': None,
-                'make': None,
-                'model': None,
-                'document_type': None
-            }
-    
-    
-    def detect_document_type(self, text: str, filename: str = "") -> Optional[str]:
-        """
-        Detect document type from text/filename.
-        
-        Args:
-            text: Document text
-            filename: Document filename
+            config = self._get_config()
+            conn = psycopg2.connect(config.CONNECTION_STRING)
             
-        Returns:
-            Document type string or None
-        """
-        text_lower = text.lower()
-        filename_lower = filename.lower()
-        combined = f"{text_lower} {filename_lower}"
-        
-        # Document type keywords
-        type_keywords = {
-            'insurance': ['insurance', 'policy', 'cover', 'insured'],
-            'motor_tax': ['motor tax', 'road tax', 'vehicle tax', 'disc'],
-            'nct': ['nct', 'national car test', 'vehicle test'],
-            'service': ['service', 'maintenance', 'repair', 'inspection'],
-            'registration': ['registration', 'v5', 'logbook'],
-            'other': []
-        }
-        
-        for doc_type, keywords in type_keywords.items():
-            if any(keyword in combined for keyword in keywords):
-                logger.debug(f"📋 Detected document type: {doc_type}")
-                return doc_type
-        
-        return 'other'
-    
-    
-    async def process_document(
-        self, 
-        document_id: str, 
-        filename: str,
-        use_ai: bool = True
-    ) -> VRNExtractionResult:
-        """
-        Process a single document to extract VRN and vehicle info.
-        
-        Process:
-        1. Get chunks from database
-        2. Try regex extraction
-        3. Try filename extraction
-        4. Try AI extraction (if enabled and needed)
-        5. Return result
-        
-        Args:
-            document_id: Document registry UUID
-            filename: Document filename (raw_file_path)
-            use_ai: Whether to use AI if regex fails
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT 
+                        metadata->>'text' as text,
+                        metadata->>'chunk_index' as chunk_index
+                    FROM vecs.documents
+                    WHERE metadata->>'file_name' = %s
+                    ORDER BY (metadata->>'chunk_index')::int
+                """, (filename,))
+                
+                chunks = cur.fetchall()
             
-        Returns:
-            VRNExtractionResult
-        """
-        logger.info(f"🔍 Processing document: {filename}")
-        
-        result = VRNExtractionResult(
-            document_id=document_id,
-            filename=filename
-        )
-        
-        try:
-            # Step 1: Get chunks from database
-            chunks = await self.get_chunks_from_db(filename)
+            conn.close()
             
             if not chunks:
-                result.error = "No chunks found in database"
-                logger.warning(f"⚠️ {result.error} for {filename}")
-                return result
+                logger.warning(f"No chunks found for document: {filename}")
+                return None
             
-            # Step 2: Combine chunks
-            full_text = self.combine_chunks(chunks)
+            # Combine all chunk texts
+            full_text = ' '.join([chunk['text'] for chunk in chunks if chunk['text']])
             
-            if not full_text:
-                result.error = "Empty text content"
-                logger.warning(f"⚠️ {result.error} for {filename}")
-                return result
-            
-            logger.debug(f"📄 Combined text length: {len(full_text)} chars")
-            
-            # Step 3: Try regex extraction first (fast and accurate)
-            vrn = self.extract_vrn_with_regex(full_text)
-            
-            if vrn:
-                result.vrn = vrn
-                result.extraction_method = "regex"
-                result.confidence = 0.95
-                result.success = True
-                
-                # Detect document type
-                result.document_type = self.detect_document_type(full_text, filename)
-                
-                logger.info(f"✅ Regex extraction successful: {vrn}")
-                return result
-            
-            # Step 4: Try filename extraction
-            vrn = self.extract_vrn_from_filename(filename)
-            
-            if vrn:
-                result.vrn = vrn
-                result.extraction_method = "filename"
-                result.confidence = 0.80
-                result.success = True
-                
-                # Detect document type
-                result.document_type = self.detect_document_type(full_text, filename)
-                
-                logger.info(f"✅ Filename extraction successful: {vrn}")
-                return result
-            
-            # Step 5: Try AI extraction (if enabled)
-            if use_ai and self.llm:
-                logger.info("🤖 Trying AI extraction...")
-                
-                ai_result = await self.extract_with_ai(full_text, filename)
-                
-                if ai_result.get('vrn'):
-                    result.vrn = ai_result['vrn']
-                    result.make = ai_result.get('make')
-                    result.model = ai_result.get('model')
-                    result.document_type = ai_result.get('document_type') or self.detect_document_type(full_text, filename)
-                    result.extraction_method = "ai"
-                    result.confidence = 0.70
-                    result.success = True
-                    
-                    logger.info(f"✅ AI extraction successful: {result.vrn}")
-                    return result
-            
-            # Step 6: No VRN found
-            result.error = "VRN not found"
-            logger.info(f"ℹ️ No VRN found in {filename}")
-            
-            return result
+            logger.debug(f"📄 Retrieved {len(chunks)} chunks, total length: {len(full_text)} chars")
+            return full_text
             
         except Exception as e:
-            result.error = str(e)
-            logger.error(f"❌ Error processing {filename}: {e}", exc_info=True)
-            return result
+            logger.error(f"Failed to get document text for {filename}: {e}", exc_info=True)
+            return None
     
+    # ========================================================================
+    # REGISTRY UPDATE
+    # ========================================================================
     
-    async def get_unassigned_documents(self) -> List[Dict[str, str]]:
-        """
-        Get list of documents that need VRN extraction.
-        
-        Returns documents where:
-        - vehicle_id IS NULL
-        - extracted_data->>'vrn' IS NULL or extracted_data = '{}'
-        
-        Returns:
-            List of dicts with id, raw_file_path
-        """
-        try:
-            conn = self._get_db_connection()
-            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            sql = """
-            SELECT 
-                id::text as id,
-                raw_file_path
-            FROM document_registry
-            WHERE vehicle_id IS NULL
-              AND (
-                  extracted_data IS NULL 
-                  OR extracted_data = '{}'::jsonb
-                  OR extracted_data->>'vrn' IS NULL
-              )
-              AND raw_file_path IS NOT NULL
-            ORDER BY uploaded_at DESC
-            LIMIT 1000
-            """
-            
-            cur.execute(sql)
-            results = cur.fetchall()
-            
-            cur.close()
-            conn.close()
-            
-            documents = [
-                {
-                    'id': row['id'],
-                    'raw_file_path': row['raw_file_path']
-                }
-                for row in results
-            ]
-            
-            logger.info(f"📋 Found {len(documents)} documents needing VRN extraction")
-            
-            return documents
-            
-        except Exception as e:
-            logger.error(f"❌ Error getting unassigned documents: {e}")
-            return []
-    
-    
-    async def update_document_registry(
-        self, 
-        document_id: str, 
-        extracted_data: Dict[str, Optional[str]]
+    async def _update_registry_with_vrn(
+        self,
+        registry_id: str,
+        vrn: Optional[str],
+        make: Optional[str] = None,
+        model: Optional[str] = None,
+        extraction_method: str = 'none'
     ) -> bool:
         """
-        Update document_registry with extracted VRN and vehicle info.
+        Update document_registry with extracted VRN data and status
         
         Args:
-            document_id: Document registry UUID
-            extracted_data: Dict with vrn, make, model, document_type
-            
+            registry_id: Document registry UUID
+            vrn: Extracted VRN (or None if not found)
+            make: Vehicle make (optional)
+            model: Vehicle model (optional)
+            extraction_method: 'regex', 'ai', 'filename', or 'none'
+        
         Returns:
-            True if update successful, False otherwise
+            bool: Success status
         """
         try:
-            conn = self._get_db_connection()
-            cur = conn.cursor()
+            import psycopg2
+            import psycopg2.extras
             
-            # Build JSONB data
-            # Only include non-null values
-            jsonb_data = {}
+            config = self._get_config()
+            conn = psycopg2.connect(config.CONNECTION_STRING)
             
-            if extracted_data.get('vrn'):
-                jsonb_data['vrn'] = extracted_data['vrn']
+            # Determine new status based on VRN presence
+            if vrn:
+                new_status = 'predassigned'  # VRN found - ready for auto-linking
+                extracted_data = {
+                    'vrn': vrn,
+                    'extraction_method': extraction_method
+                }
+                if make:
+                    extracted_data['make'] = make
+                if model:
+                    extracted_data['model'] = model
+                
+                logger.info(f"✅ Setting status='predassigned' for registry {registry_id} with VRN={vrn}")
+            else:
+                new_status = 'unassigned'  # No VRN - needs manual assignment
+                extracted_data = {
+                    'extraction_method': extraction_method
+                }
+                logger.info(f"⚠️ Setting status='unassigned' for registry {registry_id} (no VRN found)")
             
-            if extracted_data.get('make'):
-                jsonb_data['make'] = extracted_data['make']
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE vecs.document_registry
+                    SET 
+                        extracted_data = extracted_data || %s::jsonb,
+                        status = %s
+                    WHERE id = %s
+                """, (
+                    psycopg2.extras.Json(extracted_data),
+                    new_status,
+                    registry_id
+                ))
+                
+                affected = cur.rowcount
+                conn.commit()
             
-            if extracted_data.get('model'):
-                jsonb_data['model'] = extracted_data['model']
-            
-            if extracted_data.get('document_type'):
-                jsonb_data['document_type'] = extracted_data['document_type']
-            
-            if not jsonb_data:
-                logger.warning(f"⚠️ No data to update for document {document_id}")
-                return False
-            
-            # Update document_registry
-            import json
-            
-            sql = """
-            UPDATE document_registry
-            SET extracted_data = %s::jsonb,
-                updated_at = NOW()
-            WHERE id = %s::uuid
-            """
-            
-            cur.execute(sql, (json.dumps(jsonb_data), document_id))
-            conn.commit()
-            
-            rows_updated = cur.rowcount
-            
-            cur.close()
             conn.close()
             
-            if rows_updated > 0:
-                logger.info(f"✅ Updated document {document_id} with: {jsonb_data}")
+            if affected > 0:
+                logger.debug(f"✅ Updated registry {registry_id}: status={new_status}, method={extraction_method}")
                 return True
             else:
-                logger.warning(f"⚠️ No rows updated for document {document_id}")
+                logger.warning(f"Registry {registry_id} not found")
                 return False
             
         except Exception as e:
-            logger.error(f"❌ Error updating document {document_id}: {e}")
+            logger.error(f"Failed to update registry {registry_id}: {e}", exc_info=True)
             return False
     
+    # ========================================================================
+    # BATCH PROCESSING
+    # ========================================================================
+    
+    async def process_document(
+        self,
+        registry_id: str,
+        filename: str,
+        use_ai: bool = True
+    ) -> Tuple[bool, Optional[str], str]:
+        """
+        Process a single document to extract VRN
+        
+        Args:
+            registry_id: Document registry UUID
+            filename: Document filename
+            use_ai: Whether to use AI if regex fails
+        
+        Returns:
+            Tuple of (success, vrn, extraction_method)
+        """
+        try:
+            logger.debug(f"🔍 Processing document: {filename}")
+            
+            # Try 1: Extract from filename
+            vrn = self.extract_vrn_from_filename(filename)
+            if vrn:
+                await self._update_registry_with_vrn(registry_id, vrn, extraction_method='filename')
+                return (True, vrn, 'filename')
+            
+            # Try 2: Get document text and extract with regex
+            text = await self._get_document_text(filename)
+            if text:
+                vrn = self.extract_vrn_from_text(text)
+                if vrn:
+                    await self._update_registry_with_vrn(registry_id, vrn, extraction_method='regex')
+                    return (True, vrn, 'regex')
+                
+                # Try 3: Use AI if enabled and regex failed
+                if use_ai:
+                    ai_result = await self.extract_vrn_with_ai(text)
+                    if ai_result and ai_result.get('vrn'):
+                        await self._update_registry_with_vrn(
+                            registry_id,
+                            ai_result['vrn'],
+                            make=ai_result.get('make'),
+                            model=ai_result.get('model'),
+                            extraction_method='ai'
+                        )
+                        return (True, ai_result['vrn'], 'ai')
+            
+            # No VRN found - update status to 'unassigned'
+            await self._update_registry_with_vrn(registry_id, None, extraction_method='none')
+            return (True, None, 'none')
+            
+        except Exception as e:
+            logger.error(f"Failed to process document {filename}: {e}", exc_info=True)
+            return (False, None, 'error')
     
     async def process_batch(
-        self, 
+        self,
         document_ids: Optional[List[str]] = None,
         use_ai: bool = True
     ) -> Dict[str, Any]:
         """
-        Process multiple documents in batch.
+        Process multiple documents to extract VRN
         
         Args:
-            document_ids: List of document IDs to process (None = all unassigned)
-            use_ai: Whether to use AI for extraction
-            
+            document_ids: List of document registry IDs to process (None = all with status='processed')
+            use_ai: Whether to use AI if regex fails
+        
         Returns:
-            Dict with statistics
+            Statistics dictionary
         """
-        logger.info("🚀 Starting batch VRN extraction...")
-        
-        # Get documents to process
-        if document_ids:
-            # Process specific documents
-            conn = self._get_db_connection()
-            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            import psycopg2
+            import psycopg2.extras
             
-            sql = """
-            SELECT 
-                id::text as id,
-                raw_file_path
-            FROM document_registry
-            WHERE id = ANY(%s::uuid[])
-              AND raw_file_path IS NOT NULL
-            """
+            config = self._get_config()
+            conn = psycopg2.connect(config.CONNECTION_STRING)
             
-            cur.execute(sql, (document_ids,))
-            documents = [
-                {'id': row['id'], 'raw_file_path': row['raw_file_path']}
-                for row in cur.fetchall()
-            ]
+            # Get documents to process
+            if document_ids:
+                # Process specific documents
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT id, raw_file_path
+                        FROM vecs.document_registry
+                        WHERE id = ANY(%s)
+                    """, (document_ids,))
+                    documents = cur.fetchall()
+            else:
+                # Process all documents with status='processed'
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT id, raw_file_path
+                        FROM vecs.document_registry
+                        WHERE status = 'processed'
+                        ORDER BY uploaded_at DESC
+                    """)
+                    documents = cur.fetchall()
             
-            cur.close()
             conn.close()
-        else:
-            # Process all unassigned documents
-            documents = await self.get_unassigned_documents()
-        
-        if not documents:
-            logger.info("ℹ️ No documents to process")
-            return {
+            
+            logger.info(f"📋 Found {len(documents)} documents to process for VRN extraction")
+            
+            # Statistics
+            stats = {
                 'total_processed': 0,
                 'vrn_found': 0,
                 'vrn_not_found': 0,
-                'failed': 0
+                'failed': 0,
+                'extraction_methods': {
+                    'regex': 0,
+                    'ai': 0,
+                    'filename': 0,
+                    'none': 0
+                }
             }
-        
-        logger.info(f"📦 Processing {len(documents)} documents...")
-        
-        # Statistics
-        stats = {
-            'total_processed': 0,
-            'vrn_found': 0,
-            'vrn_not_found': 0,
-            'failed': 0,
-            'extraction_methods': {
-                'regex': 0,
-                'ai': 0,
-                'filename': 0,
-                'none': 0
-            }
-        }
-        
-        # Process each document
-        for i, doc in enumerate(documents, 1):
-            try:
-                logger.info(f"📄 Processing {i}/{len(documents)}: {doc['raw_file_path']}")
-                
-                # Extract VRN
-                result = await self.process_document(
-                    doc['id'],
+            
+            # Process each document
+            for doc in documents:
+                success, vrn, method = await self.process_document(
+                    str(doc['id']),
                     doc['raw_file_path'],
                     use_ai=use_ai
                 )
                 
                 stats['total_processed'] += 1
                 
-                if result.success and result.vrn:
-                    # Update database
-                    update_success = await self.update_document_registry(
-                        doc['id'],
-                        {
-                            'vrn': result.vrn,
-                            'make': result.make,
-                            'model': result.model,
-                            'document_type': result.document_type
-                        }
-                    )
-                    
-                    if update_success:
+                if success:
+                    if vrn:
                         stats['vrn_found'] += 1
-                        stats['extraction_methods'][result.extraction_method] += 1
-                        logger.info(f"✅ {i}/{len(documents)}: VRN found - {result.vrn}")
+                        stats['extraction_methods'][method] += 1
+                        logger.info(f"  ✅ {doc['raw_file_path']}: VRN={vrn} (method={method})")
                     else:
-                        stats['failed'] += 1
-                        logger.error(f"❌ {i}/{len(documents)}: Database update failed")
+                        stats['vrn_not_found'] += 1
+                        stats['extraction_methods']['none'] += 1
+                        logger.info(f"  ⚠️ {doc['raw_file_path']}: No VRN found")
                 else:
-                    stats['vrn_not_found'] += 1
-                    logger.info(f"ℹ️ {i}/{len(documents)}: No VRN found")
-                
-            except Exception as e:
-                stats['failed'] += 1
-                logger.error(f"❌ Error processing document {i}/{len(documents)}: {e}")
-                continue
-        
-        logger.info("=" * 60)
-        logger.info(f"✅ Batch processing completed!")
-        logger.info(f"   Total processed: {stats['total_processed']}")
-        logger.info(f"   VRN found: {stats['vrn_found']}")
-        logger.info(f"   VRN not found: {stats['vrn_not_found']}")
-        logger.info(f"   Failed: {stats['failed']}")
-        logger.info(f"   Methods: {stats['extraction_methods']}")
-        logger.info("=" * 60)
-        
-        return stats
+                    stats['failed'] += 1
+                    logger.error(f"  ❌ {doc['raw_file_path']}: Processing failed")
+            
+            logger.info(
+                f"📊 VRN Extraction Complete: "
+                f"{stats['vrn_found']} found, "
+                f"{stats['vrn_not_found']} not found, "
+                f"{stats['failed']} failed"
+            )
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Batch processing failed: {e}", exc_info=True)
+            return {
+                'total_processed': 0,
+                'vrn_found': 0,
+                'vrn_not_found': 0,
+                'failed': 0,
+                'extraction_methods': {
+                    'regex': 0,
+                    'ai': 0,
+                    'filename': 0,
+                    'none': 0
+                }
+            }
 
 
-# Singleton instance
-_vrn_service = None
-
+# Singleton
+_vrn_extraction_service: Optional[VRNExtractionService] = None
 
 def get_vrn_extraction_service() -> VRNExtractionService:
-    """Get singleton VRN extraction service instance"""
-    global _vrn_service
+    """Get or create VRN extraction service singleton"""
+    global _vrn_extraction_service
     
-    if _vrn_service is None:
-        _vrn_service = VRNExtractionService()
+    if _vrn_extraction_service is None:
+        _vrn_extraction_service = VRNExtractionService()
     
-    return _vrn_service
+    return _vrn_extraction_service

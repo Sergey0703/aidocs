@@ -94,7 +94,7 @@ class FindVRNRequest(BaseModel):
     """Request to find VRN in documents"""
     document_ids: Optional[List[str]] = Field(
         default=None, 
-        description="Specific document IDs to process (null = all unassigned)"
+        description="Specific document IDs to process (null = all with status='processed')"
     )
     use_ai: bool = Field(
         default=True,
@@ -160,7 +160,7 @@ async def link_documents_batch(vehicle_id: str, request: LinkBatchRequest):
                     failed_ids.append(registry_id)
                     continue
                 
-                # Link document
+                # Link document (sets status='assigned')
                 success = await registry_service.link_to_vehicle(registry_id, vehicle_id)
                 
                 if success:
@@ -208,6 +208,7 @@ async def link_documents_batch(vehicle_id: str, request: LinkBatchRequest):
 async def unlink_documents_batch(request: UnlinkBatchRequest):
     """
     Unlink multiple documents from their vehicles.
+    Sets status back to 'unassigned'.
     """
     try:
         registry_service = get_document_registry_service()
@@ -232,7 +233,7 @@ async def unlink_documents_batch(request: UnlinkBatchRequest):
                     failed_ids.append(registry_id)
                     continue
                 
-                # Unlink document
+                # Unlink document (sets status='unassigned')
                 success = await registry_service.unlink_from_vehicle(registry_id)
                 
                 if success:
@@ -281,6 +282,7 @@ async def unlink_documents_batch(request: UnlinkBatchRequest):
 async def create_vehicle_and_link_documents(request: CreateVehicleAndLinkRequest):
     """
     Create new vehicle and link documents in one operation.
+    Sets document status to 'assigned'.
     """
     try:
         vehicle_service = get_vehicle_service()
@@ -337,7 +339,7 @@ async def create_vehicle_and_link_documents(request: CreateVehicleAndLinkRequest
                     failed_ids.append(doc_id)
                     continue
                 
-                # Link document to new vehicle
+                # Link document to new vehicle (sets status='assigned')
                 success = await registry_service.link_to_vehicle(doc_id, vehicle_id)
                 
                 if success:
@@ -448,80 +450,32 @@ async def search_vehicles_for_inbox(query: str = "", limit: int = 10):
 # ============================================================================
 # 🆕 VRN EXTRACTION ENDPOINT
 # ============================================================================
+# ============================================================================
+# 🆕 VRN EXTRACTION ENDPOINT
+# ============================================================================
 
 @router.post("/find-vrn", response_model=FindVRNResponse)
 async def find_vrn_in_documents(request: FindVRNRequest = None):
     """
-    🆕 Find VRN (Vehicle Registration Numbers) in unassigned documents.
+    🆕 Find VRN (Vehicle Registration Numbers) in documents.
     
     **Process:**
-    1. Gets unassigned documents (or specific documents if IDs provided)
+    1. Gets documents with status='processed' (or specific documents if IDs provided)
     2. Reads document text from indexed chunks (vecs.documents)
     3. Tries regex pattern matching for Irish VRN formats
     4. Falls back to AI extraction if regex fails (optional)
-    5. Updates document_registry with extracted VRN, make, model
+    5. Updates document_registry:
+       - If VRN found: status='predassigned' + extracted_data.vrn
+       - If VRN not found: status='unassigned'
     
     **Use case:** "Find VRN in Documents" button in Document Manager
     
     **Request body (optional):**
     ```json
     {
-      "document_ids": ["uuid-1", "uuid-2"],  // null = all unassigned
-      "use_ai": true  // Use AI if regex fails
+      "document_ids": ["uuid-1", "uuid-2"],
+      "use_ai": true
     }
     ```
-
-    **Returns:**
-    - Total documents processed
-    - Count of VRN found / not found / failed
-    - Breakdown by extraction method (regex, ai, filename)
     """
-    try:
-        # Get VRN extraction service
-        vrn_service = get_vrn_extraction_service()
     
-        # Parse request (handle both POST with body and POST without body)
-        document_ids = request.document_ids if request else None
-        use_ai = request.use_ai if request else True
-    
-        logger.info("=" * 70)
-        logger.info("🔍 VRN EXTRACTION STARTED")
-        logger.info(f"   Documents: {'All unassigned' if not document_ids else f'{len(document_ids)} specific'}")
-        logger.info(f"   Use AI: {use_ai}")
-        logger.info("=" * 70)
-    
-        # Process documents in batch
-        stats = await vrn_service.process_batch(
-            document_ids=document_ids,
-            use_ai=use_ai
-        )
-    
-        # Generate response message
-        if stats['vrn_found'] > 0:
-            message = f"Successfully extracted VRN from {stats['vrn_found']} document(s)"
-        elif stats['vrn_not_found'] > 0:
-            message = f"No VRN found in {stats['vrn_not_found']} document(s)"
-        else:
-            message = "No documents were processed"
-    
-        logger.info("=" * 70)
-        logger.info("✅ VRN EXTRACTION COMPLETED")
-        logger.info(f"   {message}")
-        logger.info("=" * 70)
-    
-        return FindVRNResponse(
-            success=True,
-            message=message,
-            total_processed=stats['total_processed'],
-            vrn_found=stats['vrn_found'],
-            vrn_not_found=stats['vrn_not_found'],
-            failed=stats['failed'],
-            extraction_methods=stats['extraction_methods']
-        )
-    
-    except Exception as e:
-        logger.error(f"❌ VRN extraction failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"VRN extraction failed: {str(e)}"
-        )

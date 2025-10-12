@@ -58,7 +58,7 @@ class DocumentRegistryService:
     async def create_registry_entry(
         self,
         raw_file_path: str,
-        status: str = 'unassigned',
+        status: str = 'pending_indexing',
         vehicle_id: Optional[str] = None,
         document_type: Optional[str] = None,
         markdown_file_path: Optional[str] = None,
@@ -69,7 +69,7 @@ class DocumentRegistryService:
         
         Args:
             raw_file_path: Path to raw file (required)
-            status: Document status (default: 'unassigned')
+            status: Document status (default: 'pending_indexing')
             vehicle_id: Optional vehicle UUID
             document_type: Optional document type
             markdown_file_path: Optional path to markdown file
@@ -245,42 +245,17 @@ class DocumentRegistryService:
             logger.error(f"Failed to get documents for vehicle {vehicle_id}: {e}", exc_info=True)
             return []
     
-    async def get_unassigned(self, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_by_status(self, status: str, limit: int = 1000) -> List[Dict[str, Any]]:
         """
-        Get all unassigned documents (not linked to any vehicle)
+        Get documents by status
         
         Args:
+            status: Document status ('processed', 'predassigned', 'unassigned', 'assigned', etc.)
             limit: Maximum number of results
         
         Returns:
-            List of unassigned registry entries
+            List of registry entries
         """
-        try:
-            conn = self._get_db_connection()
-            if not conn:
-                return []
-            
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT * FROM vecs.document_registry
-                    WHERE vehicle_id IS NULL
-                    AND status = 'processed'
-                    ORDER BY uploaded_at DESC
-                    LIMIT %s
-                """, (limit,))
-                
-                results = cur.fetchall()
-            
-            conn.close()
-            
-            return [dict(r) for r in results]
-            
-        except Exception as e:
-            logger.error(f"Failed to get unassigned documents: {e}", exc_info=True)
-            return []
-    
-    async def get_by_status(self, status: str, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get documents by status"""
         try:
             conn = self._get_db_connection()
             if not conn:
@@ -298,10 +273,50 @@ class DocumentRegistryService:
             
             conn.close()
             
+            logger.info(f"📋 Retrieved {len(results)} documents with status='{status}'")
             return [dict(r) for r in results]
             
         except Exception as e:
             logger.error(f"Failed to get documents by status: {e}", exc_info=True)
+            return []
+    
+    async def get_unassigned(self, limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        Get all unassigned documents (not linked to any vehicle)
+        
+        NOTE: This now returns documents with status='unassigned' specifically
+        For documents needing VRN analysis, use get_by_status('processed')
+        For documents ready to link, use get_by_status('predassigned')
+        
+        Args:
+            limit: Maximum number of results
+        
+        Returns:
+            List of unassigned registry entries
+        """
+        try:
+            conn = self._get_db_connection()
+            if not conn:
+                return []
+            
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM vecs.document_registry
+                    WHERE vehicle_id IS NULL
+                    AND status = 'unassigned'
+                    ORDER BY uploaded_at DESC
+                    LIMIT %s
+                """, (limit,))
+                
+                results = cur.fetchall()
+            
+            conn.close()
+            
+            logger.info(f"📋 Retrieved {len(results)} unassigned documents (status='unassigned')")
+            return [dict(r) for r in results]
+            
+        except Exception as e:
+            logger.error(f"Failed to get unassigned documents: {e}", exc_info=True)
             return []
     
     # ========================================================================
@@ -475,11 +490,11 @@ class DocumentRegistryService:
     # ========================================================================
     
     async def link_to_vehicle(self, registry_id: str, vehicle_id: str) -> bool:
-        """Link document to vehicle"""
+        """Link document to vehicle and set status to 'assigned'"""
         return await self.update(registry_id, vehicle_id=vehicle_id, status='assigned')
     
     async def unlink_from_vehicle(self, registry_id: str) -> bool:
-        """Unlink document from vehicle"""
+        """Unlink document from vehicle and set status to 'unassigned'"""
         return await self.update(registry_id, vehicle_id=None, status='unassigned')
     
     # ========================================================================
@@ -488,17 +503,17 @@ class DocumentRegistryService:
     
     async def group_by_extracted_vrn(self) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Group unassigned documents by extracted VRN
+        Group documents with status='predassigned' by extracted VRN
         
         Returns:
             Dict mapping VRN → list of documents
         """
         try:
-            unassigned = await self.get_unassigned(limit=1000)
+            predassigned = await self.get_by_status('predassigned', limit=1000)
             
             grouped = {}
             
-            for doc in unassigned:
+            for doc in predassigned:
                 extracted_data = doc.get('extracted_data', {})
                 vrn = extracted_data.get('vrn')
                 
@@ -507,12 +522,147 @@ class DocumentRegistryService:
                         grouped[vrn] = []
                     grouped[vrn].append(doc)
             
-            logger.info(f"📊 Grouped documents by VRN: {len(grouped)} groups found")
+            logger.info(f"📊 Grouped predassigned documents by VRN: {len(grouped)} groups found")
             return grouped
             
         except Exception as e:
             logger.error(f"Failed to group by VRN: {e}", exc_info=True)
             return {}
+    
+    async def get_unassigned_with_grouping(self) -> Dict[str, Any]:
+        """
+        Get documents organized by status for Document Manager
+        
+        Returns:
+            {
+                'processed': [...],      # Documents needing VRN analysis
+                'grouped': [             # Documents with VRN (predassigned)
+                    {
+                        'vrn': '191-D-12345',
+                        'documents': [...],
+                        'vehicleDetails': {...} or None
+                    }
+                ],
+                'unassigned': [...],     # Documents without VRN (manual assignment needed)
+                'total_processed': 12,
+                'total_grouped': 5,
+                'total_unassigned': 3,
+                'vehicles_needing_creation': 2,
+                'vehicles_with_documents': 3
+            }
+        """
+        try:
+            # Get documents by status
+            processed = await self.get_by_status('processed', limit=1000)
+            predassigned = await self.get_by_status('predassigned', limit=1000)
+            unassigned = await self.get_by_status('unassigned', limit=1000)
+            
+            logger.info(
+                f"📋 Retrieved documents: "
+                f"processed={len(processed)}, "
+                f"predassigned={len(predassigned)}, "
+                f"unassigned={len(unassigned)}"
+            )
+            
+            # Group predassigned documents by VRN
+            vrn_groups = {}
+            for doc in predassigned:
+                extracted_data = doc.get('extracted_data', {})
+                vrn = extracted_data.get('vrn')
+                
+                if vrn:
+                    if vrn not in vrn_groups:
+                        vrn_groups[vrn] = []
+                    vrn_groups[vrn].append(doc)
+            
+            # Format grouped results with vehicle details
+            grouped_results = []
+            vehicles_needing_creation = 0
+            vehicles_with_documents = 0
+            
+            for vrn, docs in vrn_groups.items():
+                # Check if vehicle exists
+                vehicle_details = await self._find_vehicle_by_vrn(vrn)
+                
+                if vehicle_details:
+                    vehicles_with_documents += 1
+                else:
+                    vehicles_needing_creation += 1
+                
+                grouped_results.append({
+                    'vrn': vrn,
+                    'documents': docs,
+                    'document_count': len(docs),
+                    'vehicleDetails': vehicle_details
+                })
+            
+            result = {
+                'processed': processed,
+                'grouped': grouped_results,
+                'unassigned': unassigned,
+                'total_processed': len(processed),
+                'total_grouped': len(grouped_results),
+                'total_unassigned': len(unassigned),
+                'vehicles_needing_creation': vehicles_needing_creation,
+                'vehicles_with_documents': vehicles_with_documents
+            }
+            
+            logger.info(
+                f"📊 Document Manager data: "
+                f"processed={len(processed)}, "
+                f"grouped={len(grouped_results)} groups, "
+                f"unassigned={len(unassigned)}, "
+                f"need_creation={vehicles_needing_creation}"
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to get unassigned with grouping: {e}", exc_info=True)
+            return {
+                'processed': [],
+                'grouped': [],
+                'unassigned': [],
+                'total_processed': 0,
+                'total_grouped': 0,
+                'total_unassigned': 0,
+                'vehicles_needing_creation': 0,
+                'vehicles_with_documents': 0
+            }
+    
+    async def _find_vehicle_by_vrn(self, vrn: str) -> Optional[Dict[str, Any]]:
+        """Find vehicle by registration number"""
+        try:
+            conn = self._get_db_connection()
+            if not conn:
+                return None
+            
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT 
+                        id::text,
+                        registration_number,
+                        make,
+                        model,
+                        vin_number,
+                        status
+                    FROM vecs.vehicles
+                    WHERE LOWER(registration_number) = LOWER(%s)
+                    LIMIT 1
+                """, (vrn,))
+                
+                result = cur.fetchone()
+            
+            conn.close()
+            
+            if result:
+                return dict(result)
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Vehicle not found for VRN {vrn}: {e}")
+            return None
     
     async def get_statistics(self) -> Dict[str, Any]:
         """Get document registry statistics"""
