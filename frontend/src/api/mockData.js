@@ -60,3 +60,38 @@ export const mockBuildings = [
     ],
   },
 ];
+export const mockReportData = {
+  summaryStats: {
+    totalDocuments: 1450,
+    documentsProcessed: 1390,
+    pendingReview: 60,
+    totalVehicles: 85,
+    totalBuildings: 12,
+  },
+  documentsByMonth: [
+    { name: 'Jan', processed: 80, uploaded: 100 },
+    { name: 'Feb', processed: 120, uploaded: 130 },
+    { name: 'Mar', processed: 150, uploaded: 160 },
+    { name: 'Apr', processed: 180, uploaded: 190 },
+    { name: 'May', processed: 220, uploaded: 230 },
+    { name: 'Jun', processed: 250, uploaded: 260 },
+  ],
+  documentTypes: [
+    { name: 'Invoices', value: 400 },
+    { name: 'Lease Agreements', value: 300 },
+    { name: 'Insurance', value: 300 },
+    { name: 'NCT Certificates', value: 200 },
+    { name: 'Other', value: 250 },
+  ],
+  assetDistribution: [
+    { name: 'Vehicles', value: 1100 },
+    { name: 'Buildings', value: 350 },
+  ],
+  recentActivity: [
+    { id: 1, type: 'UPLOAD', description: 'Uploaded "Invoice_2023_01.pdf"', timestamp: '2023-06-15T10:30:00Z', status: 'Processed' },
+    { id: 2, type: 'ASSIGN', description: 'Assigned "NCT_Cert_2024.pdf" to Vehicle 22-D-12345', timestamp: '2023-06-15T09:15:00Z', status: 'Completed' },
+    { id: 3, type: 'REVIEW', description: 'Flagged "Lease_Agreement_Block_A.pdf" for review', timestamp: '2023-06-14T16:00:00Z', status: 'Pending' },
+    { id: 4, type: 'UPLOAD', description: 'Uploaded "Building_Permit_001.pdf"', timestamp: '2023-06-14T14:20:00Z', status: 'Processed' },
+    { id: 5, type: 'ASSIGN', description: 'Assigned "Property_Title_Deed.pdf" to The Gandon Building', timestamp: '2023-06-14T11:05:00Z', status: 'Completed' },
+  ],
+};
