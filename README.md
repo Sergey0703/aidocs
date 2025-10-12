@@ -183,6 +183,7 @@ COMMENT ON COLUMN vecs.document_registry.status IS 'Статус жизненн�
 This project is a sophisticated, production-ready RAG (Retrieval-Augmented Generation) system designed to answer questions based on a private collection of documents. It specializes in extracting information about people, leveraging a powerful hybrid search mechanism that combines vector-based semantic search with direct database keyword search.
 
 The backend is built with Python and designed as an API, making it easy to integrate with any custom frontend. The system uses Google Gemini for LLM tasks and Supabase (PostgreSQL with pgvector) for data storage and retrieval.
+
 ================================
 I have described the complete lifecycle of a document's status from its initial state to the final processed state.
 
@@ -193,6 +194,7 @@ processed: Set after successful indexing in api/modules/indexing/services/indexi
 unassigned or assigned: Set upon creation in api/modules/vehicles/services/document_registry_service.py.
 
 =======================================================================
+
 ## Key Features
 
 -   **🚀 Hybrid Search:** Combines semantic vector search with exact-match database search for superior accuracy and recall.
