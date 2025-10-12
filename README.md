@@ -195,6 +195,14 @@ processed: Set after successful indexing in api/modules/indexing/services/indexi
 unassigned or assigned: Set upon creation in api/modules/vehicles/services/document_registry_service.py.
 
 =======================================================================
+Mercedes-Benz	Германия / глобально	Sprinter (варианты минибусов)
+MAN	Германия	TGE Minibus 
+MAN
+Karsan	Турция	Jest 
+Wikipedia
+, J10 
+Wikipedia
+Isuzu	Япония / Азия	Isuzu Journey
 
 ## Key Features
 

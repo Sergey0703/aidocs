@@ -1,44 +1,46 @@
 # ============================================================================
-# API & WEB SERVER
+# API & WEB SERVER  
 # ============================================================================
-fastapi
-uvicorn[standard]
-python-multipart
-python-dotenv
-httpx
+fastapi>=0.115.0,<0.116.0
+uvicorn[standard]>=0.32.0,<0.33.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+httpx>=0.27.0
 
 # ============================================================================
-# RAG PIPELINE - CORE
+# RAG PIPELINE - СОВМЕСТИМЫЕ ВЕРСИИ
 # ============================================================================
-# LlamaIndex & Google Gemini
-llama-index-core
-llama-index-llms-google-genai
+llama-index-core>=0.12.0,<0.15.0
 llama-index-embeddings-google-genai
-llama-index-vector-stores-supabase
-google-generativeai
+llama-index-vector-stores-supabase>=0.3.0
 
-# Database Connector
-psycopg2-binary
+# Google Gemini API
+google-generativeai>=0.5.2,<0.6.0
+
+# Pydantic
+pydantic>=2.8.0,<3.0.0
+pydantic-settings>=2.4.0,<3.0.0
+
+# Database
+psycopg2-binary>=2.9.9
 
 # ============================================================================
-# DOCUMENT CONVERSION (DOCLING) & DEPENDENCIES
+# DOCUMENT CONVERSION (ИСПРАВЛЕНО!)
 # ============================================================================
-# Указываем только главный пакет. Он сам установит docling-core, 
-# docling-ibm-models, docling-parse, easyocr и т.д. нужных версий.
-docling>=2.55.0
-
-# Явно указываем бэкенд для PDF, чтобы быть уверенными
-pypdfium2
-
-# Явно указываем поддержку форматов, хотя docling может их подтянуть
-python-docx
-python-pptx
-Pillow
-
-# Для ускорения скачивания моделей OCR
-hf-xet
+docling>=2.55.0,<3.0.0
+docling-core>=2.0.0,<3.0.0
+docling-ibm-models>=3.9.1,<4.0.0
+docling-parse>=4.4.0,<5.0.0
+pypdfium2>=4.30.0,<5.0.0
+python-docx>=1.1.0
+python-pptx>=0.6.23
+Pillow>=10.0.0
+easyocr>=1.7.0
+hf-xet>=0.1.1
 
 # ============================================================================
 # UTILITIES
 # ============================================================================
-psutil
+psutil>=5.9.0
+pandas>=2.0.0,<3.0.0
+#numpy>=1.24.0,<2.0.0
