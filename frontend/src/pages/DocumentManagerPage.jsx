@@ -58,146 +58,105 @@ const DocumentManagerPage = () => {
   };
 
   // 🆕 HANDLE FIND VRN
-  const handleFindVRN = async (selectedDocIds = null) => {
-    if (isFindingVRN) {
-      console.warn('⚠️ VRN finding already in progress');
-      return;
-    }
+ const handleFindVRN = async (selectedDocIds = null) => {
+  if (isFindingVRN) {
+    console.warn('⚠️ VRN finding already in progress');
+    return;
+  }
 
-    // Determine which documents to process
-    const docsToProcess = selectedDocIds || processedDocs.map(d => d.id);
-    const totalDocs = docsToProcess.length;
+  // Determine which documents to process
+  const docsToProcess = selectedDocIds || processedDocs.map(d => d.id);
+  const totalDocs = docsToProcess.length;
 
-    if (totalDocs === 0) {
-      alert('ℹ️ No documents to analyze.\n\nPlease upload and index documents first.');
-      return;
-    }
+  if (totalDocs === 0) {
+    alert('ℹ️ No documents to analyze.\n\nPlease upload and index documents first.');
+    return;
+  }
 
-    // Show confirmation if there are many documents
-    if (totalDocs > 20) {
-      const confirmed = window.confirm(
-        `You are about to analyze ${totalDocs} documents. This may take a few minutes. Continue?`
-      );
-      if (!confirmed) return;
-    }
+  // Show confirmation if there are many documents
+  if (totalDocs > 20) {
+    const confirmed = window.confirm(
+      `You are about to analyze ${totalDocs} documents. This may take a few minutes. Continue?`
+    );
+    if (!confirmed) return;
+  }
 
-    setIsFindingVRN(true);
-    setShowProgress(true);
+  setIsFindingVRN(true);
+  setShowProgress(true);
+  setFindVRNProgress({
+    total: totalDocs,
+    processed: 0,
+    found: 0,
+    notFound: 0,
+    errors: 0,
+    isRunning: true
+  });
+
+  try {
+    console.log('🔍 Starting VRN extraction for', totalDocs, 'documents');
+
+    // Call backend API
+    const result = await ragApi.findVRNInDocuments(
+      selectedDocIds ? selectedDocIds : null,
+      true // use AI
+    );
+
+    console.log('✅ VRN extraction completed:', result);
+
+    // Update progress with final results
     setFindVRNProgress({
-      total: totalDocs,
-      processed: 0,
-      found: 0,
-      notFound: 0,
-      errors: 0,
-      isRunning: true
+      total: result.total_processed || totalDocs,
+      processed: result.total_processed || 0,
+      found: result.vrn_found || 0,
+      notFound: result.vrn_not_found || 0,
+      errors: result.failed || 0,
+      isRunning: false
     });
 
-    try {
-      console.log('🔍 Starting VRN extraction for', totalDocs, 'documents');
-
-      // Call backend API
-      const result = await ragApi.findVRNInDocuments(
-        selectedDocIds ? selectedDocIds : null,
-        true // use AI
-      );
-
-      console.log('✅ VRN extraction completed:', result);
-
-      // Update progress with final results
-      setFindVRNProgress({
-        total: result.total_processed || totalDocs,
-        processed: result.total_processed || 0,
-        found: result.vrn_found || 0,
-        notFound: result.vrn_not_found || 0,
-        errors: result.failed || 0,
-        isRunning: false
-      });
-
-      // Show detailed success message
-      if (result.vrn_found > 0) {
-        const methods = result.extraction_methods || {};
-        const methodsText = `Extraction methods:\n` +
-          `  • Regex: ${methods.regex || 0}\n` +
-          `  • AI: ${methods.ai || 0}\n` +
-          `  • Filename: ${methods.filename || 0}`;
-
-        setTimeout(() => {
-          alert(
-            `✅ VRN Extraction Complete!\n\n` +
-            `Found VRN in ${result.vrn_found} document(s)\n\n` +
-            `Total processed: ${result.total_processed}\n` +
-            `VRN found: ${result.vrn_found}\n` +
-            `No VRN found: ${result.vrn_not_found}\n` +
-            `Errors: ${result.failed || 0}\n\n` +
-            `${methodsText}`
-          );
-        }, 500);
-
-        showNotification(
-          `Successfully extracted VRN from ${result.vrn_found} document(s)`,
-          'success'
-        );
-      } else {
-        setTimeout(() => {
-          alert(
-            `ℹ️ No VRN Found\n\n` +
-            `Analyzed ${result.total_processed} document(s)\n` +
-            `No vehicle registration numbers were detected.\n\n` +
-            `You may need to:\n` +
-            `  • Check if documents contain VRN\n` +
-            `  • Manually assign these documents\n` +
-            `  • Verify document quality`
-          );
-        }, 500);
-
-        showNotification(
-          `No VRN found in ${result.total_processed} document(s)`,
-          'info'
-        );
-      }
-
-      // Refresh data after 2 seconds
-      setTimeout(() => {
-        fetchData();
-        setShowProgress(false);
-      }, 2000);
-
-    } catch (err) {
-      console.error('❌ VRN extraction failed:', err);
-      const errorMessage = err.response?.data?.detail || err.message || 'Unknown error';
-      setError(`Failed to find VRN: ${errorMessage}`);
-      
-      setFindVRNProgress(prev => ({
-        ...prev,
-        isRunning: false,
-        errors: (prev?.errors || 0) + 1
-      }));
-
-      // Show error alert
-      setTimeout(() => {
-        alert(
-          `❌ VRN Extraction Failed\n\n` +
-          `Error: ${errorMessage}\n\n` +
-          `Please check:\n` +
-          `  • Backend is running\n` +
-          `  • Documents are indexed\n` +
-          `  • Database connection is working`
-        );
-      }, 500);
-
+    // Show notification
+    if (result.vrn_found > 0) {
       showNotification(
-        `VRN extraction failed: ${errorMessage}`,
-        'error'
+        `Successfully extracted VRN from ${result.vrn_found} document(s)`,
+        'success'
       );
-
-      // Hide progress after error
-      setTimeout(() => {
-        setShowProgress(false);
-      }, 3000);
-    } finally {
-      setIsFindingVRN(false);
+    } else {
+      showNotification(
+        `No VRN found in ${result.total_processed} document(s)`,
+        'info'
+      );
     }
-  };
+
+    // Refresh data immediately
+    setTimeout(async () => {
+      console.log('🔄 Refreshing data...');
+      await fetchData();
+      setShowProgress(false);
+    }, 500);
+
+  } catch (err) {
+    console.error('❌ VRN extraction failed:', err);
+    const errorMessage = err.response?.data?.detail || err.message || 'Unknown error';
+    setError(`Failed to find VRN: ${errorMessage}`);
+    
+    setFindVRNProgress(prev => ({
+      ...prev,
+      isRunning: false,
+      errors: (prev?.errors || 0) + 1
+    }));
+
+    showNotification(
+      `VRN extraction failed: ${errorMessage}`,
+      'error'
+    );
+
+    // Hide progress after error
+    setTimeout(() => {
+      setShowProgress(false);
+    }, 3000);
+  } finally {
+    setIsFindingVRN(false);
+  }
+};
 
   // Handle link to vehicle
   const handleLinkToVehicle = async (vrn, documentIds) => {
