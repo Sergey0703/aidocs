@@ -10,7 +10,7 @@ const MainLayout = () => {
     <div className="main-layout">
       <Sidebar />
       <div className="content-wrapper">
-        <Header />
+        {/* <Header /> */}
         <main className="page-content">
           <Outlet /> {/* Здесь будут отображаться дочерние страницы */}
         </main>

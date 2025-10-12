@@ -2,14 +2,15 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import './Sidebar.css';
-import { 
-  FiSearch, 
-  FiUploadCloud, 
+import {
+  FiSearch,
+  FiUploadCloud,
   FiInbox,
-  FiTruck,      // <-- НОВАЯ ИКОНКА ДЛЯ АВТО
-  FiHome,       // <-- НОВАЯ ИКОНКА ДЛЯ ЗДАНИЙ
-  FiBarChart2,  // <-- НОВАЯ ИКОНКА ДЛЯ ОТЧЕТОВ
-  FiSettings    // <-- НОВАЯ ИКОНКА ДЛЯ НАСТРОЕК
+  FiTruck,
+  FiHome,
+  FiBarChart2,
+  FiSettings,
+  FiUser
 } from 'react-icons/fi';
 
 const Sidebar = () => {
@@ -26,7 +27,7 @@ const Sidebar = () => {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <h2 className="sidebar-title">I-ADMS</h2>
+        <h2 className="sidebar-title">AI DOCS</h2>
       </div>
       <nav className="sidebar-nav">
         {menuItems.map((item) => (
@@ -34,7 +35,7 @@ const Sidebar = () => {
             key={item.to}
             to={item.to}
             className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}
-            end={item.to === "/"} // 'end' prop для главной страницы
+            end={item.to === "/"}
           >
             <span className="nav-icon">{item.icon}</span>
             <span className="nav-text">{item.text}</span>
@@ -42,7 +43,11 @@ const Sidebar = () => {
         ))}
       </nav>
       <div className="sidebar-footer">
-        <p>v1.1.0</p>
+        <div className="user-profile">
+          <FiUser className="user-icon" />
+          <span className="user-name">Mary</span>
+        </div>
+        <p className="version">v1.1.0</p>
       </div>
     </aside>
   );
