@@ -146,7 +146,7 @@ class ConversionService:
     ):
         """The core logic that runs the Docling conversion process."""
         try:
-            logger.info(f"🔄 Starting REAL conversion pipeline for task: {task.task_id}")
+            logger.info(f"📄 Starting REAL conversion pipeline for task: {task.task_id}")
             self._setup_backend_path()
             
             from docling_processor import get_docling_config, create_document_scanner, create_document_converter
@@ -210,22 +210,34 @@ class ConversionService:
                 
                 conversion_time = time.time() - start_time
                 
-                # 🆕 UPDATE REGISTRY AFTER SUCCESSFUL CONVERSION
+                # 🆕 CREATE OR UPDATE REGISTRY AFTER SUCCESSFUL CONVERSION
                 if success and output_path:
                     try:
                         from api.modules.vehicles.services.document_registry_service import get_document_registry_service
                         registry_service = get_document_registry_service()
                         
-                        await registry_service.update_registry_by_raw_path(
-                            raw_file_path=str(file_path),
-                            markdown_file_path=str(output_path),
-                            status='pending_indexing'
-                        )
+                        # Check if registry entry exists for this raw file
+                        existing_entry = await registry_service.find_by_raw_path(str(file_path))
                         
-                        logger.info(f"✅ Updated registry: {file_path.name} → pending_indexing")
+                        if existing_entry:
+                            # Update existing entry
+                            await registry_service.update_registry_by_raw_path(
+                                raw_file_path=str(file_path),
+                                markdown_file_path=str(output_path),
+                                status='pending_indexing'
+                            )
+                            logger.info(f"✅ Updated registry: {file_path.name} → pending_indexing")
+                        else:
+                            # Create new entry
+                            await registry_service.create_registry_entry(
+                                raw_file_path=str(file_path),
+                                markdown_file_path=str(output_path),
+                                status='pending_indexing'
+                            )
+                            logger.info(f"✅ Created registry entry: {file_path.name} → pending_indexing")
                         
                     except Exception as e:
-                        logger.warning(f"Failed to update registry for {file_path.name}: {e}")
+                        logger.warning(f"Failed to update/create registry for {file_path.name}: {e}")
                         # Don't fail conversion if registry update fails
                 
                 result = ConversionResult(
@@ -258,9 +270,7 @@ class ConversionService:
             task.errors.append(f"Fatal conversion error: {str(e)}")
         finally:
             task.end_time = datetime.now()
-            task.current_file = None
-
-
+            task.current_file = None 
           
     async def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         task = await self.get_task(task_id)
