@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS vecs.document_registry (
     
     -- Статус обработки документа
     status TEXT DEFAULT 'unassigned' CHECK (status IN (
-        'preassigned',        -- Загружен, нашли номер
+        'predassigned',        -- Загружен, нашли номер
         'unassigned',        -- Загружен, но не привязан к машине
         'assigned',          -- Привязан к машине
         'pending_ocr',       -- Ожидает OCR обработки
