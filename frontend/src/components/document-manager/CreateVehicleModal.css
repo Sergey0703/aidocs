@@ -42,6 +42,8 @@
   display: flex;
   flex-direction: column;
   animation: slideUp 0.3s ease;
+  position: relative;
+  z-index: 1001;
 }
 
 @keyframes slideUp {
@@ -64,13 +66,13 @@
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .modal-header h3 {
   margin: 0;
   font-size: 1.4rem;
-  color: var(--text-primary);
+  color: #1f2937;
 }
 
 .modal-close-button {
@@ -78,7 +80,7 @@
   border: none;
   font-size: 1.8rem;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: #6b7280;
   line-height: 1;
   padding: 0;
   width: 32px;
@@ -92,7 +94,7 @@
 
 .modal-close-button:hover:not(:disabled) {
   background-color: #f3f4f6;
-  color: var(--text-primary);
+  color: #1f2937;
 }
 
 .modal-close-button:disabled {
@@ -128,7 +130,7 @@
 
 .form-group label {
   font-weight: 600;
-  color: var(--text-secondary);
+  color: #6b7280;
   font-size: 0.9rem;
 }
 
@@ -140,24 +142,30 @@
 .form-group input,
 .form-group select {
   padding: 0.75rem;
-  border: 1px solid var(--border-color);
+  border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 1rem;
   transition: border-color 0.2s;
+  background-color: white !important;
+  color: #1f2937;
+  font-family: inherit;
+  pointer-events: auto !important;
+  cursor: text !important;
 }
 
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: var(--primary-color);
+  border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .form-group input:disabled,
 .form-group select:disabled {
-  background-color: #f8f9fa;
-  color: var(--text-secondary);
+  background-color: #f9fafb;
+  color: #9ca3af;
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .form-group input.input-error {
@@ -179,7 +187,7 @@
 
 /* Field Hint */
 .field-hint {
-  color: var(--text-secondary);
+  color: #6b7280;
   font-size: 0.8rem;
   font-style: italic;
   margin-top: -0.25rem;
@@ -189,13 +197,13 @@
 .form-section-header {
   margin-top: 0.5rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid #e5e7eb;
 }
 
 .form-section-header h4 {
   margin: 0;
   font-size: 1rem;
-  color: var(--text-primary);
+  color: #1f2937;
   font-weight: 600;
 }
 
@@ -208,7 +216,7 @@
   justify-content: flex-end;
   gap: 1rem;
   padding: 1.5rem;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid #e5e7eb;
 }
 
 .modal-footer button {
@@ -223,7 +231,7 @@
 
 .modal-cancel-button {
   background-color: #f1f5f9;
-  color: var(--text-secondary);
+  color: #64748b;
 }
 
 .modal-cancel-button:hover:not(:disabled) {
@@ -236,12 +244,12 @@
 }
 
 .modal-save-button {
-  background-color: var(--primary-color);
+  background-color: #3b82f6;
   color: white;
 }
 
 .modal-save-button:hover:not(:disabled) {
-  background-color: var(--primary-color-hover);
+  background-color: #2563eb;
 }
 
 .modal-save-button:disabled {
