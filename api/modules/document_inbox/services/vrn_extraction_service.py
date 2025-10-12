@@ -457,12 +457,18 @@ If any field is not found, use null. If no vehicle information found, respond wi
             # Get documents to process
             if document_ids:
                 # Process specific documents
+                # Convert string UUIDs to proper format
+                uuid_list = [str(doc_id) for doc_id in document_ids]
+                
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute("""
+                    # Use explicit UUID casting
+                    placeholders = ','.join(['%s::uuid' for _ in uuid_list])
+                    query = f"""
                         SELECT id, raw_file_path
                         FROM vecs.document_registry
-                        WHERE id = ANY(%s)
-                    """, (document_ids,))
+                        WHERE id IN ({placeholders})
+                    """
+                    cur.execute(query, uuid_list)
                     documents = cur.fetchall()
             else:
                 # Process all documents with status='processed'

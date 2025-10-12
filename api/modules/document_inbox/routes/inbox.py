@@ -450,12 +450,9 @@ async def search_vehicles_for_inbox(query: str = "", limit: int = 10):
 # ============================================================================
 # 🆕 VRN EXTRACTION ENDPOINT
 # ============================================================================
-# ============================================================================
-# 🆕 VRN EXTRACTION ENDPOINT
-# ============================================================================
 
 @router.post("/find-vrn", response_model=FindVRNResponse)
-async def find_vrn_in_documents(request: FindVRNRequest = None):
+async def find_vrn_in_documents(request: Optional[FindVRNRequest] = None):
     """
     🆕 Find VRN (Vehicle Registration Numbers) in documents.
     
@@ -477,5 +474,59 @@ async def find_vrn_in_documents(request: FindVRNRequest = None):
       "use_ai": true
     }
     ```
+    **Returns:**
+    - Total documents processed
+    - Count of VRN found / not found / failed
+    - Breakdown by extraction method (regex, ai, filename)
     """
-    
+    # FIX: Весь последующий блок был сдвинут вправо, чтобы он стал частью функции.
+    try:
+        # Get VRN extraction service
+        vrn_service = get_vrn_extraction_service()
+        
+        # Parse request (handle both POST with body and POST without body)
+        document_ids = request.document_ids if request and request.document_ids else None
+        use_ai = request.use_ai if request else True
+        
+        logger.info("=" * 70)
+        logger.info("🔍 VRN EXTRACTION STARTED")
+        logger.info(f"   Documents: {'All with status=processed' if not document_ids else f'{len(document_ids)} specific'}")
+        logger.info(f"   Use AI: {use_ai}")
+        logger.info("=" * 70)
+        
+        # Process documents in batch
+        stats = await vrn_service.process_batch(
+            document_ids=document_ids,
+            use_ai=use_ai
+        )
+        
+        # Generate response message
+        if stats['vrn_found'] > 0:
+            message = f"Successfully extracted VRN from {stats['vrn_found']} document(s)"
+        elif stats['vrn_not_found'] > 0:
+            message = f"No VRN found in {stats['vrn_not_found']} document(s)"
+        else:
+            message = "No documents were processed"
+        
+        logger.info("=" * 70)
+        logger.info("✅ VRN EXTRACTION COMPLETED")
+        logger.info(f"   {message}")
+        logger.info(f"   Methods: regex={stats['extraction_methods']['regex']}, ai={stats['extraction_methods']['ai']}, filename={stats['extraction_methods']['filename']}")
+        logger.info("=" * 70)
+        
+        return FindVRNResponse(
+            success=True,
+            message=message,
+            total_processed=stats['total_processed'],
+            vrn_found=stats['vrn_found'],
+            vrn_not_found=stats['vrn_not_found'],
+            failed=stats['failed'],
+            extraction_methods=stats['extraction_methods']
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ VRN extraction failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"VRN extraction failed: {str(e)}"
+        )

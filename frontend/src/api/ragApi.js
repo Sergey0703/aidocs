@@ -419,13 +419,13 @@ export const ragApi = {
   // DOCUMENT LINKING (OLD ENDPOINTS - KEPT FOR COMPATIBILITY)
   // ============================================================================
 
-  // Get unassigned documents
+  // Get unassigned documents (status='unassigned')
   getUnassignedDocuments: async () => {
     const response = await api.get('/api/vehicles/documents/unassigned');
     return response.data;
   },
 
-  // Analyze documents (grouped by VRN)
+  // 🆕 UPDATED: Analyze documents (NEW STRUCTURE)
   analyzeDocuments: async () => {
     const response = await api.get('/api/vehicles/documents/analyze');
     return response.data;
@@ -434,6 +434,14 @@ export const ragApi = {
   // Get document statistics
   getDocumentStatistics: async () => {
     const response = await api.get('/api/vehicles/documents/stats');
+    return response.data;
+  },
+
+  // 🆕 Get documents by status
+  getDocumentsByStatus: async (status, limit = 100) => {
+    const response = await api.get('/api/vehicles/documents/by-status', {
+      params: { status, limit }
+    });
     return response.data;
   },
 
@@ -491,12 +499,13 @@ export const ragApi = {
   },
 
   // 🆕 FIND VRN IN DOCUMENTS - NEW ENDPOINT
-  findVRNInDocuments: async (documentIds = null) => {
+  findVRNInDocuments: async (documentIds = null, useAi = true) => {
     try {
       console.log('🔍 Calling findVRNInDocuments API...');
       
       const response = await api.post('/api/inbox/find-vrn', {
-        document_ids: documentIds // null = process all unassigned documents
+        document_ids: documentIds,
+        use_ai: useAi
       });
       
       console.log('✅ findVRNInDocuments response:', response.data);
@@ -509,7 +518,7 @@ export const ragApi = {
   },
 
   // ============================================================================
-  // 🔄 UPDATED LEGACY WRAPPERS - NOW USE NEW BATCH ENDPOINTS
+  // 📄 UPDATED LEGACY WRAPPERS - NOW USE NEW BATCH ENDPOINTS
   // ============================================================================
 
   // Link single document to vehicle (uses old endpoint for single operations)
@@ -534,7 +543,7 @@ export const ragApi = {
     return response.data;
   },
 
-  // 🆕 UPDATED: Wrapper for document manager - NOW USES BATCH
+  // 🆕 UPDATED: Wrapper for document manager - NOW USES NEW STRUCTURE
   getUnassignedAndGroupedDocuments: async () => {
     return await ragApi.analyzeDocuments();
   },

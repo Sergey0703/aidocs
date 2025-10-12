@@ -4,19 +4,27 @@ import './DocumentManagerPage.css';
 import { ragApi } from '../api/ragApi';
 import GroupedDocuments from '../components/document-manager/GroupedDocuments';
 import UnassignedDocuments from '../components/document-manager/UnassignedDocuments';
+import ProcessedDocuments from '../components/document-manager/ProcessedDocuments';
 import FindVRNProgress from '../components/document-manager/FindVRNProgress';
 import { FiSearch, FiRefreshCw } from 'react-icons/fi';
 
 const DocumentManagerPage = () => {
+  // Document states
+  const [processedDocs, setProcessedDocs] = useState([]);
   const [groupedDocs, setGroupedDocs] = useState([]);
   const [unassignedDocs, setUnassignedDocs] = useState([]);
+  
+  // UI states
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // 🆕 STATE FOR VRN FINDING
+  // 🆕 VRN Finding states
   const [isFindingVRN, setIsFindingVRN] = useState(false);
   const [findVRNProgress, setFindVRNProgress] = useState(null);
   const [showProgress, setShowProgress] = useState(false);
+
+  // Success notification state
+  const [notification, setNotification] = useState(null);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -25,6 +33,8 @@ const DocumentManagerPage = () => {
       console.log('📡 Fetching documents for Document Manager...');
       const data = await ragApi.getUnassignedAndGroupedDocuments();
       console.log('✅ Documents loaded:', data);
+      
+      setProcessedDocs(data.processed || []);
       setGroupedDocs(data.grouped || []);
       setUnassignedDocs(data.unassigned || []);
     } catch (err) {
@@ -39,17 +49,27 @@ const DocumentManagerPage = () => {
     fetchData();
   }, [fetchData]);
 
+  // Show notification
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => {
+      setNotification(null);
+    }, 5000);
+  };
+
   // 🆕 HANDLE FIND VRN
-  const handleFindVRN = async () => {
+  const handleFindVRN = async (selectedDocIds = null) => {
     if (isFindingVRN) {
       console.warn('⚠️ VRN finding already in progress');
       return;
     }
 
-    // Check if there are documents to process
-    const totalDocs = unassignedDocs.length;
+    // Determine which documents to process
+    const docsToProcess = selectedDocIds || processedDocs.map(d => d.id);
+    const totalDocs = docsToProcess.length;
+
     if (totalDocs === 0) {
-      alert('ℹ️ No unassigned documents to analyze.\n\nPlease upload and index documents first.');
+      alert('ℹ️ No documents to analyze.\n\nPlease upload and index documents first.');
       return;
     }
 
@@ -76,7 +96,10 @@ const DocumentManagerPage = () => {
       console.log('🔍 Starting VRN extraction for', totalDocs, 'documents');
 
       // Call backend API
-      const result = await ragApi.findVRNInDocuments();
+      const result = await ragApi.findVRNInDocuments(
+        selectedDocIds ? selectedDocIds : null,
+        true // use AI
+      );
 
       console.log('✅ VRN extraction completed:', result);
 
@@ -92,13 +115,13 @@ const DocumentManagerPage = () => {
 
       // Show detailed success message
       if (result.vrn_found > 0) {
-        setTimeout(() => {
-          const methods = result.extraction_methods || {};
-          const methodsText = `Extraction methods:\n` +
-            `  • Regex: ${methods.regex || 0}\n` +
-            `  • AI: ${methods.ai || 0}\n` +
-            `  • Filename: ${methods.filename || 0}`;
+        const methods = result.extraction_methods || {};
+        const methodsText = `Extraction methods:\n` +
+          `  • Regex: ${methods.regex || 0}\n` +
+          `  • AI: ${methods.ai || 0}\n` +
+          `  • Filename: ${methods.filename || 0}`;
 
+        setTimeout(() => {
           alert(
             `✅ VRN Extraction Complete!\n\n` +
             `Found VRN in ${result.vrn_found} document(s)\n\n` +
@@ -109,6 +132,11 @@ const DocumentManagerPage = () => {
             `${methodsText}`
           );
         }, 500);
+
+        showNotification(
+          `Successfully extracted VRN from ${result.vrn_found} document(s)`,
+          'success'
+        );
       } else {
         setTimeout(() => {
           alert(
@@ -121,6 +149,11 @@ const DocumentManagerPage = () => {
             `  • Verify document quality`
           );
         }, 500);
+
+        showNotification(
+          `No VRN found in ${result.total_processed} document(s)`,
+          'info'
+        );
       }
 
       // Refresh data after 2 seconds
@@ -152,6 +185,11 @@ const DocumentManagerPage = () => {
         );
       }, 500);
 
+      showNotification(
+        `VRN extraction failed: ${errorMessage}`,
+        'error'
+      );
+
       // Hide progress after error
       setTimeout(() => {
         setShowProgress(false);
@@ -180,14 +218,26 @@ const DocumentManagerPage = () => {
       
       console.log('✅ Batch link successful:', result);
       
+      // Remove group from list
       setGroupedDocs(prev => prev.filter(g => g.vrn !== vrn));
+      
+      // Show notification
+      showNotification(
+        `Successfully linked ${result.linked_count} document(s) to vehicle ${vrn}`,
+        'success'
+      );
       
       if (result.failed_ids && result.failed_ids.length > 0) {
         alert(`Linked ${result.linked_count} documents. ${result.failed_ids.length} failed.`);
       }
     } catch (err) {
       console.error('❌ Failed to link documents:', err);
-      alert(`Failed to link documents: ${err.message || 'Unknown error'}`);
+      const errorMessage = err.response?.data?.detail || err.message || 'Unknown error';
+      showNotification(
+        `Failed to link documents: ${errorMessage}`,
+        'error'
+      );
+      alert(`Failed to link documents: ${errorMessage}`);
     }
   };
 
@@ -204,14 +254,26 @@ const DocumentManagerPage = () => {
       
       console.log('✅ Vehicle created and documents linked:', result);
       
+      // Remove group from list
       setGroupedDocs(prev => prev.filter(g => g.vrn !== vrn));
+      
+      // Show notification
+      showNotification(
+        `Successfully created vehicle ${vrn} and linked ${result.linked_count} document(s)`,
+        'success'
+      );
       
       if (result.failed_ids && result.failed_ids.length > 0) {
         alert(`Vehicle created! Linked ${result.linked_count} documents. ${result.failed_ids.length} failed.`);
       }
     } catch (err) {
       console.error('❌ Failed to create vehicle and link documents:', err);
-      alert(`Failed to create vehicle: ${err.message || 'Unknown error'}`);
+      const errorMessage = err.response?.data?.detail || err.message || 'Unknown error';
+      showNotification(
+        `Failed to create vehicle: ${errorMessage}`,
+        'error'
+      );
+      alert(`Failed to create vehicle: ${errorMessage}`);
     }
   };
 
@@ -229,10 +291,22 @@ const DocumentManagerPage = () => {
       
       console.log('✅ Manual assignment successful');
       
+      // Remove document from unassigned list
       setUnassignedDocs(prev => prev.filter(doc => doc.id !== documentId));
+      
+      // Show notification
+      showNotification(
+        'Successfully assigned document to vehicle',
+        'success'
+      );
     } catch (err) {
       console.error('❌ Failed to manually assign document:', err);
-      alert(`Failed to assign document: ${err.message || 'Unknown error'}`);
+      const errorMessage = err.response?.data?.detail || err.message || 'Unknown error';
+      showNotification(
+        `Failed to assign document: ${errorMessage}`,
+        'error'
+      );
+      alert(`Failed to assign document: ${errorMessage}`);
     }
   };
 
@@ -249,7 +323,7 @@ const DocumentManagerPage = () => {
     );
   }
 
-  if (error) {
+  if (error && !notification) {
     return (
       <div className="error-state">
         <p className="error-message">{error}</p>
@@ -263,7 +337,24 @@ const DocumentManagerPage = () => {
 
   return (
     <div className="doc-manager-container">
-      {/* 🆕 HEADER WITH ACTIONS */}
+      {/* 🆕 NOTIFICATION */}
+      {notification && (
+        <div className={`notification ${notification.type}`}>
+          <span className="notification-icon">
+            {notification.type === 'success' ? '✅' : 
+             notification.type === 'error' ? '❌' : 'ℹ️'}
+          </span>
+          <span className="notification-message">{notification.message}</span>
+          <button 
+            className="notification-close"
+            onClick={() => setNotification(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* HEADER WITH ACTIONS */}
       <div className="doc-manager-header">
         <div className="header-title">
           <h1>Document Manager</h1>
@@ -277,32 +368,34 @@ const DocumentManagerPage = () => {
           <button 
             className="refresh-button"
             onClick={fetchData}
-            disabled={isLoading}
+            disabled={isLoading || isFindingVRN}
             title="Refresh documents"
           >
             <FiRefreshCw className={isLoading ? 'spinning' : ''} />
             <span>Refresh</span>
           </button>
+        </div>
+      </div>
 
-          {/* 🆕 FIND VRN BUTTON - ALWAYS VISIBLE */}
-          <button 
-            className="find-vrn-button"
-            onClick={handleFindVRN}
-            disabled={isFindingVRN || unassignedDocs.length === 0}
-            title={
-              unassignedDocs.length === 0 
-                ? 'No unassigned documents to analyze' 
-                : `Analyze ${unassignedDocs.length} unassigned document${unassignedDocs.length !== 1 ? 's' : ''}`
-            }
-          >
-            <FiSearch />
-            <span>
-              {isFindingVRN ? 'Finding VRN...' : 'Find VRN in Documents'}
-            </span>
-            {unassignedDocs.length > 0 && !isFindingVRN && (
-              <span className="doc-count-badge">{unassignedDocs.length}</span>
-            )}
-          </button>
+      {/* STATS BAR */}
+      <div className="stats-bar">
+        <div className="stat-item">
+          <span className="stat-label">Need Analysis:</span>
+          <span className="stat-value">{processedDocs.length}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Smart Suggestions:</span>
+          <span className="stat-value">{groupedDocs.length}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Manual Assignment:</span>
+          <span className="stat-value">{unassignedDocs.length}</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-label">Total:</span>
+          <span className="stat-value">
+            {processedDocs.length + groupedDocs.length + unassignedDocs.length}
+          </span>
         </div>
       </div>
 
@@ -311,25 +404,16 @@ const DocumentManagerPage = () => {
         <FindVRNProgress progress={findVRNProgress} />
       )}
 
-      {/* STATS BAR */}
-      <div className="stats-bar">
-        <div className="stat-item">
-          <span className="stat-label">Smart Suggestions:</span>
-          <span className="stat-value">{groupedDocs.length}</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Unassigned:</span>
-          <span className="stat-value">{unassignedDocs.length}</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Total:</span>
-          <span className="stat-value">{groupedDocs.length + unassignedDocs.length}</span>
-        </div>
-      </div>
+      {/* 🆕 TOP SECTION - PROCESSED DOCUMENTS */}
+      <ProcessedDocuments
+        documents={processedDocs}
+        onFindVRN={handleFindVRN}
+        isProcessing={isFindingVRN}
+      />
 
-      {/* MAIN CONTENT */}
+      {/* MAIN CONTENT - 2 COLUMNS */}
       <div className="doc-manager-page">
-        {/* LEFT COLUMN - Smart Suggestions */}
+        {/* LEFT COLUMN - Smart Suggestions (predassigned) */}
         <div className="manager-column">
           <div className="column-header">
             <h2>Smart Suggestions</h2>
@@ -351,16 +435,16 @@ const DocumentManagerPage = () => {
           ) : (
             <div className="empty-state">
               <div className="empty-icon">✅</div>
-              <h3>All documents are processed!</h3>
-              <p>No new documents with detected vehicle numbers.</p>
+              <h3>All Clear!</h3>
+              <p>No documents with detected VRN waiting to be linked.</p>
             </div>
           )}
         </div>
 
-        {/* RIGHT COLUMN - Unassigned Documents */}
+        {/* RIGHT COLUMN - Manual Assignment (unassigned) */}
         <div className="manager-column">
           <div className="column-header">
-            <h2>Unassigned Documents</h2>
+            <h2>Manual Assignment</h2>
             {unassignedDocs.length > 0 && (
               <span className="column-count">{unassignedDocs.length} document{unassignedDocs.length !== 1 ? 's' : ''}</span>
             )}
@@ -373,14 +457,8 @@ const DocumentManagerPage = () => {
           ) : (
             <div className="empty-state">
               <div className="empty-icon">🎉</div>
-              <h3>Inbox Zero!</h3>
-              <p>No documents are waiting for manual assignment.</p>
-              <button 
-                className="empty-state-action"
-                onClick={() => window.location.href = '/indexing'}
-              >
-                Upload New Documents
-              </button>
+              <h3>Perfect!</h3>
+              <p>No documents requiring manual vehicle assignment.</p>
             </div>
           )}
         </div>
