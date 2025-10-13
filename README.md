@@ -1,10 +1,10 @@
 -- ============================================================================
 -- PRODUCTION RAG SYSTEM - DATABASE SCHEMA
 -- Vehicle Management + Document Registry + Vector Search
+-- UPDATED: documents.id changed from UUID to TEXT
 -- ============================================================================
 
 -- ШАГ 1: Создание или обновление универсальной функции для `updated_at`
--- Эту функцию безопасно запускать, даже если она уже существует.
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -63,8 +63,8 @@ CREATE TABLE IF NOT EXISTS vecs.document_registry (
     vehicle_id UUID REFERENCES vecs.vehicles(id) ON DELETE SET NULL,
     
     -- Пути к файлам
-    raw_file_path TEXT UNIQUE,           -- Путь к оригинальному файлу (PDF, DOCX, etc.)
-    markdown_file_path TEXT UNIQUE,      -- Путь к конвертированному markdown
+    raw_file_path TEXT UNIQUE,
+    markdown_file_path TEXT UNIQUE,
     
     -- Метаданные документа
     document_type TEXT CHECK (document_type IN (
@@ -80,17 +80,17 @@ CREATE TABLE IF NOT EXISTS vecs.document_registry (
     
     -- Статус обработки документа
     status TEXT DEFAULT 'unassigned' CHECK (status IN (
-        'predassigned',        -- Загружен, нашли номер
-        'unassigned',        -- Загружен, но не привязан к машине
-        'assigned',          -- Привязан к машине
-        'pending_ocr',       -- Ожидает OCR обработки
-        'pending_indexing',  -- Ожидает индексирования
-        'processed',         -- Полностью обработан и проиндексирован
-        'archived',          -- Устаревший документ
-        'failed'             -- Ошибка обработки
+        'predassigned',
+        'unassigned',
+        'assigned',
+        'pending_ocr',
+        'pending_indexing',
+        'processed',
+        'archived',
+        'failed'
     )),
     
-    -- Извлечённые данные (VRN, даты, metadata из OCR, и т.д.)
+    -- Извлечённые данные
     extracted_data JSONB DEFAULT '{}'::jsonb,
     
     -- Метаданные
@@ -98,17 +98,15 @@ CREATE TABLE IF NOT EXISTS vecs.document_registry (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Индексы для быстрого поиска
+-- Индексы
 CREATE INDEX IF NOT EXISTS idx_document_registry_vehicle ON vecs.document_registry(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_document_registry_status ON vecs.document_registry(status);
 CREATE INDEX IF NOT EXISTS idx_document_registry_type ON vecs.document_registry(document_type);
 CREATE INDEX IF NOT EXISTS idx_document_registry_raw_path ON vecs.document_registry(raw_file_path);
 CREATE INDEX IF NOT EXISTS idx_document_registry_md_path ON vecs.document_registry(markdown_file_path);
-
--- GIN индекс для быстрого поиска по JSONB (extracted_data)
 CREATE INDEX IF NOT EXISTS idx_document_registry_extracted_data ON vecs.document_registry USING gin(extracted_data);
 
--- Триггер для автоматического обновления updated_at
+-- Триггер
 DROP TRIGGER IF EXISTS update_document_registry_updated_at ON vecs.document_registry;
 CREATE TRIGGER update_document_registry_updated_at
     BEFORE UPDATE ON vecs.document_registry
@@ -117,10 +115,11 @@ CREATE TRIGGER update_document_registry_updated_at
 
 -- ============================================================================
 -- DOCUMENTS (CHUNKS) - Таблица для векторного поиска (RAG)
+-- 🔥 ИЗМЕНЕНО: id теперь TEXT вместо UUID
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS vecs.documents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,  -- 🔥 ИЗМЕНЕНО: TEXT вместо UUID
     
     -- Обязательная связь с мастер-записью документа
     registry_id UUID NOT NULL REFERENCES vecs.document_registry(id) ON DELETE CASCADE,
@@ -128,29 +127,29 @@ CREATE TABLE IF NOT EXISTS vecs.documents (
     -- Векторное представление чанка (768-dimensional embedding)
     vec VECTOR(768),
     
-    -- Метаданные чанка (текст, chunk_index, file_name, и т.д.)
+    -- Метаданные чанка
     metadata JSONB
 );
 
--- Индексы для быстрого поиска
+-- Индексы
 CREATE INDEX IF NOT EXISTS idx_documents_registry_id ON vecs.documents(registry_id);
 
--- HNSW индекс для быстрого векторного поиска (cosine distance)
+-- HNSW индекс для векторного поиска
 CREATE INDEX IF NOT EXISTS idx_documents_vec_hnsw ON vecs.documents 
 USING hnsw (vec vector_cosine_ops);
 
 -- ============================================================================
--- ПОЛЕЗНЫЕ КОММЕНТАРИИ К ТАБЛИЦАМ
+-- КОММЕНТАРИИ
 -- ============================================================================
 
 COMMENT ON TABLE vecs.vehicles IS 'Реестр транспортных средств компании';
-COMMENT ON TABLE vecs.document_registry IS 'Мастер-таблица всех загруженных документов с путями к raw и markdown файлам';
-COMMENT ON TABLE vecs.documents IS 'Таблица чанков для векторного поиска (RAG). Каждый чанк связан с родительским документом через registry_id';
+COMMENT ON TABLE vecs.document_registry IS 'Мастер-таблица всех загруженных документов';
+COMMENT ON TABLE vecs.documents IS 'Таблица чанков для векторного поиска (RAG). id изменён на TEXT для совместимости с vecs';
 
+COMMENT ON COLUMN vecs.documents.id IS '🔥 TEXT ID вместо UUID для совместимости с vecs библиотекой';
 COMMENT ON COLUMN vecs.document_registry.raw_file_path IS 'Путь к оригинальному файлу в data/raw/';
 COMMENT ON COLUMN vecs.document_registry.markdown_file_path IS 'Путь к конвертированному markdown в data/markdown/';
-COMMENT ON COLUMN vecs.document_registry.extracted_data IS 'JSON с извлечёнными данными: VRN, даты, OCR confidence, etc.';
-COMMENT ON COLUMN vecs.document_registry.status IS 'Статус жизненного цикла документа: от unassigned до processed';
+COMMENT ON COLUMN vecs.document_registry.extracted_data IS 'JSON с извлечёнными данными: VRN, даты, OCR confidence';
 
 -- ============================================================================
 -- ПРИМЕРЫ ЗАПРОСОВ

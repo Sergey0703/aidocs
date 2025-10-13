@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Minimum relevance threshold for considering documents as valid results
-MIN_RELEVANCE_THRESHOLD = 0.7
+MIN_RELEVANCE_THRESHOLD = 0.6
 
 
 async def generate_system_info_answer() -> str:
@@ -43,10 +43,10 @@ async def generate_ai_fallback_answer(query: str, system_components: Dict) -> st
     """Use Gemini to answer when no relevant documents found in knowledge base"""
     
     try:
-        from llama_index.llms.google_genai import GoogleGenAI
+        from llama_index.llms.gemini import Gemini
         from config.settings import config
         
-        llm = GoogleGenAI(
+        llm = Gemini(
             model=config.llm.main_model,
             api_key=config.llm.api_key
         )
@@ -86,10 +86,10 @@ async def batch_rerank_results(query: str, documents: List, top_k: int = 5) -> t
         return [], 0
     
     try:
-        from llama_index.llms.google_genai import GoogleGenAI
+        from llama_index.llms.gemini import Gemini
         from config.settings import config
         
-        llm = GoogleGenAI(
+        llm = Gemini(
             model=config.llm.main_model,
             api_key=config.llm.api_key,
             temperature=0.0
