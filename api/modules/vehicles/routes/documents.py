@@ -212,7 +212,7 @@ async def analyze_unassigned_documents():
     Returns:
         {
             'processed': [...],      # Documents needing VRN analysis (status='processed')
-            'grouped': [             # Documents with VRN found (status='predassigned')
+            'grouped': [             # Documents with VRN found (status='pending_assignment')
                 {
                     'vrn': '191-D-12345',
                     'documents': [...],
@@ -287,7 +287,7 @@ async def get_documents_by_status(
     Status values:
     - 'pending_indexing': Uploaded, waiting for indexing
     - 'processed': Indexed, waiting for VRN analysis
-    - 'predassigned': VRN found, ready to link to vehicle
+    - 'pending_assignment': VRN found, ready to link to vehicle
     - 'unassigned': No VRN found, needs manual assignment
     - 'assigned': Linked to vehicle
     """

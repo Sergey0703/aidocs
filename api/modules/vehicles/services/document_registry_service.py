@@ -250,7 +250,7 @@ class DocumentRegistryService:
         Get documents by status
         
         Args:
-            status: Document status ('processed', 'predassigned', 'unassigned', 'assigned', etc.)
+            status: Document status ('processed', 'pending_assignment', 'unassigned', 'assigned', etc.)
             limit: Maximum number of results
         
         Returns:
@@ -286,7 +286,7 @@ class DocumentRegistryService:
         
         NOTE: This now returns documents with status='unassigned' specifically
         For documents needing VRN analysis, use get_by_status('processed')
-        For documents ready to link, use get_by_status('predassigned')
+        For documents ready to link, use get_by_status('pending_assignment')
         
         Args:
             limit: Maximum number of results
@@ -503,17 +503,17 @@ class DocumentRegistryService:
     
     async def group_by_extracted_vrn(self) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Group documents with status='predassigned' by extracted VRN
+        Group documents with status='pending_assignment' by extracted VRN
         
         Returns:
             Dict mapping VRN → list of documents
         """
         try:
-            predassigned = await self.get_by_status('predassigned', limit=1000)
+            pending_assignment = await self.get_by_status('pending_assignment', limit=1000)
             
             grouped = {}
             
-            for doc in predassigned:
+            for doc in pending_assignment:
                 extracted_data = doc.get('extracted_data', {})
                 vrn = extracted_data.get('vrn')
                 
@@ -522,7 +522,7 @@ class DocumentRegistryService:
                         grouped[vrn] = []
                     grouped[vrn].append(doc)
             
-            logger.info(f"📊 Grouped predassigned documents by VRN: {len(grouped)} groups found")
+            logger.info(f"📊 Grouped pending_assignment documents by VRN: {len(grouped)} groups found")
             return grouped
             
         except Exception as e:
@@ -536,7 +536,7 @@ class DocumentRegistryService:
         Returns:
             {
                 'processed': [...],      # Documents needing VRN analysis
-                'grouped': [             # Documents with VRN (predassigned)
+                'grouped': [             # Documents with VRN (pending_assignment)
                     {
                         'vrn': '191-D-12345',
                         'documents': [...],
@@ -554,19 +554,19 @@ class DocumentRegistryService:
         try:
             # Get documents by status
             processed = await self.get_by_status('processed', limit=1000)
-            predassigned = await self.get_by_status('predassigned', limit=1000)
+            pending_assignment = await self.get_by_status('pending_assignment', limit=1000)
             unassigned = await self.get_by_status('unassigned', limit=1000)
             
             logger.info(
                 f"📋 Retrieved documents: "
                 f"processed={len(processed)}, "
-                f"predassigned={len(predassigned)}, "
+                f"pending_assignment={len(pending_assignment)}, "
                 f"unassigned={len(unassigned)}"
             )
             
-            # Group predassigned documents by VRN
+            # Group pending_assignment documents by VRN
             vrn_groups = {}
-            for doc in predassigned:
+            for doc in pending_assignment:
                 extracted_data = doc.get('extracted_data', {})
                 vrn = extracted_data.get('vrn')
                 

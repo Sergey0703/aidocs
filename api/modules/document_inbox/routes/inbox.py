@@ -462,7 +462,7 @@ async def find_vrn_in_documents(request: Optional[FindVRNRequest] = None):
     3. Tries regex pattern matching for Irish VRN formats
     4. Falls back to AI extraction if regex fails (optional)
     5. Updates document_registry:
-       - If VRN found: status='predassigned' + extracted_data.vrn
+       - If VRN found: status='pending_assignment' + extracted_data.vrn
        - If VRN not found: status='unassigned'
     
     **Use case:** "Find VRN in Documents" button in Document Manager

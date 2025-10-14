@@ -372,7 +372,7 @@ const DocumentManagerPage = () => {
 
       {/* MAIN CONTENT - 2 COLUMNS */}
       <div className="doc-manager-page">
-        {/* LEFT COLUMN - Smart Suggestions (predassigned) */}
+        {/* LEFT COLUMN - Smart Suggestions (pending_assignment) */}
         <div className="manager-column">
           <div className="column-header">
             <h2>Smart Suggestions</h2>

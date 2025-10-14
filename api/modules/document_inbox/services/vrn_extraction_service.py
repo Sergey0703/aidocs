@@ -307,7 +307,7 @@ class VRNExtractionService:
             conn = psycopg2.connect(config.CONNECTION_STRING)
 
             if vrn:
-                new_status = 'predassigned'
+                new_status = 'pending_assignment'
                 extracted_data = {
                     'vrn': vrn,
                     'make': make,
@@ -316,7 +316,7 @@ class VRNExtractionService:
                 }
                 # Filter out null values
                 extracted_data = {k: v for k, v in extracted_data.items() if v is not None}
-                logger.info(f"✅ Setting status='predassigned' for registry {registry_id} with VRN={vrn}")
+                logger.info(f"✅ Setting status='pending_assignment' for registry {registry_id} with VRN={vrn}")
             else:
                 new_status = 'unassigned'
                 extracted_data = {'extraction_method': extraction_method}
